@@ -9,6 +9,7 @@ event DMA_READ_REQ {
     long addr;
     int size;
 }
+
 event DMA_READ_CMPL {
     atom at;
     context ctx;
