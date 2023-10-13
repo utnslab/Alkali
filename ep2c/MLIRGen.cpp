@@ -471,8 +471,10 @@ private:
       } else {
         // If it is a context..
         if (isa<ContextType>(value.getType())) {
+          // TODO: get from assignment
+          auto internalType = builder.getType<ContextRefType>(builder.getType<AnyType>());
           value = builder.create<ContextRefOp>(location,
-                      newValue.getType(), curVarExpr->getName());
+                      internalType, curVarExpr->getName());
           continue;
         }
         // else, c++ dot access

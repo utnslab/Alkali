@@ -54,6 +54,17 @@ class EP2_BaseType<string name, string typeMnemonic, list<Trait> traits = []>
   let mnemonic = typeMnemonic;
 }
 
+def EP2_AnyType : EP2_BaseType<"Any", "any"> {
+  let summary = "Any type";
+  let description = [{
+    Any type, represents an unknow type, but allows to be 
+    any valid EP2 type.
+    Will be eliminated by type inference passes.
+
+    Invalid when converting to lower level dialects.
+  }];
+}
+
 // Provide a definition for the EP2 StructType for use in ODS. This allows for
 // using StructType in a similar way to Tensor or MemRef. We use `DialectType`
 // to demarcate the StructType as belonging to the EP2 dialect.
@@ -96,6 +107,8 @@ def EP2_AtomType: EP2_BaseType<"Atom", "atom"> {
   }];
 }
 
+def EP2_ValueType : AnyTypeOf<[EP2_AnyType, AnyInteger, EP2_StructType, EP2_AtomType]>;
+
 def EP2_ContextType: EP2_BaseType<"Context", "context"> {
   let summary = "Context Type, allows dynamic access to context";
   let description = [{
@@ -108,6 +121,9 @@ def EP2_ContextRefType: EP2_BaseType<"ContextRef", "conref"> {
   let description = [{
     All read/write to context will be translated to a load and store
   }];
+
+  let parameters = (ins "Type":$valueType);
+  let assemblyFormat = "`<` $valueType `>`";
 }
 
 // Provide a definition of the types that are used within the EP2 dialect.
@@ -306,7 +322,7 @@ def ContextRefOp : EP2_Op<"context_ref", [Pure]> {
   }];
 
   let arguments = (ins StrAttr:$name);
-  let results = (outs EP2_Type:$value);
+  let results = (outs EP2_ContextRefType:$value);
 
   // let hasVerifier = 1;
 }

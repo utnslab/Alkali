@@ -47,6 +47,5 @@ add_definitions(${LLVM_DEFINITIONS})
 add_subdirectory(include)
 add_subdirectory(lib)
 
-add_subdirectory(standalone-opt)
-add_subdirectory(standalone-translate)
 add_subdirectory(ep2c)
+add_subdirectory(ep2c-opt)

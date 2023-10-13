@@ -14,7 +14,6 @@
 #include "ep2/lang/Parser.h"
 #include "ep2/dialect/Dialect.h"
 #include "ep2/dialect/MLIRGen.h"
-#include "ep2/dialect/Passes.h"
 
 #include "mlir/Dialect/Affine/Passes.h"
 #include "mlir/Dialect/LLVMIR/Transforms/Passes.h"
@@ -82,9 +81,9 @@ std::unique_ptr<ep2::ModuleAST> parseInputFile(llvm::StringRef filename) {
 }
 
 int main(int argc, char **argv) {
-  mlir::registerAsmPrinterCLOptions();
-  mlir::registerMLIRContextCLOptions();
-  mlir::registerPassManagerCLOptions();
+  // mlir::registerAsmPrinterCLOptions();
+  // mlir::registerMLIRContextCLOptions();
+  // mlir::registerPassManagerCLOptions();
 
   cl::ParseCommandLineOptions(argc, argv, "ep2 compiler\n");
 
@@ -98,9 +97,11 @@ int main(int argc, char **argv) {
   // Load our Dialect in this MLIR Context.
 
   registerAllDialects(registry); 
+  registry.insert<mlir::ep2::EP2Dialect>();
   context.getOrLoadDialect<mlir::ep2::EP2Dialect>();
 
-  mlir::registerCSEPass();
+  mlir::registerAllPasses();
+  // mlir::registerCSEPass();
 
   // Load MLIR
   mlir::OwningOpRef<mlir::ModuleOp> module;
@@ -121,7 +122,7 @@ int main(int argc, char **argv) {
     return 0;
   default:
     return mlir::asMainReturnCode(mlir::MlirOptMain(
-        argc, argv, "default driver", registry));
+        argc, argv, "ep2", registry));
   }
 
   return 0;

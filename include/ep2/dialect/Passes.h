@@ -15,15 +15,31 @@
 
 #include <memory>
 
+#include "mlir/Pass/Pass.h"
+#include "mlir/Pass/PassManager.h"
+#include "mlir/IR/BuiltinOps.h"
+
+#include "ep2/dialect/Dialect.h"
+
 namespace mlir {
-class Pass;
+namespace ep2 {
 
-namespace toy {
-/// Create a pass for lowering operations the remaining `Toy` operations, as
-/// well as `Affine` and `Std`, to the LLVM dialect for codegen.
-// std::unique_ptr<mlir::Pass> createLowerToLLVMPass();
+// Nop Elimination Pass
+struct NopEliminationPass : public PassWrapper<NopEliminationPass, OperationPass<>> {
+    void runOnOperation() final;
+    void getDependentDialects(DialectRegistry &registry) const override {
+        registry.insert<EP2Dialect>();
+    }
+    StringRef getArgument() const final { return "ep2-nop-elim"; }
+    StringRef getDescription() const final { return "Eliminate EP2 Nop"; }
+};
 
-} // namespace toy
+// inline void registerAllocationAnnotationPass() {
+inline void registerNopEliminationPass() {
+    PassRegistration<NopEliminationPass>();
+}
+
+} // namespace ep2
 } // namespace mlir
 
-#endif // TOY_PASSES_H
+#endif // EP2_PASSES_H
