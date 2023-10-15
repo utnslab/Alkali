@@ -338,6 +338,7 @@ private:
     if (auto variable = symbolTable.lookup(expr.getName()).first)
       return variable;
 
+    // TODO: this error is also emitted on a valid struct reference. It doesn't result in incorrect compilation, but shouldn't be emitted.
     emitError(loc(expr.loc()), "error: unknown variable '")
         << expr.getName() << "'";
     return nullptr;

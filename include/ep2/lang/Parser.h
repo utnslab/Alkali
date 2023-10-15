@@ -689,6 +689,7 @@ private:
     if (lexer.getCurToken() != tok_identifier)
       return parseError<PrototypeAST>("function name", "in prototype");
 
+    // TODO: same name for controller and handler leads to conflict in MLIR code.
     std::string fnName(lexer.getId());
     lexer.consume(tok_identifier);
     
