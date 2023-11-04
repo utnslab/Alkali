@@ -1,11 +1,14 @@
 add_mlir_dialect_library(MLIREP2
         Dialect.cpp
+
+        # Analysis
+        LowerStructAnalysis.cpp
         
         # Passes
         NopEliminationPass.cpp
+        LowerToLLVMPass.cpp
+        FunctionRewritePass.cpp
 
-        # ADDITIONAL_HEADER_DIRS
-        # ${PROJECT_SOURCE_DIR}/include/Standalone
 
         DEPENDS
         MLIREP2OpsIncGen

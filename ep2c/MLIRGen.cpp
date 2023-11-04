@@ -166,7 +166,7 @@ private:
     }
 
     structMap.try_emplace(str.getName(),
-      mlir::ep2::StructType::get(builder.getContext(), elementTypes),
+      mlir::ep2::StructType::get(builder.getContext(), elementTypes, str.getName().str()),
       &str);
     return mlir::success();
   }
@@ -186,8 +186,17 @@ private:
       argTypes.push_back(type);
     }
     auto funcType = builder.getFunctionType(argTypes, std::nullopt);
-    return builder.create<mlir::ep2::FuncOp>(location, proto.getName(),
+    auto funcOp = builder.create<mlir::ep2::FuncOp>(location, proto.getMangledName(),
                                              funcType);
+
+    // Set Attrs
+    // TODO: change attrs to fields
+    funcOp->setAttr("event", builder.getStringAttr(proto.getName()));
+    if (proto.getAtom())
+      funcOp->setAttr("atom", builder.getStringAttr(*proto.getAtom()));
+    funcOp->setAttr("type", builder.getStringAttr(proto.getFunctionTypeName()));
+
+    return funcOp;
   }
 
   /// Emit a new function and add it to the MLIR module.
@@ -385,7 +394,7 @@ private:
       }
     }
     mlir::ArrayAttr dataAttr = builder.getArrayAttr(attrElements);
-    mlir::Type dataType = StructType::get(builder.getContext(), typeElements);
+    mlir::Type dataType = StructType::get(builder.getContext(), typeElements, "");
     return std::make_pair(dataAttr, dataType);
   }
 
@@ -474,7 +483,7 @@ private:
           // TODO: get from assignment
           auto internalType = builder.getType<ContextRefType>(builder.getType<AnyType>());
           value = builder.create<ContextRefOp>(location,
-                      internalType, curVarExpr->getName());
+                      internalType, curVarExpr->getName(), value);
           continue;
         }
         // else, c++ dot access

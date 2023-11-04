@@ -12,7 +12,6 @@ namespace ep2 {
 
 void NopEliminationPass::runOnOperation() {
     auto module = getOperation();
-    auto &context = getContext();
     // Fill
 }
 

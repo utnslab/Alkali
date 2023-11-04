@@ -74,13 +74,13 @@ def EP2_StructType : EP2_BaseType<"Struct", "struct"> {
     "Struct type for EP2"
   }];
 
-  let parameters = (ins ArrayRefParameter<"::mlir::Type", "member types">:$elementTypes);
+  let parameters = (ins ArrayRefParameter<"::mlir::Type", "member types">:$elementTypes, StringRefParameter<>:$name);
 
   // default storage class detail
   let genStorageClass = 0;
   let storageClass = "StructTypeStorage";
 
-  let assemblyFormat = "`<` struct($elementTypes) `>`";
+  let assemblyFormat = "`<` $name `:` struct($elementTypes)`>`";
   let extraClassDeclaration = [{
     size_t getNumElementTypes() { return getElementTypes().size(); }
   }];
@@ -89,6 +89,9 @@ def EP2_StructType : EP2_BaseType<"Struct", "struct"> {
     // define the get element types method, should be after invocation
     ArrayRef<Type> $cppClass::getElementTypes() const {
       return getImpl()->elementTypes;
+    }
+    StringRef $cppClass::getName() const {
+      return getImpl()->name;
     }
   }];
 }
@@ -144,7 +147,7 @@ def EP2_Type : AnyTypeOf<[AnyInteger, EP2_StructType, EP2_BufferType,
 // constant operation is marked as 'Pure' as it is a pure operation
 // and may be removed if dead.
 def ConstantOp : EP2_Op<"constant",
-    [ConstantLike, Pure]> {
+    [Pure]> {
   // Provide a summary and description for this operation. This can be used to
   // auto-generate documentation of the operations within our dialect.
   let summary = "constant";
@@ -164,7 +167,7 @@ def ConstantOp : EP2_Op<"constant",
   let results = (outs AnyTypeOf<[AnyInteger,EP2_AtomType]>:$output);
 
   // Indicate that the operation has a custom parser and printer method.
-  let hasCustomAssemblyFormat = 1;
+  // let hasCustomAssemblyFormat = 1;
 
   // Add custom build methods for the constant operation. These method populates
   // the `state` that MLIR uses to create operations, i.e. these are used when
@@ -321,7 +324,7 @@ def ContextRefOp : EP2_Op<"context_ref", [Pure]> {
     Or a "lvalue", in a c++ context.
   }];
 
-  let arguments = (ins StrAttr:$name);
+  let arguments = (ins StrAttr:$name, EP2_ContextType:$context);
   let results = (outs EP2_ContextRefType:$value);
 
   // let hasVerifier = 1;
@@ -423,13 +426,6 @@ def ReturnOp : EP2_Op<"return", [Pure, HasParent<"FuncOp">,
     The operation takes an optional operand and produces no results.
     The operand type must match the signature of the function that contains
     the operation. For example:
-
-    ```mlir
-      toy.func @foo() -> tensor<2xf64> {
-        ...
-        toy.return %0 : tensor<2xf64>
-      }
-    ```
   }];
 
   // The return operation takes an optional input operand to return. This

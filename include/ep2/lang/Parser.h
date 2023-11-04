@@ -603,6 +603,13 @@ private:
 
     if (lexer.getCurToken() != token)
       return parseError<PrototypeAST>("def|event|controller", "in prototype");
+
+    PrototypeAST::FunctionType type;
+    if (token == tok_controller)
+      type = PrototypeAST::Function_Controller;
+    else 
+      type = PrototypeAST::Function_Handler;
+
     lexer.consume(token);
 
     if (lexer.getCurToken() != tok_identifier)
@@ -611,9 +618,10 @@ private:
     std::string fnName(lexer.getId());
     lexer.consume(tok_identifier);
     
-    // TODO: install the atom later
+    std::optional<std::string> atom{};
     if (token == tok_handler && lexer.getCurToken() == tok_colon) {
-      parseAtom();
+      auto atomLit = parseAtom();
+      atom = atomLit->getAtom();
     }
 
     if (lexer.getCurToken() != '(')
@@ -659,11 +667,11 @@ private:
     // success.
     lexer.consume(Token(')'));
     return std::make_unique<PrototypeAST>(std::move(loc), fnName,
-                                          std::move(args));
+                                          std::move(args), atom, type);
   }
 
   /// Parse a function definition, we expect a prototype initiated with the
-  /// `def` keyword, followed by a block containing a list of expressions.
+  /// `def|handler|controller` keyword, followed by a block containing a list of expressions.
   ///
   /// definition ::= prototype block
   std::unique_ptr<FunctionAST> parseDefinition(Token token) {

@@ -33,8 +33,10 @@ int main(int argc, char **argv) {
   mlir::DialectRegistry registry;
   mlir::registerAllDialects(registry);
   registry.insert<mlir::ep2::EP2Dialect>();
+
  
   mlir::PassRegistration<mlir::ep2::NopEliminationPass>();
+  mlir::PassRegistration<mlir::ep2::FunctionRewritePass>();
  
   return mlir::asMainReturnCode(
       mlir::MlirOptMain(argc, argv, "Tutorial Pass Driver", registry));

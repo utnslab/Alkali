@@ -24,6 +24,7 @@
 #include <utility>
 #include <vector>
 #include <optional>
+#include <string>
 
 namespace ep2 {
 
@@ -269,17 +270,41 @@ public:
 /// name, and its argument names (thus implicitly the number of arguments the
 /// function takes).
 class PrototypeAST {
+ public:
+  enum FunctionType {
+    Function_Controller,
+    Function_Handler
+  };
+
+ private:
   Location location;
   std::string name;
   std::vector<std::unique_ptr<VarDeclExprAST>> args;
+  std::optional<std::string> atom;
+  FunctionType functionType;
+
+  std::string mangledName{};
 
 public:
   PrototypeAST(Location location, const std::string &name,
-               std::vector<std::unique_ptr<VarDeclExprAST>> args)
-      : location(std::move(location)), name(name), args(std::move(args)) {}
+               std::vector<std::unique_ptr<VarDeclExprAST>> args, std::optional<std::string> atom, FunctionType type) 
+      : location(std::move(location)), name(name), args(std::move(args)), atom(atom), functionType(type) {}
 
   const Location &loc() { return location; }
+  std::string getFunctionTypeName() const {
+    if (functionType == Function_Controller)
+      return "controller";
+    else
+      return "handler";
+  }
+  std::optional<std::string> getAtom() const { return atom; }
   llvm::StringRef getName() const { return name; }
+  llvm::StringRef getMangledName() {
+    mangledName = "__" + getFunctionTypeName() + "_" + name;
+    if (atom)
+      mangledName = mangledName + "_" + atom.value();
+    return mangledName;
+  }
   llvm::ArrayRef<std::unique_ptr<VarDeclExprAST>> getArgs() { return args; }
 };
 

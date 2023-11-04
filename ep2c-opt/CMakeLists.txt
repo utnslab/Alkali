@@ -16,7 +16,6 @@ set(MLIR_LINK_COMPONENTS
   MLIRBuiltinToLLVMIRTranslation
   MLIRCallInterfaces
   MLIRCastInterfaces
-  MLIRExecutionEngine
   MLIRFunctionInterfaces
   MLIRIR
   MLIRLLVMCommonConversion

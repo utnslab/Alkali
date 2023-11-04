@@ -131,37 +131,6 @@ static void printBinaryOp(mlir::OpAsmPrinter &printer, mlir::Operation *op) {
 /// Build a constant operation.
 /// The builder is passed as an argument, so is the state that this method is
 /// expected to fill in order to build the operation.
-void ConstantOp::build(mlir::OpBuilder &builder, mlir::OperationState &state,
-                       int width, unsigned long value) {
-  auto dataAttribute = builder.getI64IntegerAttr(value);
-  ConstantOp::build(builder, state, builder.getI64Type(), dataAttribute);
-}
-
-/// The 'OpAsmParser' class provides a collection of methods for parsing
-/// various punctuation, as well as attributes, operands, types, etc. Each of
-/// these methods returns a `ParseResult`. This class is a wrapper around
-/// `LogicalResult` that can be converted to a boolean `true` value on failure,
-/// or `false` on success. This allows for easily chaining together a set of
-/// parser rules. These rules are used to populate an `mlir::OperationState`
-/// similarly to the `build` methods described above.
-mlir::ParseResult ConstantOp::parse(mlir::OpAsmParser &parser,
-                                    mlir::OperationState &result) {
-  mlir::DenseElementsAttr value;
-  if (parser.parseOptionalAttrDict(result.attributes) ||
-      parser.parseAttribute(value, "value", result.attributes))
-    return failure();
-
-  result.addTypes(value.getType());
-  return success();
-}
-
-/// The 'OpAsmPrinter' class is a stream that allows for formatting
-/// strings, attributes, operands, types, etc.
-void ConstantOp::print(mlir::OpAsmPrinter &printer) {
-  printer << " ";
-  printer.printOptionalAttrDict((*this)->getAttrs(), /*elidedAttrs=*/{"value"});
-  printer << getValue();
-}
 
 /// Verify that the given attribute value is valid for the given type.
 static mlir::LogicalResult verifyConstantForType(mlir::Type type,
@@ -415,16 +384,16 @@ struct StructTypeStorage : public mlir::TypeStorage {
   /// instance. This type will be used when uniquing an instance of the type
   /// storage. For our struct type, we will unique each instance structurally on
   /// the elements that it contains.
-  using KeyTy = llvm::ArrayRef<mlir::Type>;
+  using KeyTy = std::pair<llvm::ArrayRef<mlir::Type>, StringRef>;
 
   /// A constructor for the type storage instance.
-  StructTypeStorage(llvm::ArrayRef<mlir::Type> elementTypes)
-      : elementTypes(elementTypes) {}
+  StructTypeStorage(llvm::ArrayRef<mlir::Type> elementTypes, StringRef name)
+      : elementTypes(elementTypes), name(name) {}
 
   /// Define the comparison function for the key type with the current storage
   /// instance. This is used when constructing a new instance to ensure that we
   /// haven't already uniqued an instance of the given key.
-  bool operator==(const KeyTy &key) const { return key == elementTypes; }
+  bool operator==(const KeyTy &key) const { return key == std::pair{elementTypes,name}; }
 
   /// Define a hash function for the key type. This is used when uniquing
   /// instances of the storage, see the `StructType::get` method.
@@ -439,8 +408,8 @@ struct StructTypeStorage : public mlir::TypeStorage {
   /// itself.
   /// Note: This method isn't necessary because KeyTy can be directly
   /// constructed with the given parameters.
-  static KeyTy getKey(llvm::ArrayRef<mlir::Type> elementTypes) {
-    return KeyTy(elementTypes);
+  static KeyTy getKey(llvm::ArrayRef<mlir::Type> elementTypes, StringRef name) {
+    return {elementTypes, name};
   }
 
   /// Define a construction method for creating a new instance of this storage.
@@ -450,15 +419,18 @@ struct StructTypeStorage : public mlir::TypeStorage {
   static StructTypeStorage *construct(mlir::TypeStorageAllocator &allocator,
                                       const KeyTy &key) {
     // Copy the elements from the provided `KeyTy` into the allocator.
-    llvm::ArrayRef<mlir::Type> elementTypes = allocator.copyInto(key);
+    llvm::ArrayRef<mlir::Type> elementTypes = allocator.copyInto(key.first);
+    llvm::StringRef newName = allocator.copyInto(key.second);
 
     // Allocate the storage instance and construct it.
     return new (allocator.allocate<StructTypeStorage>())
-        StructTypeStorage(elementTypes);
+        // TODO: check this. strings are dynamic?
+        StructTypeStorage(elementTypes, newName);
   }
 
   /// The following field contains the element types of the struct.
   llvm::ArrayRef<mlir::Type> elementTypes;
+  StringRef name;
 };
 } // namespace detail
 } // namespace ep2
