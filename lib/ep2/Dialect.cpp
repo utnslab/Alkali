@@ -196,26 +196,6 @@ mlir::LogicalResult StructConstantOp::verify() {
 }
 
 //===----------------------------------------------------------------------===//
-// AddOp
-//===----------------------------------------------------------------------===//
-
-void AddOp::build(mlir::OpBuilder &builder, mlir::OperationState &state,
-                  mlir::Value lhs, mlir::Value rhs) {
-  state.addTypes(UnrankedTensorType::get(builder.getF64Type()));
-  state.addOperands({lhs, rhs});
-}
-
-mlir::ParseResult AddOp::parse(mlir::OpAsmParser &parser,
-                               mlir::OperationState &result) {
-  return parseBinaryOp(parser, result);
-}
-
-void AddOp::print(mlir::OpAsmPrinter &p) { printBinaryOp(p, *this); }
-
-/// Infer the output shape of the AddOp, this is required by the shape inference
-/// interface.
-
-//===----------------------------------------------------------------------===//
 // FuncOp
 //===----------------------------------------------------------------------===//
 
@@ -374,67 +354,6 @@ mlir::LogicalResult StructAccessOp::verify() {
 //===----------------------------------------------------------------------===//
 // ep2 Types
 //===----------------------------------------------------------------------===//
-
-namespace mlir {
-namespace ep2 {
-namespace detail {
-/// This class represents the internal storage of the ep2 `StructType`.
-struct StructTypeStorage : public mlir::TypeStorage {
-  /// The `KeyTy` is a required type that provides an interface for the storage
-  /// instance. This type will be used when uniquing an instance of the type
-  /// storage. For our struct type, we will unique each instance structurally on
-  /// the elements that it contains.
-  using KeyTy = std::pair<llvm::ArrayRef<mlir::Type>, StringRef>;
-
-  /// A constructor for the type storage instance.
-  StructTypeStorage(llvm::ArrayRef<mlir::Type> elementTypes, StringRef name)
-      : elementTypes(elementTypes), name(name) {}
-
-  /// Define the comparison function for the key type with the current storage
-  /// instance. This is used when constructing a new instance to ensure that we
-  /// haven't already uniqued an instance of the given key.
-  bool operator==(const KeyTy &key) const { return key == std::pair{elementTypes,name}; }
-
-  /// Define a hash function for the key type. This is used when uniquing
-  /// instances of the storage, see the `StructType::get` method.
-  /// Note: This method isn't necessary as both llvm::ArrayRef and mlir::Type
-  /// have hash functions available, so we could just omit this entirely.
-  static llvm::hash_code hashKey(const KeyTy &key) {
-    return llvm::hash_value(key);
-  }
-
-  /// Define a construction function for the key type from a set of parameters.
-  /// These parameters will be provided when constructing the storage instance
-  /// itself.
-  /// Note: This method isn't necessary because KeyTy can be directly
-  /// constructed with the given parameters.
-  static KeyTy getKey(llvm::ArrayRef<mlir::Type> elementTypes, StringRef name) {
-    return {elementTypes, name};
-  }
-
-  /// Define a construction method for creating a new instance of this storage.
-  /// This method takes an instance of a storage allocator, and an instance of a
-  /// `KeyTy`. The given allocator must be used for *all* necessary dynamic
-  /// allocations used to create the type storage and its internal.
-  static StructTypeStorage *construct(mlir::TypeStorageAllocator &allocator,
-                                      const KeyTy &key) {
-    // Copy the elements from the provided `KeyTy` into the allocator.
-    llvm::ArrayRef<mlir::Type> elementTypes = allocator.copyInto(key.first);
-    llvm::StringRef newName = allocator.copyInto(key.second);
-
-    // Allocate the storage instance and construct it.
-    return new (allocator.allocate<StructTypeStorage>())
-        // TODO: check this. strings are dynamic?
-        StructTypeStorage(elementTypes, newName);
-  }
-
-  /// The following field contains the element types of the struct.
-  llvm::ArrayRef<mlir::Type> elementTypes;
-  StringRef name;
-};
-} // namespace detail
-} // namespace ep2
-} // namespace mlir
 
 //===----------------------------------------------------------------------===//
 // TableGen'd op method definitions

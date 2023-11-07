@@ -16,7 +16,7 @@ void NopEliminationPass::runOnOperation() {
 }
 
 std::unique_ptr<Pass> createNopEliminationPass() {
-    return std::make_unique<NopEliminationPass>();
+  return std::make_unique<NopEliminationPass>();
 }
 
 }

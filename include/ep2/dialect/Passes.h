@@ -14,6 +14,9 @@
 #define EP2_PASSES_H
 
 #include <memory>
+#include <vector>
+#include <utility>
+#include <unordered_map>
 
 #include "mlir/Pass/Pass.h"
 #include "mlir/Pass/PassManager.h"
@@ -49,17 +52,17 @@ struct LowerStructAnalysis {
 ///////////////////
 // Nop Elimination Pass
 struct NopEliminationPass : public PassWrapper<NopEliminationPass, OperationPass<>> {
-    void runOnOperation() final;
-    void getDependentDialects(DialectRegistry &registry) const override {
-        registry.insert<EP2Dialect>();
-    }
-    StringRef getArgument() const final { return "ep2-nop-elim"; }
-    StringRef getDescription() const final { return "Eliminate EP2 Nop"; }
+  void runOnOperation() final;
+  void getDependentDialects(DialectRegistry &registry) const override {
+      registry.insert<EP2Dialect>();
+  }
+  StringRef getArgument() const final { return "ep2-nop-elim"; }
+  StringRef getDescription() const final { return "Eliminate EP2 Nop"; }
 };
 
 // inline void registerAllocationAnnotationPass() {
 inline void registerNopEliminationPass() {
-    PassRegistration<NopEliminationPass>();
+  PassRegistration<NopEliminationPass>();
 }
 
 // Function Rewrite Pass
@@ -81,6 +84,20 @@ struct LowerToLLVMPass : public PassWrapper<LowerToLLVMPass, OperationPass<Modul
     }
     StringRef getArgument() const final { return "ep2-lower-to-llvm"; }
     StringRef getDescription() const final { return "Lower EP2 to LLVM"; }
+};
+
+// Handler dependency analysis pass
+struct HandlerDependencyAnalysis {
+  enum EdgeType { MUST, MAY };
+  std::unordered_map<Operation*, std::vector<std::pair<EdgeType, Operation*>>> graph;
+
+  HandlerDependencyAnalysis(Operation* op);
+};
+
+struct ContextAnalysis {
+  std::vector<llvm::StringMap<mlir::Type>> disj_contexts;
+
+  ContextAnalysis(Operation* op, AnalysisManager& am);
 };
 
 } // namespace ep2

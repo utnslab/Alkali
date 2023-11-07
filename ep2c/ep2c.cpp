@@ -14,6 +14,7 @@
 #include "ep2/lang/Parser.h"
 #include "ep2/dialect/Dialect.h"
 #include "ep2/dialect/MLIRGen.h"
+#include "ep2/dialect/Passes.h"
 
 #include "mlir/Dialect/Affine/Passes.h"
 #include "mlir/Dialect/LLVMIR/Transforms/Passes.h"
@@ -120,9 +121,13 @@ int main(int argc, char **argv) {
   case Action::DumpMLIR:
     module->dump();
     return 0;
-  default:
-    return mlir::asMainReturnCode(mlir::MlirOptMain(
-        argc, argv, "ep2", registry));
+  default: {
+    mlir::PassManager pm(&context);
+    pm.addPass(mlir::createSCCPPass());
+    pm.addPass(std::make_unique<mlir::ep2::NopEliminationPass>());
+    
+    pm.run(*module);
+  }
   }
 
   return 0;

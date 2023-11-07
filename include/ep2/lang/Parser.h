@@ -792,11 +792,7 @@ private:
 
     // Parse: '}'
     lexer.consume(Token('}'));
-
-    if (token_type == tok_struct)
-      return std::make_unique<StructAST>(loc, name, std::move(decls));
-    else
-      return std::make_unique<EventAST>(loc, name, std::move(decls));
+    return std::make_unique<StructAST>(token_type == tok_event, loc, name, std::move(decls));
   }
 
   /// Get the precedence of the pending binary operator token.

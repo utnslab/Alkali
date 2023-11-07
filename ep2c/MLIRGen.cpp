@@ -122,6 +122,11 @@ private:
   /// original AST node.
   llvm::StringMap<std::pair<mlir::Type, StructAST *>> structMap;
 
+  /// A mapping for context field names to types 
+  llvm::StringMap<mlir::Type> contextTypeMap;
+  bool inAssignment = false;
+  mlir::Type assignmentRhsType;
+
   /// Helper conversion for a ep2 AST location to an MLIR location.
   mlir::Location loc(const Location &loc) {
     return mlir::FileLineColLoc::get(builder.getStringAttr(*loc.file), loc.line,
@@ -166,7 +171,7 @@ private:
     }
 
     structMap.try_emplace(str.getName(),
-      mlir::ep2::StructType::get(builder.getContext(), elementTypes, str.getName().str()),
+      mlir::ep2::StructType::get(builder.getContext(), str.isEvent(), elementTypes, str.getName().str()),
       &str);
     return mlir::success();
   }
@@ -295,21 +300,26 @@ private:
     //    and the result value is returned. If an error occurs we get a nullptr
     //    and propagate.
     //
-    mlir::Value lhs = mlirGen(*binop.getLHS());
-    if (!lhs)
-      return nullptr;
-    auto location = loc(binop.loc());
 
     // Otherwise, this is a normal binary op.
     mlir::Value rhs = mlirGen(*binop.getRHS());
     if (!rhs)
       return nullptr;
 
+    inAssignment = true;
+    assignmentRhsType = rhs.getType();
+    mlir::Value lhs = mlirGen(*binop.getLHS(), binop.getOp() == '=');
+    inAssignment = false;
+
+    if (!lhs)
+      return nullptr;
+    auto location = loc(binop.loc());
+
     // Derive the operation name from the binary operator. At the moment we only
     // support '+' and '*'.
     switch (binop.getOp()) {
     case '+':
-      return builder.create<AddOp>(location, lhs, rhs);
+      return builder.create<AddOp>(location, lhs.getType(), lhs, rhs);
     case '*':
       return builder.create<MulOp>(location, lhs, rhs);
     case '=':
@@ -394,7 +404,7 @@ private:
       }
     }
     mlir::ArrayAttr dataAttr = builder.getArrayAttr(attrElements);
-    mlir::Type dataType = StructType::get(builder.getContext(), typeElements, "");
+    mlir::Type dataType = StructType::get(builder.getContext(), false, typeElements, "");
     return std::make_pair(dataAttr, dataType);
   }
 
@@ -415,7 +425,7 @@ private:
   /// builtin. Other identifiers are assumed to be user-defined functions.
   mlir::Value mlirGen(CallExprAST &call) {
     auto location = loc(call.loc());
-    auto caller = getPath(*call.getCallee(), true);
+    auto caller = getPath(*call.getCallee(), false, true);
 
     auto &path = call.getCallee()->getPath();
     std::string callee = std::string(path.back()->getName());
@@ -489,7 +499,7 @@ private:
   }
 
   // return either a struct access op or a variable op
-  mlir::Value getPath(PathExprAST &path, bool limit = false) {
+  mlir::Value getPath(PathExprAST &path, bool lhs, bool limit = false) {
     auto location = loc(path.loc());
     if (path.getPathLength() == 0) {
       emitError(location) << "Not a function";
@@ -508,10 +518,23 @@ private:
       } else {
         // If it is a context..
         if (isa<ContextType>(value.getType())) {
-          // TODO: get from assignment
-          auto internalType = builder.getType<ContextRefType>(builder.getType<AnyType>());
-          value = builder.create<ContextRefOp>(location,
-                      internalType, curVarExpr->getName(), value);
+          mlir::Type assnType;
+          if (contextTypeMap.find(curVarExpr->getName()) != contextTypeMap.end()) {
+            assnType = contextTypeMap[curVarExpr->getName()];
+          } else if (inAssignment) {
+            assnType = assignmentRhsType;
+          } else {
+            assnType = builder.getType<AnyType>();
+          }
+          contextTypeMap.try_emplace(curVarExpr->getName(), assnType);
+
+          auto internalType = builder.getType<ContextRefType>(assnType);
+          auto ctx_ref = builder.create<ContextRefOp>(location, internalType, curVarExpr->getName(), value);
+          if (!lhs) {
+            value = builder.create<LoadOp>(location, assnType, ctx_ref);
+          } else {
+            value = ctx_ref;
+          }
           continue;
         }
         // else, c++ dot access
@@ -534,12 +557,12 @@ private:
     return value;
   }
 
-  mlir::Value mlirGen(PathExprAST &path) {
-    return getPath(path, false);
+  mlir::Value mlirGen(PathExprAST &path, bool lhs) {
+    return getPath(path, lhs);
   }
 
   /// Dispatch codegen for the right expression subclass using RTTI.
-  mlir::Value mlirGen(ExprAST &expr) {
+  mlir::Value mlirGen(ExprAST &expr, bool lhs = false) {
     switch (expr.getKind()) {
     case ep2::ExprAST::Expr_BinOp:
       return mlirGen(cast<BinaryExprAST>(expr));
@@ -554,7 +577,7 @@ private:
     case ep2::ExprAST::Expr_Num:
       return mlirGen(cast<NumberExprAST>(expr));
     case ep2::ExprAST::Expr_Path:
-      return mlirGen(cast<PathExprAST>(expr));
+      return mlirGen(cast<PathExprAST>(expr), lhs);
     case ep2::ExprAST::Expr_Init:
       return mlirGen(cast<InitExprAST>(expr));
     default:

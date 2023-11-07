@@ -74,25 +74,11 @@ def EP2_StructType : EP2_BaseType<"Struct", "struct"> {
     "Struct type for EP2"
   }];
 
-  let parameters = (ins ArrayRefParameter<"::mlir::Type", "member types">:$elementTypes, StringRefParameter<>:$name);
+  let parameters = (ins AttrParameter<"bool", "isEvent">:$isEvent, ArrayRefParameter<"::mlir::Type", "member types">:$elementTypes, StringRefParameter<>:$name);
 
-  // default storage class detail
-  let genStorageClass = 0;
-  let storageClass = "StructTypeStorage";
-
-  let assemblyFormat = "`<` $name `:` struct($elementTypes)`>`";
+  let assemblyFormat = "`<` $name `:` struct($isEvent, $elementTypes)`>`";
   let extraClassDeclaration = [{
     size_t getNumElementTypes() { return getElementTypes().size(); }
-  }];
-
-  let extraClassDefinition = [{
-    // define the get element types method, should be after invocation
-    ArrayRef<Type> $cppClass::getElementTypes() const {
-      return getImpl()->elementTypes;
-    }
-    StringRef $cppClass::getName() const {
-      return getImpl()->name;
-    }
   }];
 }
 
@@ -208,22 +194,15 @@ def AddOp : EP2_Op<"add",
 
   let arguments = (ins AnyInteger:$lhs, AnyInteger:$rhs);
   let results = (outs AnyInteger);
-
-  // Indicate that the operation has a custom parser and printer method.
-  let hasCustomAssemblyFormat = 1;
-
-  // Allow building an AddOp with from the two input operands.
-  let builders = [
-    OpBuilder<(ins "Value":$lhs, "Value":$rhs)>
-  ];
 }
 
 //===----------------------------------------------------------------------===//
 // FuncOp
 //===----------------------------------------------------------------------===//
 
+// Add bool to differentiate handlers/controllers.
 def FuncOp : EP2_Op<"func", [
-    FunctionOpInterface, IsolatedFromAbove
+    FunctionOpInterface, IsolatedFromAbove, CallableOpInterface
   ]> {
   let summary = "user defined function operation";
   let description = [{
@@ -256,7 +235,7 @@ def FuncOp : EP2_Op<"func", [
   >];
   let extraClassDeclaration = [{
     //===------------------------------------------------------------------===//
-    // FunctionOpInterface Methods
+    // CallableOpInterface Methods
     //===------------------------------------------------------------------===//
 
     /// Returns the argument types of this function.
@@ -364,6 +343,17 @@ def EmitOp : EP2_Op<"emit", [Pure]> {
 //===----------------------------------------------------------------------===//
 // LoadOp & StoreOp & Nop
 //===----------------------------------------------------------------------===//
+
+def LoadOp : EP2_Op<"load"> {
+  let summary = "Store variable to Ref";
+  let description = [{
+    Store an variable to a Ref. The variable could be a struct or a buffer.
+  }];
+
+  let arguments = (ins EP2_ContextRefType:$ref);
+  let results = (outs EP2_Type:$output);
+  // let hasVerifier = 1;
+}
 
 def StoreOp : EP2_Op<"store"> {
   let summary = "Store variable to Ref";

@@ -31,16 +31,17 @@ extern handler DMA_READ_REQ(atom at, context ctx, long addr, int size) {
     generate DMA_READ_CMPL{at, ctx, payload};
 }
 
-handler DMA_RECV_CMPL:receive_desc (context ctx, buf recv_buf) {
+handler DMA_READ_CMPL:receive_desc (context ctx, buf recv_buf) {
     Desc_Hdr desc;
     recv_buf.extract(desc); # Parse descriptor header
-    ctx.desc = desc; # Save Context
+    ctx.desc_addr = desc.data_addr;
+    ctx.desc_size = desc.size;
 
     # extern call - generate DMA_READ_CMPL, save call_tree, context
     generate DMA_READ_REQ:receive_payload_1 {ctx, desc.data_addr, 100}; 
 }
 
-# handler DMA_READ_CMPL:receive_payload_1 (context ctx , buf payload) {
-#     print();
-# }
+handler DMA_READ_REQ:receive_payload_1 (context ctx, long addr, int size) {
+    ctx.desc_addr = ctx.desc_addr + addr;
+}
 
