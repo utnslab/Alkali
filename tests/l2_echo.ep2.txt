@@ -10,7 +10,6 @@ extern handler NET_SEND (context ctx, buf packet) {
 ############## main program ###########
 
 struct eth_header_t {
-    int a;
     bits<48> dst_mac;
     bits<48> src_mac;
     bits<16> ether_type;
@@ -37,12 +36,20 @@ handler NET_RECV:process_packet (context ctx, buf packet) {
     eth_header_t eth_header;
     bits<48> tmp_mac;
     ip_header_t ip_header;
+    buf packet_out;
 
     packet.extract(eth_header);
     packet.extract(ip_header);
 
+    # swap src and dst mac
     tmp_mac = eth_header.src_mac;
     eth_header.src_mac = eth_header.dst_mac;
     eth_header.dst_mac = tmp_mac;
+
+    packet_out.emit(eth_header);
+    packet_out.emit(ip_header);
+    packet_out.emit(packet);
+
+    generate NET_SEND{ctx, packet_out};
     
 }

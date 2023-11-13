@@ -430,6 +430,16 @@ private:
       auto &target = operands[0];
       return builder.create<ExtractOp>(location, target.getType(), caller);
     }
+    // generate struct access
+    else if (callee == "emit") {
+      if (!caller || operands.size() != 1) {
+        emitError(location) << "callop: invalid emit";
+        return nullptr;
+      }
+      // TODO: update variable or add assignment
+      auto &target = operands[0];
+      return builder.create<EmitOp>(location, target.getType(), caller);
+    }
 
     // Otherwise this is a call to a user-defined function. Calls to
     // user-defined functions are mapped to a custom call that takes the callee

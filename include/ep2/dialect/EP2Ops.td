@@ -343,6 +343,21 @@ def ExtractOp : EP2_Op<"extract", [Pure]> {
 }
 
 //===----------------------------------------------------------------------===//
+// EmitOp
+//===----------------------------------------------------------------------===//
+
+def EmitOp : EP2_Op<"emit", [Pure]> {
+  let summary = "emit from buffer to variable";
+  let description = [{
+    Emit from a variable or struct to a buffer. The buffer will be modified;
+  }];
+
+  let arguments = (ins EP2_BufferType:$buffer);
+  let results = (outs EP2_Type:$output);
+  // let hasVerifier = 1;
+}
+
+//===----------------------------------------------------------------------===//
 // LoadOp & StoreOp & Nop
 //===----------------------------------------------------------------------===//
 
