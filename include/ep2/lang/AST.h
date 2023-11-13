@@ -30,6 +30,7 @@ namespace ep2 {
 /// A variable type with either name or shape information.
 struct VarType {
   std::string name;
+  std::int64_t length;
   std::vector<int64_t> shape;
 };
 

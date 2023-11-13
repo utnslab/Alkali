@@ -480,14 +480,46 @@ private:
                                             std::move(expr));
   }
 
+
+  /// Parse a typed variable declaration, with var length specified
+  std::unique_ptr<VarDeclExprAST>
+  parseTypedDeclaration(llvm::StringRef typeName, int64_t length, 
+                        bool requiresInitializer, const Location &loc) {
+    // Parse the variable name.
+    if (lexer.getCurToken() != tok_identifier)
+      return parseError<VarDeclExprAST>("name", "in variable declaration");
+    std::string id(lexer.getId());
+    lexer.getNextToken(); // eat id
+
+    // Parse the initializer.
+    std::unique_ptr<ExprAST> expr;
+    if (requiresInitializer) {
+      if (lexer.getCurToken() != '=')
+        return parseError<VarDeclExprAST>("initializer",
+                                          "in variable declaration");
+      lexer.consume(Token('='));
+      expr = parseExpression();
+    }
+
+    VarType type;
+    type.name = std::string(typeName);
+    type.length = length;
+    return std::make_unique<VarDeclExprAST>(loc, std::move(id), std::move(type),
+                                            std::move(expr));
+  }
+
   /// Parse a variable declaration, for either a tensor value or a struct value,
   /// with an optionally required initializer.
-  /// decl ::= var identifier [ type ] (= expr)?
+  /// decl ::= var identifier [ type ] (= expr)? 
+  /// decl ::= bits<num> identifier  (= expr)?
   /// decl ::= identifier identifier (= expr)?
   std::unique_ptr<VarDeclExprAST> parseDeclaration(bool requiresInitializer) {
     // Check to see if this is a 'var' declaration.
     if (lexer.getCurToken() == tok_var)
       return parseVarDeclaration(requiresInitializer);
+    
+    if(lexer.getCurToken() == tok_identifier && lexer.getId() == "bits")
+      return parseBitsDeclaration(requiresInitializer);
 
     // Parse the type name.
     if (lexer.getCurToken() != tok_identifier)
@@ -498,6 +530,41 @@ private:
 
     // Parse the rest of the declaration.
     return parseTypedDeclaration(typeName, requiresInitializer, loc);
+  }
+
+  /// Parse a bits declaration, for either a tensor value or a struct value,
+  /// with an optionally required initializer.
+  /// decl ::= bits<num> identifier  (= expr)?
+  std::unique_ptr<VarDeclExprAST>
+  parseBitsDeclaration(bool requiresInitializer) {
+    if (lexer.getId() != "bits")
+      return parseError<VarDeclExprAST>("bits", "to begin declaration");
+    
+    auto loc = lexer.getLastLocation();
+    std::string typeName(lexer.getId());
+    lexer.getNextToken(); // eat bits
+
+    if(lexer.getCurToken() != tok_angle_bracket_open)
+      return parseError<VarDeclExprAST>("<",
+                                        "after 'bits' declaration");
+    loc = lexer.getLastLocation();
+    lexer.getNextToken(); // eat <       
+
+    if (lexer.getCurToken() != tok_number)
+      return parseError<VarDeclExprAST>("num", "after 'bits<' declaration"); 
+    uint64_t bits_length = lexer.getValue();
+    loc = lexer.getLastLocation();
+    lexer.getNextToken(); // eat num 
+
+    if(lexer.getCurToken() != tok_angle_bracket_close)
+      return parseError<VarDeclExprAST>(">",
+                                        "after 'bits<num' declaration");
+    loc = lexer.getLastLocation();
+    lexer.getNextToken(); // eat > 
+
+    // Parse the rest of the declaration.
+    return parseTypedDeclaration(typeName, bits_length, requiresInitializer, loc);
+
   }
 
   /// Parse a variable declaration, it starts with a `var` keyword followed by
@@ -565,7 +632,14 @@ private:
         if (!ret)
           return nullptr;
         exprList->push_back(std::move(ret));
-      } else if (lexer.getCurToken() == tok_identifier && lexer.peekNextToken() == tok_identifier) {
+      } else if (lexer.getCurToken() == tok_identifier && lexer.getId() == "bits" && lexer.peekNextToken() == tok_angle_bracket_open) {
+        // bits<> declaration
+        auto bitsDecl = parseDeclaration(/*requiresInitializer=*/false);
+        if (!bitsDecl)
+          return nullptr;
+        exprList->push_back(std::move(bitsDecl));
+      }
+      else if (lexer.getCurToken() == tok_identifier && lexer.peekNextToken() == tok_identifier) {
         auto loc = lexer.getLastLocation();
         auto type = lexer.getId();
         lexer.consume(tok_identifier);

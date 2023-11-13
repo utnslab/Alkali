@@ -35,6 +35,8 @@ enum Token : int {
   tok_parenthese_close = ')',
   tok_bracket_open = '{',
   tok_bracket_close = '}',
+  tok_angle_bracket_open = '<',
+  tok_angle_bracket_close = '>',
   tok_sbracket_open = '[',
   tok_sbracket_close = ']',
   tok_colon = ':',

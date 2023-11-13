@@ -633,8 +633,10 @@ private:
   mlir::Type getType(const VarType &type, const Location &location) {
     if (!type.name.empty()) {
       // Handle builtin types
-      if (type.name == "long" || type.name == "int")
+      if (type.name == "long")
         return builder.getI64Type();
+      if (type.name == "int")
+        return builder.getI32Type();
       // TODO(zhiyuang): get rid of this. Find type for atom (should be easy) and context
       else if (type.name == "atom")
         return builder.getType<AtomType>();
@@ -642,6 +644,8 @@ private:
         return builder.getType<ContextType>();
       else if (type.name == "buf")
         return builder.getType<BufferType>();
+      else if (type.name == "bits")
+        return builder.getIntegerType(type.length);
 
 
       auto it = structMap.find(type.name);
