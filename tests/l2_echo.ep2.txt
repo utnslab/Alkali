@@ -1,8 +1,8 @@
 # Specify the functionality of the target archiecture
 
 
-event NET_RECV {context ctx; buf packet;}
-event NET_SEND{context ctx; buf packet;}
+extern event NET_RECV {context ctx; buf packet;}
+extern event NET_SEND{context ctx; buf packet;}
 
 extern handler NET_SEND (context ctx, buf packet) {
 }
@@ -51,5 +51,4 @@ handler NET_RECV:process_packet (context ctx, buf packet) {
     packet_out.emit(packet);
 
     generate NET_SEND{ctx, packet_out};
-    
 }
