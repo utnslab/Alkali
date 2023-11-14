@@ -138,7 +138,7 @@ public:
   VariableExprAST(Location loc, llvm::StringRef name)
       : ExprAST(Expr_Var, std::move(loc)), name(name) {}
 
-  llvm::StringRef getName() { return name; }
+  llvm::StringRef getName() const { return name; }
 
   /// LLVM style RTTI
   static bool classof(const ExprAST *c) { return c->getKind() == Expr_Var; }
@@ -153,13 +153,14 @@ public:
     path.push_back(std::move(name));
   }
 
+
   std::vector<std::unique_ptr<VariableExprAST>> &getPath() { return path; }
-  size_t getPathLength() { return path.size(); }
+  size_t getPathLength() const { return path.size(); }
   void append(std::unique_ptr<VariableExprAST> next) {
     path.push_back(std::move(next));
   }
   std::string print() {
-    std::string pathStr = "Path: ";
+    std::string pathStr = "";
     for (size_t i = 0 ; i < path.size(); i++) {
       pathStr += path[i]->getName();
       if (i != path.size() - 1) {

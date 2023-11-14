@@ -426,9 +426,26 @@ private:
         emitError(location) << "callop: invalid extract";
         return nullptr;
       }
-      // TODO: update variable or add assignment
       auto &target = operands[0];
-      return builder.create<ExtractOp>(location, target.getType(), caller);
+      auto extractOp = builder.create<ExtractOp>(location, target.getType(), caller);
+      // if its a value, update the SSA value
+      auto &targetAst = *call.getArgs()[0];
+      // single layer 
+      if (targetAst.getKind() == ExprAST::Expr_Path) {
+        auto &path = cast<PathExprAST>(targetAst);
+        if (path.getPathLength() == 1) {
+          auto varName = path.getPath()[0]->getName();
+          auto [_, decl] = symbolTable.lookup(varName);
+          symbolTable.insert(varName, {extractOp, decl});
+        }
+      } else if (targetAst.getKind() == ExprAST::Expr_Var) {
+        auto &var = cast<VariableExprAST>(targetAst);
+        auto varName = var.getName();
+        auto [_, decl] = symbolTable.lookup(varName);
+        symbolTable.insert(varName, {extractOp, decl});
+      }
+      // TODO(zhiyuang): else add access
+      return extractOp;
     }
     // generate struct access
     else if (callee == "emit") {
