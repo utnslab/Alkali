@@ -435,9 +435,37 @@ private:
         emitError(location) << "callop: invalid extract";
         return nullptr;
       }
+      auto &target = operands[0];
+      auto extractOp = builder.create<ExtractOp>(location, target.getType(), caller);
+      // if its a value, update the SSA value
+      auto &targetAst = *call.getArgs()[0];
+      // single layer 
+      if (targetAst.getKind() == ExprAST::Expr_Path) {
+        auto &path = cast<PathExprAST>(targetAst);
+        if (path.getPathLength() == 1) {
+          auto varName = path.getPath()[0]->getName();
+          auto [_, decl] = symbolTable.lookup(varName);
+          symbolTable.insert(varName, {extractOp, decl});
+        }
+      } else if (targetAst.getKind() == ExprAST::Expr_Var) {
+        auto &var = cast<VariableExprAST>(targetAst);
+        auto varName = var.getName();
+        auto [_, decl] = symbolTable.lookup(varName);
+        symbolTable.insert(varName, {extractOp, decl});
+      }
+      // TODO(zhiyuang): else add access
+      return extractOp;
+    }
+    // generate struct access
+    else if (callee == "emit") {
+      if (!caller || operands.size() != 1) {
+        emitError(location) << "callop: invalid emit";
+        return nullptr;
+      }
       // TODO: update variable or add assignment
       auto &target = operands[0];
-      return builder.create<ExtractOp>(location, target.getType(), caller);
+      builder.create<EmitOp>(location, caller, target);
+      return builder.create<NopOp>(location);
     }
 
     // Otherwise this is a call to a user-defined function. Calls to
@@ -642,8 +670,10 @@ private:
   mlir::Type getType(const VarType &type, const Location &location) {
     if (!type.name.empty()) {
       // Handle builtin types
-      if (type.name == "long" || type.name == "int")
+      if (type.name == "long")
         return builder.getI64Type();
+      if (type.name == "int")
+        return builder.getI32Type();
       // TODO(zhiyuang): get rid of this. Find type for atom (should be easy) and context
       else if (type.name == "atom")
         return builder.getType<AtomType>();
@@ -651,6 +681,8 @@ private:
         return builder.getType<ContextType>();
       else if (type.name == "buf")
         return builder.getType<BufferType>();
+      else if (type.name == "bits")
+        return builder.getIntegerType(type.length);
 
 
       auto it = structMap.find(type.name);

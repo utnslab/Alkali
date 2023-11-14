@@ -346,6 +346,22 @@ def ExtractOp : EP2_Op<"extract", [Pure]> {
 }
 
 //===----------------------------------------------------------------------===//
+// EmitOp
+//===----------------------------------------------------------------------===//
+
+def EmitOp : EP2_Op<"emit", [Pure]> {
+  let summary = "emit op to buffer";
+  let description = [{
+    Emit from a variable or struct to a buffer. The buffer will be modified;
+    The semantic is to prepend the header to the buffer
+
+  }];
+
+  let arguments = (ins EP2_BufferType:$buffer, EP2_Type:$value);
+  // let hasVerifier = 1;
+}
+
+//===----------------------------------------------------------------------===//
 // LoadOp & StoreOp & Nop
 //===----------------------------------------------------------------------===//
 
@@ -366,6 +382,10 @@ def NopOp : EP2_Op<"nop"> {
   }];
 
   let results = (outs NoneType:$output);
+
+  let builders = [
+    OpBuilder<(ins), [{ build($_builder, $_state, $_builder.getNoneType()); }]>
+  ];
   // let hasVerifier = 1;
 }
 
