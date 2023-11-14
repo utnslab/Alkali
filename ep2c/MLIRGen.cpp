@@ -438,7 +438,8 @@ private:
       }
       // TODO: update variable or add assignment
       auto &target = operands[0];
-      return builder.create<EmitOp>(location, target.getType(), caller);
+      builder.create<EmitOp>(location, caller, target);
+      return builder.create<NopOp>(location);
     }
 
     // Otherwise this is a call to a user-defined function. Calls to
