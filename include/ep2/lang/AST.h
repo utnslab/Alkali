@@ -23,6 +23,7 @@
 #include "llvm/Support/Casting.h"
 #include <utility>
 #include <vector>
+#include <unordered_map>
 #include <optional>
 #include <string>
 
@@ -379,13 +380,15 @@ public:
 /// This class represents a list of functions to be processed together
 class ModuleAST {
   std::vector<std::unique_ptr<RecordAST>> records;
+  std::unordered_map<std::string, VarType> contextFields;
 
 public:
-  ModuleAST(std::vector<std::unique_ptr<RecordAST>> records)
-      : records(std::move(records)) {}
+  ModuleAST(std::vector<std::unique_ptr<RecordAST>> records, std::unordered_map<std::string, VarType> contextFields)
+      : records(std::move(records)), contextFields(std::move(contextFields)) {}
 
   auto begin() { return records.begin(); }
   auto end() { return records.end(); }
+  VarType getTypeCtxField(const std::string& k) { return contextFields[k]; }
 };
 
 void dump(ModuleAST &);

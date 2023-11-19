@@ -70,6 +70,7 @@ public:
     // We create an empty MLIR module and codegen functions one at a time and
     // add them to the module.
     theModule = mlir::ModuleOp::create(builder.getUnknownLoc());
+    this->modAST = &moduleAST;
 
     for (auto &record : moduleAST) {
       if (FunctionAST *funcAST = llvm::dyn_cast<FunctionAST>(record.get())) {
@@ -116,16 +117,14 @@ private:
                                  std::pair<mlir::Value, VarDeclExprAST *>>;
 
   /// A mapping for the functions that have been code generated to MLIR.
+  ModuleAST* modAST;
+
+  /// A mapping for the functions that have been code generated to MLIR.
   llvm::StringMap<mlir::ep2::FuncOp> functionMap;
 
   /// A mapping for named struct types to the underlying MLIR type and the
   /// original AST node.
   llvm::StringMap<std::pair<mlir::Type, StructAST *>> structMap;
-
-  /// A mapping for context field names to types 
-  llvm::StringMap<mlir::Type> contextTypeMap;
-  bool inAssignment = false;
-  mlir::Type assignmentRhsType;
 
   /// Helper conversion for a ep2 AST location to an MLIR location.
   mlir::Location loc(const Location &loc) {
@@ -306,10 +305,7 @@ private:
     if (!rhs)
       return nullptr;
 
-    inAssignment = true;
-    assignmentRhsType = rhs.getType();
     mlir::Value lhs = mlirGen(*binop.getLHS(), binop.getOp() == '=');
-    inAssignment = false;
 
     if (!lhs)
       return nullptr;
@@ -519,23 +515,9 @@ private:
       } else {
         // If it is a context..
         if (isa<ContextType>(value.getType())) {
-          mlir::Type assnType;
-          if (contextTypeMap.find(curVarExpr->getName()) != contextTypeMap.end()) {
-            assnType = contextTypeMap[curVarExpr->getName()];
-          } else if (inAssignment) {
-            assnType = assignmentRhsType;
-          } else {
-            assnType = builder.getType<AnyType>();
-          }
-          contextTypeMap.try_emplace(curVarExpr->getName(), assnType);
-
+          auto assnType = getType(modAST->getTypeCtxField(curVarExpr->getName().str()), path.loc());
           auto internalType = builder.getType<ContextRefType>(assnType);
-          auto ctx_ref = builder.create<ContextRefOp>(location, internalType, curVarExpr->getName(), value);
-          if (!lhs) {
-            value = builder.create<LoadOp>(location, assnType, ctx_ref);
-          } else {
-            value = ctx_ref;
-          }
+          value = builder.create<ContextRefOp>(location, internalType, curVarExpr->getName(), value);
           continue;
         }
         // else, c++ dot access
@@ -564,6 +546,17 @@ private:
 
   /// Dispatch codegen for the right expression subclass using RTTI.
   mlir::Value mlirGen(ExprAST &expr, bool lhs = false) {
+    auto res = mlirGenExprHelper(expr, lhs);
+    if (!lhs) {
+      mlir::Operation* op = res.getDefiningOp();
+      if (op != nullptr && isa<ContextRefOp>(op)) {
+        res = builder.create<LoadOp>(loc(expr.loc()), cast<ContextRefOp>(op).getValue().getType().getValueType(), res);
+      }
+    }
+    return res;
+  }
+
+  mlir::Value mlirGenExprHelper(ExprAST &expr, bool lhs) {
     switch (expr.getKind()) {
     case ep2::ExprAST::Expr_BinOp:
       return mlirGen(cast<BinaryExprAST>(expr));

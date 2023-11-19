@@ -45,6 +45,8 @@ public:
     // Parse functions and structs one at a time and accumulate in this vector.
     // module ::= funcion | struct | event | handler | controller
     std::vector<std::unique_ptr<RecordAST>> records;
+    std::unordered_map<std::string, VarType> contextFields;
+
     while (true) {
       std::unique_ptr<RecordAST> record;
       auto tok = lexer.getCurToken();
@@ -58,7 +60,17 @@ public:
         record = parseDefinition(tok);
         break;
       // Struct types
-      case tok_struct: // FALL THROUGH
+      case tok_struct: {
+        record = parseStruct(tok);
+        StructAST* str = static_cast<StructAST*>(record.get());
+        if (str->getName() == "context") {
+          for (const auto& field : str->getVariables()) {
+            contextFields.emplace(field->getName().str(), field->getType());
+          }
+          continue;
+        }
+        break;
+      }
       case tok_event:
         record = parseStruct(tok);
         break;
@@ -80,7 +92,7 @@ public:
     if (lexer.getCurToken() != tok_eof)
       return parseError<ModuleAST>("nothing", "at end of module");
 
-    return std::make_unique<ModuleAST>(std::move(records));
+    return std::make_unique<ModuleAST>(std::move(records), std::move(contextFields));
   }
 
 private:
