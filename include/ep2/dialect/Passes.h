@@ -24,6 +24,7 @@
 
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
+#include "mlir/Dialect/EmitC/IR/EmitC.h"
 
 #include "ep2/dialect/Dialect.h"
 
@@ -70,7 +71,7 @@ struct FunctionRewritePass :
         public PassWrapper<FunctionRewritePass, OperationPass<ModuleOp>> {
     void runOnOperation() final;
     void getDependentDialects(DialectRegistry &registry) const override {
-        registry.insert<EP2Dialect, func::FuncDialect, LLVM::LLVMDialect>();
+        registry.insert<EP2Dialect, func::FuncDialect, LLVM::LLVMDialect, emitc::EmitCDialect>();
     }
     StringRef getArgument() const final { return "ep2-function-rewrite"; }
     StringRef getDescription() const final { return "Rewrite EP2 Function to generate to functions"; }
@@ -95,7 +96,8 @@ struct HandlerDependencyAnalysis {
 };
 
 struct ContextAnalysis {
-  std::vector<llvm::StringMap<mlir::Type>> disj_contexts;
+  std::unordered_map<mlir::Operation*, mlir::Operation*> disj_groups;
+  std::unordered_map<mlir::Operation*, llvm::StringMap<std::pair<int, mlir::Type>>> disj_contexts;
 
   ContextAnalysis(Operation* op, AnalysisManager& am);
 };

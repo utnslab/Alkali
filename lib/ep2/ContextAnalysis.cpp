@@ -1,5 +1,3 @@
-
-#include "mlir/IR/BuiltinDialect.h"
 #include "ep2/dialect/Dialect.h"
 #include "ep2/dialect/Passes.h"
 
@@ -30,16 +28,19 @@ ContextAnalysis::ContextAnalysis(Operation* module, AnalysisManager& am) {
       continue;
     }
 
-    this->disj_contexts.emplace_back();
-    llvm::StringMap<mlir::Type>& fields = this->disj_contexts.back();
+    llvm::StringMap<std::pair<int, mlir::Type>> fields;
+    int fieldPlace = 0;
 
     for (EquivalenceClasses<Operation*>::member_iterator MI = ec.member_begin(I); MI != ec.member_end(); ++MI) {
       (*MI)->walk<WalkOrder::PreOrder>([&](ContextRefOp op) {
         llvm::StringRef ref_name = op->getAttr("name").cast<StringAttr>().getValue();
-        auto ty = op->getResult(0).getType().cast<ContextRefType>().getValueType();
-        fields.try_emplace(ref_name, ty);
+        fields.try_emplace(ref_name, std::make_pair<int, mlir::Type>(fieldPlace++, op->getResult(0).getType().cast<ContextRefType>().getValueType()));
+        for (mlir::Operation* lsUse : op->getUsers()) {
+          this->disj_groups.emplace(lsUse, *(ec.findLeader(I)));
+        }
       });
     }
+    this->disj_contexts.emplace(*(ec.findLeader(I)), fields);
   }
 }
 

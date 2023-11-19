@@ -49,6 +49,7 @@ HandlerDependencyAnalysis::HandlerDependencyAnalysis(Operation* module) {
           }
 
           if (atom_pos != -1) {
+            
             /* by definition, return type is an event. Assuming std compiler passes like copy propagation,
                constant folding, etc have already run, the def of the return value will be something
                defining a struct- either an InitOp or StructConstantOp. */
@@ -74,6 +75,7 @@ HandlerDependencyAnalysis::HandlerDependencyAnalysis(Operation* module) {
                   this->graph[curr_func.getOperation()].emplace_back(MUST, event_handlers[call_class][atom]);
                 }
               } else {
+                
                 // dynamic dependency.
                 if (event_handlers.find(call_class) != event_handlers.end()) {
                   llvm::StringRef atom_name = curr_func->hasAttr("atom") ? curr_func->getAttr("atom").cast<StringAttr>().getValue() : "";
