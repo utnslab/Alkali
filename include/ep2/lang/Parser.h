@@ -791,7 +791,7 @@ private:
 
     // Parse: decl+
     std::vector<std::unique_ptr<VarDeclExprAST>> decls;
-    do {
+    while (lexer.getCurToken() != '}') {
       auto decl = parseDeclaration(/*requiresInitializer=*/false);
       if (!decl)
         return nullptr;
@@ -801,7 +801,7 @@ private:
         return parseError<StructAST>(";",
                                      "after variable in struct definition");
       lexer.consume(Token(';'));
-    } while (lexer.getCurToken() != '}');
+    }
 
     // Parse: '}'
     lexer.consume(Token('}'));

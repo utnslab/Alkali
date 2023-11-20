@@ -10,6 +10,7 @@ add_mlir_dialect_library(MLIREP2
         FunctionRewritePass.cpp
         HandlerDependencyAnalysis.cpp
         ContextAnalysis.cpp
+        AtomAnalysis.cpp
 
         DEPENDS
         MLIREP2OpsIncGen

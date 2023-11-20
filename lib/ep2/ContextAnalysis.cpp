@@ -22,19 +22,23 @@ ContextAnalysis::ContextAnalysis(Operation* module, AnalysisManager& am) {
       ec.unionSets(n_next.first, edge.second);
     }
   }
-  
+
   for (EquivalenceClasses<Operation*>::iterator I = ec.begin(), E = ec.end(); I != E; ++I) {
     if (!I->isLeader()) {
       continue;
     }
 
-    llvm::StringMap<std::pair<int, mlir::Type>> fields;
-    int fieldPlace = 0;
+    llvm::StringMap<ContextField> fields;
+    size_t fieldPlace = 0;
 
     for (EquivalenceClasses<Operation*>::member_iterator MI = ec.member_begin(I); MI != ec.member_end(); ++MI) {
       (*MI)->walk<WalkOrder::PreOrder>([&](ContextRefOp op) {
         llvm::StringRef ref_name = op->getAttr("name").cast<StringAttr>().getValue();
-        fields.try_emplace(ref_name, std::make_pair<int, mlir::Type>(fieldPlace++, op->getResult(0).getType().cast<ContextRefType>().getValueType()));
+        auto ty = op->getResult(0).getType().cast<ContextRefType>().getValueType();
+        assert(ty.isIntOrFloat() && ty.getIntOrFloatBitWidth() % 8 == 0);
+
+        ContextField cf(fieldPlace++, ty.getIntOrFloatBitWidth() / 8, ty);
+        fields.try_emplace(ref_name, cf);
         for (mlir::Operation* lsUse : op->getUsers()) {
           this->disj_groups.emplace(lsUse, *(ec.findLeader(I)));
         }

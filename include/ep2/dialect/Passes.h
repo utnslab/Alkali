@@ -96,10 +96,25 @@ struct HandlerDependencyAnalysis {
 };
 
 struct ContextAnalysis {
+  struct ContextField {
+    size_t pos;
+    size_t offs;
+    mlir::Type ty;
+
+    ContextField() {}
+    ContextField(size_t p, size_t o, mlir::Type t) : pos(p), offs(o), ty(t) {}
+  };
+
   std::unordered_map<mlir::Operation*, mlir::Operation*> disj_groups;
-  std::unordered_map<mlir::Operation*, llvm::StringMap<std::pair<int, mlir::Type>>> disj_contexts;
+  std::unordered_map<mlir::Operation*, llvm::StringMap<ContextField>> disj_contexts;
 
   ContextAnalysis(Operation* op, AnalysisManager& am);
+};
+
+struct AtomAnalysis {
+  llvm::StringMap<size_t> atomToNum;
+
+  AtomAnalysis(Operation* op, AnalysisManager& am);
 };
 
 } // namespace ep2

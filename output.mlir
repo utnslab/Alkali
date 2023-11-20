@@ -17,7 +17,7 @@ module {
     %0 = "ep2.init"() : () -> !ep2.struct<"Desc_Hdr" : isEvent = false, elementTypes = i64, i64>
     %1 = "ep2.extract"(%arg1) : (!ep2.buf) -> !ep2.struct<"Desc_Hdr" : isEvent = false, elementTypes = i64, i64>
     %2 = "ep2.context_ref"(%arg0) <{name = "desc"}> : (!ep2.context) -> !ep2.conref<i64>
-    "ep2.store"(%2, %0) : (!ep2.conref<i64>, !ep2.struct<"Desc_Hdr" : isEvent = false, elementTypes = i64, i64>) -> ()
+    "ep2.store"(%2, %1) : (!ep2.conref<i64>, !ep2.struct<"Desc_Hdr" : isEvent = false, elementTypes = i64, i64>) -> ()
     %3 = "ep2.nop"() : () -> none
     %4 = "ep2.constant"() <{value = "receive_payload_1"}> : () -> !ep2.atom
     %5 = ep2.struct_access %0[0] : <"Desc_Hdr" : isEvent = false, elementTypes = i64, i64> -> i64

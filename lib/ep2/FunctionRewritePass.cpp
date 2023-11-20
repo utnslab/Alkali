@@ -19,7 +19,12 @@ namespace {
 
 // convert const op
 struct ConstPattern : public OpConversionPattern<ep2::ConstantOp> {
-  using OpConversionPattern<ep2::ConstantOp>::OpConversionPattern;
+  AtomAnalysis &analyzer;
+  ConstPattern(TypeConverter &converter, MLIRContext *context,
+                  AtomAnalysis &analyzer)
+      : OpConversionPattern<ep2::ConstantOp>(converter, context),
+        analyzer(analyzer) {}
+
   LogicalResult
   matchAndRewrite(ep2::ConstantOp initOp, OpAdaptor adaptor,
                   ConversionPatternRewriter &rewriter) const final {
@@ -29,8 +34,10 @@ struct ConstPattern : public OpConversionPattern<ep2::ConstantOp> {
     // rewrtie
     auto resType = typeConverter->convertType(fromType);
     auto value = adaptor.getValue();
-    if (fromType.isa<ep2::AtomType>())
-      value = rewriter.getI32IntegerAttr(0);
+    if (fromType.isa<ep2::AtomType>()) {
+      size_t v = analyzer.atomToNum[initOp.getValue().cast<mlir::StringAttr>().getValue()];
+      value = rewriter.getI32IntegerAttr({v});
+    }
 
     rewriter.replaceOpWithNewOp<emitc::ConstantOp>(initOp, resType, value);
     return success();
@@ -73,9 +80,9 @@ struct StorePattern : public OpConversionPattern<ep2::StoreOp> {
     auto refOp = dyn_cast<ep2::ContextRefOp>(storeOp.getOperand(0).getDefiningOp());
     auto contextId = rewriter.getRemappedValue(refOp.getOperand());
 
-    std::pair<int, mlir::Type> place = analyzer.disj_contexts[analyzer.disj_groups[storeOp]][refOp.getName()];
+    ContextAnalysis::ContextField place = analyzer.disj_contexts[analyzer.disj_groups[storeOp]][refOp.getName()];
     llvm::SmallVector<Type> resTypes = {};
-    mlir::ArrayAttr args = rewriter.getI32ArrayAttr({place.first});
+    mlir::ArrayAttr args = rewriter.getI32ArrayAttr({place.offs});
     mlir::ArrayAttr templ_args;
 
     rewriter.replaceOpWithNewOp<emitc::CallOp>(storeOp, resTypes, rewriter.getStringAttr("__ep2_rt_wr"), args, templ_args, ValueRange{contextId, adaptor.getValue()});
@@ -330,8 +337,8 @@ struct FunctionPattern : public OpConversionPattern<ep2::FuncOp> {
 void FunctionRewritePass::runOnOperation() {
   // install analysis
   LowerStructAnalysis &lowerStructAnalysis = getAnalysis<LowerStructAnalysis>();
-
   ContextAnalysis &contextAnalysis = getAnalysis<ContextAnalysis>();
+  AtomAnalysis &atomAnalysis = getAnalysis<AtomAnalysis>();
 
   // install functions
   auto builder = OpBuilder(getOperation());
@@ -395,9 +402,11 @@ void FunctionRewritePass::runOnOperation() {
 
   // apply rules
   mlir::RewritePatternSet patterns(&getContext());
-  patterns.add<ConstPattern, CallPattern, ReturnPattern, ControllerPattern,
+  patterns.add<CallPattern, ReturnPattern, ControllerPattern,
                ContextRefPattern, InitPattern, StructAccessPattern, ExtractPattern>(
       typeConverter, &getContext());
+  patterns.add<ConstPattern>(typeConverter, &getContext(),
+                                atomAnalysis);
   patterns.add<StorePattern>(typeConverter, &getContext(),
                                 contextAnalysis);
   patterns.add<FunctionPattern>(typeConverter, &getContext(),
