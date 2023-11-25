@@ -248,7 +248,7 @@ void ASTDumper::dump(InitExprAST *node) {
 /// Print a struct.
 void ASTDumper::dump(StructAST *node) {
   INDENT();
-  llvm::errs() << "Struct: " << node->getName() << " " << loc(node) << "\n";
+  llvm::errs() << (node->isEvent() ? "Event" : "Struct") << ": " << node->getName() << " " << loc(node) << "\n";
 
   {
     INDENT();

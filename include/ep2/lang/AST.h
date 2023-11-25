@@ -23,6 +23,7 @@
 #include "llvm/Support/Casting.h"
 #include <utility>
 #include <vector>
+#include <unordered_map>
 #include <optional>
 #include <string>
 
@@ -351,14 +352,15 @@ public:
 
 /// This class represents a struct definition.
 class StructAST : public RecordAST {
+  bool isEvent_;
   Location location;
   std::string name;
   std::vector<std::unique_ptr<VarDeclExprAST>> variables;
 
 public:
-  StructAST(Location location, const std::string &name,
+  StructAST(bool isEvent_, Location location, const std::string &name,
             std::vector<std::unique_ptr<VarDeclExprAST>> variables)
-      : RecordAST(Record_Struct), location(std::move(location)), name(name),
+      : RecordAST(Record_Struct), isEvent_(isEvent_), location(std::move(location)), name(name),
         variables(std::move(variables)) {}
 
   const Location &loc() { return location; }
@@ -371,42 +373,22 @@ public:
   static bool classof(const RecordAST *r) {
     return r->getKind() == Record_Struct;
   }
-};
 
-/// @brief This class represents a event definition
-class EventAST : public RecordAST {
-  Location location;
-  std::string name;
-  std::vector<std::unique_ptr<VarDeclExprAST>> variables;
-
-public:
-  EventAST(Location location, const std::string &name,
-            std::vector<std::unique_ptr<VarDeclExprAST>> variables)
-      : RecordAST(Record_Struct), location(std::move(location)), name(name),
-        variables(std::move(variables)) {}
-
-  const Location &loc() { return location; }
-  llvm::StringRef getName() const { return name; }
-  llvm::ArrayRef<std::unique_ptr<VarDeclExprAST>> getVariables() {
-    return variables;
-  }
-
-  /// LLVM style RTTI
-  static bool classof(const RecordAST *r) {
-    return r->getKind() == Record_Event;
-  }
+  bool isEvent() { return isEvent_; }
 };
 
 /// This class represents a list of functions to be processed together
 class ModuleAST {
   std::vector<std::unique_ptr<RecordAST>> records;
+  std::unordered_map<std::string, VarType> contextFields;
 
 public:
-  ModuleAST(std::vector<std::unique_ptr<RecordAST>> records)
-      : records(std::move(records)) {}
+  ModuleAST(std::vector<std::unique_ptr<RecordAST>> records, std::unordered_map<std::string, VarType> contextFields)
+      : records(std::move(records)), contextFields(std::move(contextFields)) {}
 
   auto begin() { return records.begin(); }
   auto end() { return records.end(); }
+  VarType getTypeCtxField(const std::string& k) { return contextFields[k]; }
 };
 
 void dump(ModuleAST &);

@@ -14,6 +14,9 @@
 #define EP2_PASSES_H
 
 #include <memory>
+#include <vector>
+#include <utility>
+#include <unordered_map>
 
 #include "mlir/Pass/Pass.h"
 #include "mlir/Pass/PassManager.h"
@@ -21,6 +24,7 @@
 
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
+#include "mlir/Dialect/EmitC/IR/EmitC.h"
 
 #include "ep2/dialect/Dialect.h"
 
@@ -49,17 +53,17 @@ struct LowerStructAnalysis {
 ///////////////////
 // Nop Elimination Pass
 struct NopEliminationPass : public PassWrapper<NopEliminationPass, OperationPass<>> {
-    void runOnOperation() final;
-    void getDependentDialects(DialectRegistry &registry) const override {
-        registry.insert<EP2Dialect>();
-    }
-    StringRef getArgument() const final { return "ep2-nop-elim"; }
-    StringRef getDescription() const final { return "Eliminate EP2 Nop"; }
+  void runOnOperation() final;
+  void getDependentDialects(DialectRegistry &registry) const override {
+      registry.insert<EP2Dialect>();
+  }
+  StringRef getArgument() const final { return "ep2-nop-elim"; }
+  StringRef getDescription() const final { return "Eliminate EP2 Nop"; }
 };
 
 // inline void registerAllocationAnnotationPass() {
 inline void registerNopEliminationPass() {
-    PassRegistration<NopEliminationPass>();
+  PassRegistration<NopEliminationPass>();
 }
 
 // Function Rewrite Pass
@@ -67,7 +71,7 @@ struct FunctionRewritePass :
         public PassWrapper<FunctionRewritePass, OperationPass<ModuleOp>> {
     void runOnOperation() final;
     void getDependentDialects(DialectRegistry &registry) const override {
-        registry.insert<EP2Dialect, func::FuncDialect, LLVM::LLVMDialect>();
+        registry.insert<EP2Dialect, func::FuncDialect, LLVM::LLVMDialect, emitc::EmitCDialect>();
     }
     StringRef getArgument() const final { return "ep2-function-rewrite"; }
     StringRef getDescription() const final { return "Rewrite EP2 Function to generate to functions"; }
@@ -81,6 +85,36 @@ struct LowerToLLVMPass : public PassWrapper<LowerToLLVMPass, OperationPass<Modul
     }
     StringRef getArgument() const final { return "ep2-lower-to-llvm"; }
     StringRef getDescription() const final { return "Lower EP2 to LLVM"; }
+};
+
+// Handler dependency analysis pass
+struct HandlerDependencyAnalysis {
+  enum EdgeType { MUST, MAY };
+  std::unordered_map<Operation*, std::vector<std::pair<EdgeType, Operation*>>> graph;
+
+  HandlerDependencyAnalysis(Operation* op);
+};
+
+struct ContextAnalysis {
+  struct ContextField {
+    size_t pos;
+    size_t offs;
+    mlir::Type ty;
+
+    ContextField() {}
+    ContextField(size_t p, size_t o, mlir::Type t) : pos(p), offs(o), ty(t) {}
+  };
+
+  std::unordered_map<mlir::Operation*, mlir::Operation*> disj_groups;
+  std::unordered_map<mlir::Operation*, llvm::StringMap<ContextField>> disj_contexts;
+
+  ContextAnalysis(Operation* op, AnalysisManager& am);
+};
+
+struct AtomAnalysis {
+  llvm::StringMap<size_t> atomToNum;
+
+  AtomAnalysis(Operation* op, AnalysisManager& am);
 };
 
 } // namespace ep2

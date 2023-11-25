@@ -13,10 +13,16 @@ namespace ep2 {
 void NopEliminationPass::runOnOperation() {
     auto module = getOperation();
     // Fill
+
+    module->walk([&](NopOp op) {
+      if (op->getUsers().empty()) {
+        op->erase();
+      }
+    });
 }
 
 std::unique_ptr<Pass> createNopEliminationPass() {
-    return std::make_unique<NopEliminationPass>();
+  return std::make_unique<NopEliminationPass>();
 }
 
 }

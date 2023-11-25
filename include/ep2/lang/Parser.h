@@ -45,6 +45,8 @@ public:
     // Parse functions and structs one at a time and accumulate in this vector.
     // module ::= funcion | struct | event | handler | controller
     std::vector<std::unique_ptr<RecordAST>> records;
+    std::unordered_map<std::string, VarType> contextFields;
+
     while (true) {
       std::unique_ptr<RecordAST> record;
       auto tok = lexer.getCurToken();
@@ -58,7 +60,17 @@ public:
         record = parseDefinition(tok);
         break;
       // Struct types
-      case tok_struct: // FALL THROUGH
+      case tok_struct: {
+        record = parseStruct(tok);
+        StructAST* str = static_cast<StructAST*>(record.get());
+        if (str->getName() == "context") {
+          for (const auto& field : str->getVariables()) {
+            contextFields.emplace(field->getName().str(), field->getType());
+          }
+          continue;
+        }
+        break;
+      }
       case tok_event:
         record = parseStruct(tok);
         break;
@@ -80,7 +92,7 @@ public:
     if (lexer.getCurToken() != tok_eof)
       return parseError<ModuleAST>("nothing", "at end of module");
 
-    return std::make_unique<ModuleAST>(std::move(records));
+    return std::make_unique<ModuleAST>(std::move(records), std::move(contextFields));
   }
 
 private:
@@ -689,6 +701,7 @@ private:
     if (lexer.getCurToken() != tok_identifier)
       return parseError<PrototypeAST>("function name", "in prototype");
 
+    // TODO: same name for controller and handler leads to conflict in MLIR code.
     std::string fnName(lexer.getId());
     lexer.consume(tok_identifier);
     
@@ -778,7 +791,7 @@ private:
 
     // Parse: decl+
     std::vector<std::unique_ptr<VarDeclExprAST>> decls;
-    do {
+    while (lexer.getCurToken() != '}') {
       auto decl = parseDeclaration(/*requiresInitializer=*/false);
       if (!decl)
         return nullptr;
@@ -788,15 +801,11 @@ private:
         return parseError<StructAST>(";",
                                      "after variable in struct definition");
       lexer.consume(Token(';'));
-    } while (lexer.getCurToken() != '}');
+    }
 
     // Parse: '}'
     lexer.consume(Token('}'));
-
-    if (token_type == tok_struct)
-      return std::make_unique<StructAST>(loc, name, std::move(decls));
-    else
-      return std::make_unique<EventAST>(loc, name, std::move(decls));
+    return std::make_unique<StructAST>(token_type == tok_event, loc, name, std::move(decls));
   }
 
   /// Get the precedence of the pending binary operator token.
