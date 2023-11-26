@@ -328,7 +328,7 @@ def ExtractOp : EP2_Op<"extract", [Pure]> {
 // EmitOp
 //===----------------------------------------------------------------------===//
 
-def EmitOp : EP2_Op<"emit", [Pure]> {
+def EmitOp : EP2_Op<"emit"> {
   let summary = "emit op to buffer";
   let description = [{
     Emit from a variable or struct to a buffer. The buffer will be modified;
@@ -365,7 +365,7 @@ def StoreOp : EP2_Op<"store"> {
   // let hasVerifier = 1;
 }
 
-def NopOp : EP2_Op<"nop"> {
+def NopOp : EP2_Op<"nop", [Pure]> {
   let summary = "No operation";
   let description = [{
     No operation. Make type checker happy in many cases.
@@ -460,7 +460,7 @@ def ReturnOp : EP2_Op<"return", [Pure, HasParent<"FuncOp">,
 }
 
 //===----------------------------------------------------------------------===//
-// StructAccessOp
+// StructAccessOp & StructUpdateOp
 //===----------------------------------------------------------------------===//
 
 def StructAccessOp : EP2_Op<"struct_access", [Pure]> {
@@ -483,6 +483,21 @@ def StructAccessOp : EP2_Op<"struct_access", [Pure]> {
 
   // Indicate that additional verification for this operation is necessary.
   let hasVerifier = 1;
+  // Set the folder bit so that we can fold constant accesses.
+  // let hasFolder = 1;
+}
+
+def StructUpdateOp : EP2_Op<"struct_update", [Pure]> {
+  let summary = "struct update";
+  let description = [{
+    update an element in a struct, like LLVM gep
+  }];
+
+  let arguments = (ins EP2_StructType:$input, I64Attr:$index, EP2_Type:$newValue);
+  let results = (outs EP2_StructType:$output);
+
+  // Indicate that additional verification for this operation is necessary.
+  // let hasVerifier = 1;
   // Set the folder bit so that we can fold constant accesses.
   // let hasFolder = 1;
 }
