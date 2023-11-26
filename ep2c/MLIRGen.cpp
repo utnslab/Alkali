@@ -141,6 +141,24 @@ private:
     return mlir::success();
   }
 
+  // Update the symbol table with the new value
+  void update(ExprAST &targetAst, mlir::Value value) {
+      if (targetAst.getKind() == ExprAST::Expr_Path) {
+        auto &path = cast<PathExprAST>(targetAst);
+
+        // if (path.getPathLength() == 1) {
+        auto varName = path.getPath()[0]->getName();
+        auto [_, decl] = symbolTable.lookup(varName);
+        symbolTable.insert(varName, {value, decl});
+        // }
+      } else if (targetAst.getKind() == ExprAST::Expr_Var) {
+        auto &var = cast<VariableExprAST>(targetAst);
+        auto varName = var.getName();
+        auto [_, decl] = symbolTable.lookup(varName);
+        symbolTable.insert(varName, {value, decl});
+      }
+  }
+
   /// ===========
   ///  mlirGen functions. Per-node code gen
   /// ===========
@@ -319,8 +337,25 @@ private:
     case '*':
       return builder.create<MulOp>(location, lhs, rhs);
     case '=':
-      builder.create<StoreOp>(location, lhs, rhs);
-      return builder.create<NopOp>(location, builder.getNoneType());
+      if (isa<mlir::ep2::ContextRefOp>(lhs.getDefiningOp())) {
+        builder.create<StoreOp>(location, lhs, rhs);
+        return builder.create<NopOp>(location, builder.getNoneType());
+      } else if (isa<StructAccessOp>(lhs.getDefiningOp())) {
+        auto op = cast<StructAccessOp>(lhs.getDefiningOp());
+        auto value = builder.create<StructUpdateOp>(location,
+         op.getInput().getType(), op.getInput(), op.getIndexAttr(), rhs);
+        update(*binop.getLHS(), value);
+        return value;
+      } else {
+        // TODO(zhiyuang): check this. Is there any other lvalue type?
+        // assign to a variable, update ssa value
+        update(*binop.getLHS(), rhs);
+        return rhs;
+      }
+
+      emitError(location, "Assignment: unknown lvalue type");
+      lhs.getDefiningOp()->dump();
+      return nullptr;
     }
 
     emitError(location, "invalid binary operator '") << binop.getOp() << "'";
@@ -447,23 +482,11 @@ private:
       // if its a value, update the SSA value
       auto &targetAst = *call.getArgs()[0];
       // single layer 
-      if (targetAst.getKind() == ExprAST::Expr_Path) {
-        auto &path = cast<PathExprAST>(targetAst);
-        if (path.getPathLength() == 1) {
-          auto varName = path.getPath()[0]->getName();
-          auto [_, decl] = symbolTable.lookup(varName);
-          symbolTable.insert(varName, {extractOp, decl});
-        }
-      } else if (targetAst.getKind() == ExprAST::Expr_Var) {
-        auto &var = cast<VariableExprAST>(targetAst);
-        auto varName = var.getName();
-        auto [_, decl] = symbolTable.lookup(varName);
-        symbolTable.insert(varName, {extractOp, decl});
-      }
+      update(targetAst, extractOp);
       // TODO(zhiyuang): else add access
       return extractOp;
     }
-    // generate struct access
+    // generate struct write
     else if (callee == "emit") {
       if (!caller || operands.size() != 1) {
         emitError(location) << "callop: invalid emit";
@@ -496,7 +519,7 @@ private:
   }
 
   // return either a struct access op or a variable op
-  mlir::Value getPath(PathExprAST &path, bool lhs, bool limit = false) {
+  mlir::Value getPath(PathExprAST &path, bool lvalue, bool limit = false) {
     auto location = loc(path.loc());
     if (path.getPathLength() == 0) {
       emitError(location) << "Not a function";
@@ -521,6 +544,7 @@ private:
           continue;
         }
         // else, c++ dot access
+        // TODO(zhiyuang): multi-level struct access
         auto &varExpr = path.getPath()[i-1];
         auto structExpr = getStructForName(varExpr->getName());
         if (structExpr == nullptr) {
@@ -532,8 +556,8 @@ private:
           emitError(location) << "invalid access into struct expression";
           return nullptr;
         }
+
         value = builder.create<StructAccessOp>(location, value, *index);
-        // TODO(zhiyuang): c++ -> access?
       }
     }
 
