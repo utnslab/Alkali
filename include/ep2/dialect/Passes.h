@@ -243,6 +243,27 @@ struct LocalAllocAnalysis {
   LocalAllocAnalysis(Operation* op, AnalysisManager& am);
 };
 
+struct EmitFPGAPass : public PassWrapper<EmitFPGAPass, OperationPass<>> {
+  void runOnOperation() final;
+  void getDependentDialects(DialectRegistry &registry) const override {
+      registry.insert<EP2Dialect>();
+  }
+
+  StringRef getArgument() const final { return "ep2-emit-FPGA"; }
+  StringRef getDescription() const final { return "Emit FPGA Code"; }
+ private:
+  mlir::Operation *module;
+  OpBuilder *builder;
+  // std::unordered_map<mlir::Location, std::string> arg_names;
+  mlir::DenseMap<Value, std::string> arg_names;
+  std::string getValName(mlir::Value val);
+  void UpdateValName(mlir::Value val, std::string name);
+  void emitVariableInit(std::ofstream &file, ep2::InitOp initop);
+  void emitExtract(std::ofstream &file, ep2::ExtractOp extractop);
+  void emitStructAccess(std::ofstream &file, ep2::StructAccessOp structaccessop);
+  void emitStructUpdate(std::ofstream &file, ep2::StructUpdateOp structupdateop);
+};
+
 } // namespace ep2
 } // namespace mlir
 
