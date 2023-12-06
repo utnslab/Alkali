@@ -14,16 +14,14 @@
 #define EP2_PASSES_H
 
 #include <memory>
-#include <vector>
-#include <utility>
 #include <unordered_map>
+#include <utility>
+#include <vector>
 
+#include "mlir/IR/BuiltinOps.h"
 #include "mlir/Pass/Pass.h"
 #include "mlir/Pass/PassManager.h"
-#include "mlir/IR/BuiltinOps.h"
 
-#include "mlir/Dialect/LLVMIR/LLVMDialect.h"
-#include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Dialect/EmitC/IR/EmitC.h"
 #include "mlir/Interfaces/FunctionInterfaces.h"
 
@@ -36,27 +34,31 @@ namespace ep2 {
 // Analysis
 ///////////////////
 struct LowerStructAnalysis {
-    LowerStructAnalysis(mlir::Operation *op);
+  LowerStructAnalysis(mlir::Operation *op);
 
-    // Return Wrapper Struct Types (not pointers)
-    ArrayRef<LLVM::LLVMStructType> getWrapperTypes(ep2::FuncOp funcOp);
-    const std::string prefix = "__wrapper";
-    std::string getEventStructName(llvm::StringRef name) {
-        return prefix + "_event_" + name.str();
-    }
-  private:
-    llvm::StringMap<LLVM::LLVMStructType> handlerTypes;
-    std::map<std::pair<std::string, std::string>, llvm::SmallVector<LLVM::LLVMStructType>> ioTypes;
+  // Return Wrapper Struct Types (not pointers)
+  ArrayRef<LLVM::LLVMStructType> getWrapperTypes(ep2::FuncOp funcOp);
+  const std::string prefix = "__wrapper";
+  std::string getEventStructName(llvm::StringRef name) {
+    return prefix + "_event_" + name.str();
+  }
+
+private:
+  llvm::StringMap<LLVM::LLVMStructType> handlerTypes;
+  std::map<std::pair<std::string, std::string>,
+           llvm::SmallVector<LLVM::LLVMStructType>>
+      ioTypes;
 };
 
 ///////////////////
 // Passes
 ///////////////////
 // Nop Elimination Pass
-struct NopEliminationPass : public PassWrapper<NopEliminationPass, OperationPass<>> {
+struct NopEliminationPass
+    : public PassWrapper<NopEliminationPass, OperationPass<>> {
   void runOnOperation() final;
   void getDependentDialects(DialectRegistry &registry) const override {
-      registry.insert<EP2Dialect>();
+    registry.insert<EP2Dialect>();
   }
   StringRef getArgument() const final { return "ep2-nop-elim"; }
   StringRef getDescription() const final { return "Eliminate EP2 Nop"; }
@@ -234,35 +236,59 @@ struct ContextBufferizationAnalysis {
 struct AtomAnalysis {
   llvm::StringMap<size_t> atomToNum;
 
-  AtomAnalysis(Operation* op, AnalysisManager& am);
-};
-
-struct LocalAllocAnalysis {
-  std::unordered_map<mlir::Operation*, std::string> localAllocs;
-
-  LocalAllocAnalysis(Operation* op, AnalysisManager& am);
+  AtomAnalysis(Operation *op, AnalysisManager &am);
 };
 
 struct EmitFPGAPass : public PassWrapper<EmitFPGAPass, OperationPass<>> {
   void runOnOperation() final;
   void getDependentDialects(DialectRegistry &registry) const override {
-      registry.insert<EP2Dialect>();
+    registry.insert<EP2Dialect>();
   }
 
   StringRef getArgument() const final { return "ep2-emit-FPGA"; }
   StringRef getDescription() const final { return "Emit FPGA Code"; }
- private:
+
+private:
   mlir::Operation *module;
   OpBuilder *builder;
+  ContextAnalysis *contextAnalysis;
+  FuncOp *cur_funcop;
+
+  enum VAL_TYPE { CONTEXT, STRUCT, INT, BUF, ATOM, UNKNOWN };
+
+  std::string val_type_str(VAL_TYPE e) {
+    switch (e) {
+    case CONTEXT:
+      return "CONTEXT";
+    case STRUCT:
+      return "STRUCT";
+    case INT:
+      return "INT";
+    case BUF:
+      return "BUF";
+    case ATOM:
+      return "ATOM";
+    case UNKNOWN:
+      return "UNKNOWN";
+    default:
+      assert(false);
+      return "";
+    }
+  }
   // std::unordered_map<mlir::Location, std::string> arg_names;
   mlir::DenseMap<Value, std::string> arg_names;
   std::string getValName(mlir::Value val);
   void UpdateValName(mlir::Value val, std::string name);
+  VAL_TYPE GetValTypeAndSize(mlir::Type type, int *size);
+  void emitFuncHeader(std::ofstream &file, ep2::FuncOp funcop);
   void emitVariableInit(std::ofstream &file, ep2::InitOp initop);
   void emitExtract(std::ofstream &file, ep2::ExtractOp extractop);
-  void emitStructAccess(std::ofstream &file, ep2::StructAccessOp structaccessop);
-  void emitStructUpdate(std::ofstream &file, ep2::StructUpdateOp structupdateop);
+  void emitStructAccess(std::ofstream &file,
+                        ep2::StructAccessOp structaccessop);
+  void emitStructUpdate(std::ofstream &file,
+                        ep2::StructUpdateOp structupdateop);
   void emitEmit(std::ofstream &file, ep2::EmitOp emitop);
+  void emitReturn(std::ofstream &file, ep2::ReturnOp returnop);
 };
 
 } // namespace ep2
