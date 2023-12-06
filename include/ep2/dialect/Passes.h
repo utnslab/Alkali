@@ -262,6 +262,7 @@ struct EmitFPGAPass : public PassWrapper<EmitFPGAPass, OperationPass<>> {
   void emitExtract(std::ofstream &file, ep2::ExtractOp extractop);
   void emitStructAccess(std::ofstream &file, ep2::StructAccessOp structaccessop);
   void emitStructUpdate(std::ofstream &file, ep2::StructUpdateOp structupdateop);
+  void emitEmit(std::ofstream &file, ep2::EmitOp emitop);
 };
 
 } // namespace ep2

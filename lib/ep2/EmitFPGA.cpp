@@ -39,6 +39,7 @@ struct wire_config {
   std::string name;
   std::string debuginfo;
   bool if_init_value;
+  bool if_use;
   union {
     struct axis_config axis;
   };
@@ -76,9 +77,10 @@ void emitModuleParameter(std::ofstream &file,
                          std::list<struct inout_config> &wires) {
   file << "(\n"
        << "\t input  wire clk, \n"
-       << "\t input  wire rst, \n";
+       << "\t input  wire rst";
   for (auto &wire : wires) {
     if (wire.type == AXIS) {
+      file << ",\n";
       std::string inoutstr, reverse_inoutstr, tab;
       if (wire.direction == IN) {
         inoutstr = "input";
@@ -99,15 +101,14 @@ void emitModuleParameter(std::ofstream &file,
       if (wire.axis.if_keep)
         file << tab << inoutstr << " wire " << keepwidthstr << " " << wire.name
              << "_tkeep ,\n";
-      file << tab << inoutstr << " wire "
-           << " " << wire.name << "_tvalid ,\n";
-      file << tab << reverse_inoutstr << " wire "
-           << " " << wire.name << "_tready ,\n";
       if (wire.axis.if_last)
         file << tab << inoutstr << " wire "
              << " " << wire.name << "_tlast ,\n";
+      file << tab << inoutstr << " wire "
+           << " " << wire.name << "_tvalid ,\n";
+      file << tab << reverse_inoutstr << " wire "
+           << " " << wire.name << "_tready";
     }
-    file << "\n";
   }
 
   file << "\n);\n";
@@ -122,8 +123,11 @@ void emitwire(std::ofstream &file, struct wire_config &wire) {
     std::string keepwidthstr =
         "[" + std::to_string(wire.axis.data_width / 8) + "-1:0]";
     std::string initvalue = "";
+    std::string readyvalue = "";
     if (wire.if_init_value)
       initvalue = "=1";
+    if (!wire.if_use)
+      readyvalue = "=1";
 
     file << "//" << wire.debuginfo << "\n";
     file << " wire " << datawidthstr << " " << wire.name << "_tdata ;\n";
@@ -132,7 +136,7 @@ void emitwire(std::ofstream &file, struct wire_config &wire) {
     file << " wire "
          << " " << wire.name << "_tvalid" << initvalue << ";\n";
     file << " wire "
-         << " " << wire.name << "_tready ;\n";
+         << " " << wire.name << "_tready" << readyvalue << ";\n";
     if (wire.axis.if_last)
       file << " wire "
            << " " << wire.name << "_tlast" << initvalue << ";\n";
@@ -174,16 +178,23 @@ void emitModuleCall(std::ofstream &file, std::string module_type,
                     std::list<struct module_port_config> &ports,
                     std::list<struct module_param_config> &params) {
   file << module_type << "#(\n";
+  int param_num = params.size();
+  int i = 0;
   for (auto &param : params) {
+    i++;
     file << "." << param.paramname << "(" << std::to_string(param.paramval)
-         << "),\n";
+         << ")";
+    if (i != param_num)
+      file << ",";
+    file << "\n";
   }
 
   file << ")" << module_name << "(\n"
        << "\t .clk(clk), \n"
-       << "\t .rst(rst), \n\n";
+       << "\t .rst(rst) ";
   for (auto &port : ports) {
     if (port.type == AXIS) {
+      file << ",\n";
       std::string tab = "\t";
 
       file << tab << "//" << port.debuginfo << "\n";
@@ -192,16 +203,16 @@ void emitModuleCall(std::ofstream &file, std::string module_type,
       if (port.axis.if_keep)
         file << tab << "." << port.port_name << "_tkeep(" << port.var_name
              << "_tkeep),\n";
-      file << tab << "." << port.port_name << "_tvalid(" << port.var_name
-           << "_tvalid),\n";
-      file << tab << "." << port.port_name << "_tready(" << port.var_name
-           << "_tready),\n";
       if (port.axis.if_last)
         file << tab << "." << port.port_name << "_tlast(" << port.var_name
              << "_tlast),\n";
+      file << tab << "." << port.port_name << "_tvalid(" << port.var_name
+           << "_tvalid),\n";
+      file << tab << "." << port.port_name << "_tready(" << port.var_name
+           << "_tready)";
     }
   }
-  file << ")\n\n";
+  file << "\n);\n\n";
 }
 
 unsigned getStructTotalSize(ep2::StructType in_struct) {
@@ -353,10 +364,14 @@ void EmitFPGAPass::emitVariableInit(std::ofstream &file, ep2::InitOp initop) {
     assert(size % 8 == 0);
   }
   struct axis_config axis = {if_stream, if_stream, size};
-  struct wire_config wire = {AXIS, name, debuginfo, true, axis};
+  struct wire_config wire = {AXIS, name, debuginfo, true, false, axis};
   emitwire(file, wire);
 
   // printf("Get Init op %s\n", defined_value->hashProperties());
+}
+
+bool has_use(mlir::Value val){
+  return !val.getUses().empty();
 }
 
 void EmitFPGAPass::emitExtract(std::ofstream &file, ep2::ExtractOp extractop) {
@@ -369,41 +384,21 @@ void EmitFPGAPass::emitExtract(std::ofstream &file, ep2::ExtractOp extractop) {
 
   auto buf = extractop.getBuffer();
   std::string ori_buf_name = getValName(buf);
-  // bool if_buf_block_arg = isa<mlir::BlockArgument>(buf);
-  // if (if_buf_block_arg) {
-  //   assert(arg_names.find(buf) != arg_names.end());
-  //   ori_buf_name = arg_names[buf];
-  // } else {
-  //   assert(buf.getDefiningOp()->hasAttr("var_name"));
-  //   ori_buf_name = buf.getDefiningOp()
-  //                      ->getAttr("var_name")
-  //                      .cast<StringAttr>()
-  //                      .getValue()
-  //                      .str();
-  // }
   in_buf_axis = {1, 1, DEFAULT_AXIS_STREAM_SIZE};
   in_buf_port = {AXIS, ori_buf_name, "input buf", "s_inbuf_axis", in_buf_axis};
 
   auto new_buf_name = assign_var_name("bufvar");
   UpdateValName(buf, new_buf_name);
-  // if (if_buf_block_arg) {
-  //   arg_names[buf] = new_buf_name;
-  // } else {
-  //   buf.getDefiningOp()->setAttr("var_name",
-  //                                builder->getStringAttr(new_buf_name));
-  // }
   out_buf_axis = {1, 1, DEFAULT_AXIS_STREAM_SIZE};
   out_buf_port = {AXIS, new_buf_name, "output buf", "m_outbuf_axis",
                   out_buf_axis};
-  out_buf_wire = {AXIS, new_buf_name, module_name + " output buf", 0,
+  out_buf_wire = {AXIS, new_buf_name, module_name + " output buf", false, has_use(buf),
                   out_buf_axis};
 
   auto extracted_struct = extractop.getResult();
   assert(!extracted_struct.getDefiningOp()->hasAttr("var_name"));
   auto extracted_struct_name = assign_var_name("structvar");
   UpdateValName(extracted_struct, extracted_struct_name);
-  // extracted_struct.getDefiningOp()->setAttr(
-  //     "var_name", builder->getStringAttr(extracted_struct_name));
   auto extracted_struct_type = extracted_struct.getType();
   int extracted_struct_size = 0;
   // struct extract value can only be struct or int
@@ -421,7 +416,7 @@ void EmitFPGAPass::emitExtract(std::ofstream &file, ep2::ExtractOp extractop) {
   out_struct_port = {AXIS, extracted_struct_name, "output struct",
                      "m_extracted_axis", out_struct_axis};
   out_struct_wire = {AXIS, extracted_struct_name,
-                     module_name + " output struct", 0, out_struct_axis};
+                     module_name + " output struct", false, has_use(extracted_struct), out_struct_axis};
 
   std::list<struct module_port_config> ports;
   ports.push_back(in_buf_port);
@@ -436,7 +431,68 @@ void EmitFPGAPass::emitExtract(std::ofstream &file, ep2::ExtractOp extractop) {
   params.push_back({"BUF_KEEP_WIDTH", DEFAULT_AXIS_STREAM_SIZE / 8});
   params.push_back({"EXTRACTED_STRUCT_WIDTH", extracted_struct_size});
 
-  emitModuleCall(file, "extract_eth", module_name, ports, params);
+  emitModuleCall(file, "extract", module_name, ports, params);
+}
+
+void EmitFPGAPass::emitEmit(std::ofstream &file, ep2::EmitOp emitop) {
+  // First emit the wire define for: output buf, output struct
+  // Then emit the extract module call
+  struct module_port_config in_buf_port, in_struct_port, out_buf_port;
+  struct wire_config out_buf_wire;
+  struct axis_config in_buf_axis, in_struct_axis, out_buf_axis;
+  auto module_name = assign_var_name("emit_module");
+
+  auto buf = emitop.getBuffer();
+  std::string ori_buf_name = getValName(buf);
+  in_buf_axis = {1, 1, DEFAULT_AXIS_STREAM_SIZE};
+  in_buf_port = {AXIS, ori_buf_name, "input buf", "s_inbuf_axis", in_buf_axis};
+
+  auto new_buf_name = assign_var_name("bufvar");
+  UpdateValName(buf, new_buf_name);
+  out_buf_axis = {1, 1, DEFAULT_AXIS_STREAM_SIZE};
+  out_buf_port = {AXIS, new_buf_name, "output buf", "m_outbuf_axis",
+                  out_buf_axis};
+  out_buf_wire = {AXIS, new_buf_name, module_name + " output buf", false, has_use(buf),
+                  out_buf_axis};
+
+  auto input_struct = emitop.getValue();
+  auto input_struct_name = getValName(input_struct);
+  auto input_struct_type = input_struct.getType();
+  int input_struct_size = 0;
+  int if_input_is_buf = 0;
+  // struct extract value can only be struct or int
+  if (input_struct_type.isIntOrFloat()) {
+    input_struct_size = input_struct_type.getIntOrFloatBitWidth();
+  } else if (isa<ep2::StructType>(input_struct_type)) {
+    auto val_struct = cast<ep2::StructType, Type>(input_struct_type);
+    input_struct_size = getStructTotalSize(val_struct);
+  } else if (isa<ep2::BufferType>(input_struct_type)) {
+    if_input_is_buf = 1;
+    input_struct_size = DEFAULT_AXIS_STREAM_SIZE;
+  } else {
+    printf("Error: Cannot calculate emitEmit's input struct size\n");
+    emitop.dump();
+    input_struct.dump();
+    assert(false);
+  }
+  in_struct_axis = {if_input_is_buf, if_input_is_buf, input_struct_size};
+  in_struct_port = {AXIS, input_struct_name, "input struct/buf",
+                    "s_struct_axis", in_struct_axis};
+
+  std::list<struct module_port_config> ports;
+  ports.push_back(in_buf_port);
+  ports.push_back(in_struct_port);
+  ports.push_back(out_buf_port);
+
+  emitwire(file, out_buf_wire);
+
+  std::list<struct module_param_config> params;
+  params.push_back({"BUF_DATA_WIDTH", DEFAULT_AXIS_STREAM_SIZE});
+  params.push_back({"BUF_KEEP_WIDTH", DEFAULT_AXIS_STREAM_SIZE / 8});
+  params.push_back({"IF_INPUT_BUF", if_input_is_buf});
+  params.push_back({"INPUT_BUF_STRUCT_WIDTH", input_struct_size});
+
+  emitModuleCall(file, "emit", module_name, ports, params);
 }
 
 void EmitFPGAPass::emitStructAccess(std::ofstream &file,
@@ -444,8 +500,10 @@ void EmitFPGAPass::emitStructAccess(std::ofstream &file,
 
   auto outval = structaccessop.getResult();
   auto outval_type = outval.getType();
-  struct axis_config outval_axis, srcval_axis;
-  struct wire_config outval_wire, srcval_wire;
+  auto module_name = assign_var_name("struct_access");
+  struct module_port_config outval_port, src_struct_port, new_struct_port;
+  struct axis_config outval_axis, src_struct_axis, new_struct_axis;
+  struct wire_config outval_wire, src_struct_wire, new_struct_wire;
   struct wire_assign_config wire_assignment;
   int size;
   std::string debuginfo;
@@ -469,10 +527,8 @@ void EmitFPGAPass::emitStructAccess(std::ofstream &file,
   // outval.getDefiningOp()->setAttr("var_name", builder->getStringAttr(name));
   UpdateValName(outval, name);
   outval_axis = {0, 0, size};
-  outval_wire = {AXIS, name, "Access Struct", 0, outval_axis};
-  emitwire(file, outval_wire);
-  printf("Access Struct out val %s\n",name.c_str() );
-  outval.getType().dump();
+  outval_wire = {AXIS, name, "Access Struct", false, has_use(outval), outval_axis};
+  outval_port = {AXIS, name, "output val", "m_val_axis", outval_axis};
 
   auto srcval = structaccessop.getInput();
   auto srcval_index = structaccessop.getIndex();
@@ -483,22 +539,42 @@ void EmitFPGAPass::emitStructAccess(std::ofstream &file,
   int src_size = getStructValSize(srcval_type, srcval_index);
   int src_struct_size = getStructTotalSize(srcval_type);
 
-  // if (!srcval.getDefiningOp()->hasAttr("var_name"))
-  //   return;
   auto src_struct_name = getValName(srcval);
-  // assert(srcval.getDefiningOp()->hasAttr("var_name"));
-  // auto src_struct_name = srcval.getDefiningOp()
-  //                            ->getAttr("var_name")
-  //                            .cast<StringAttr>()
-  //                            .getValue()
-  //                            .str();
+  src_struct_axis = {0, 0, src_struct_size};
+  src_struct_wire = {AXIS, src_struct_name, "Struct Assign Src Struct", false, false,
+                     src_struct_axis};
+  src_struct_port = {AXIS, src_struct_name, "struct input", "s_struct_axis",
+                     src_struct_axis};
 
-  srcval_axis = {0, 0, src_struct_size};
-  srcval_wire = {AXIS, src_struct_name, "Struct Assign Src Struct", 0,
-                 srcval_axis};
+  // TODO, we don't want to update the symbol table, but we want to use another
+  // IR op
 
-  wire_assignment = {src_offset, src_size, -1, -1, srcval_wire, outval_wire};
-  emitwireassign(file, wire_assignment);
+  auto new_struct_name = assign_var_name("structvar");
+  new_struct_wire.name = new_struct_name;
+  UpdateValName(srcval, new_struct_name);
+  new_struct_axis = {0, 0, src_struct_size};;
+  new_struct_wire = {AXIS, new_struct_name, "Struct Assign new Struct", false, has_use(srcval),
+                     new_struct_axis};;
+  new_struct_port = {AXIS, new_struct_name, "struct output", "m_struct_axis",
+                     new_struct_axis};
+
+  std::list<struct module_port_config> ports;
+  ports.push_back(src_struct_port);
+  ports.push_back(new_struct_port);
+  ports.push_back(outval_port);
+
+  emitwire(file, outval_wire);
+  emitwire(file, new_struct_wire);
+
+  std::list<struct module_param_config> params;
+  params.push_back({"STRUCT_WIDTH", src_struct_size});
+  params.push_back({"ACCESS_OFFSET", src_offset});
+  params.push_back({"ACCESS_SIZE", src_size});
+
+  emitModuleCall(file, "struct_access", module_name, ports, params);
+
+  // wire_assignment = {src_offset, src_size, -1, -1, src_struct_wire,
+  // outval_wire}; emitwireassign(file, wire_assignment);
 }
 
 void EmitFPGAPass::emitStructUpdate(std::ofstream &file,
@@ -548,7 +624,7 @@ void EmitFPGAPass::emitStructUpdate(std::ofstream &file,
   new_struct_axis = {0, 0, new_struct_size};
   new_struct_port = {AXIS, new_struct_name, "output struct", "m_struct_axis",
                      new_struct_axis};
-  new_struct_wire = {AXIS, new_struct_name, module_name + " output struct", 0,
+  new_struct_wire = {AXIS, new_struct_name, module_name + " output struct", false, has_use(new_struct),
                      new_struct_axis};
 
   std::list<struct module_port_config> ports;
@@ -590,9 +666,6 @@ void EmitFPGAPass::runOnOperation() {
     // push parameter wire
     auto args = funcOp.getArguments();
     for (auto arg : args) {
-      printf("%s parameter wire for\n", handler_name.c_str());
-      arg.dump();
-
       auto arg_type = arg.getType();
       bool if_stream;
       int size;
@@ -629,10 +702,7 @@ void EmitFPGAPass::runOnOperation() {
       }
 
       name = "arg" + std::to_string(arg.getArgNumber());
-      assert(arg_names.find(arg) == arg_names.end());
-      // auto x = mlir::hash_value(arg);
-      arg_names[arg] = name;
-
+      UpdateValName(arg, name);
       if (!if_stream) {
         assert(size <= 64 * 8);
         struct axis_config wire = {0, 0, size};
@@ -665,12 +735,17 @@ void EmitFPGAPass::runOnOperation() {
       } else if (isa<ep2::StructUpdateOp>(op)) {
         auto structupdateop = cast<ep2::StructUpdateOp, mlir::Operation *>(op);
         emitStructUpdate(fout_stage, structupdateop);
+      } else if (isa<ep2::EmitOp>(op)) {
+        auto emitop = cast<ep2::EmitOp, mlir::Operation *>(op);
+        emitEmit(fout_stage, emitop);
       }
       // TODO: Add OP Constant
-      // TODO: Change STURCT ACCESS IR to generate new  stream for each accessed struct
+      // TODO: Change STURCT ACCESS IR to generate new  stream for each accessed
+      // struct
       // TODO: Output port
       // TODO: EMIT
     });
+    fout_stage << "\nendmodule\n";
   });
 }
 
