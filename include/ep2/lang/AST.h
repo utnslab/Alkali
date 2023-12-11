@@ -36,6 +36,12 @@ struct VarType {
   std::vector<int64_t> shape;
 };
 
+/// A table type with either name or shape information.
+struct TableVarType {
+  VarType key_type;
+  VarType value_type;
+};
+
 /// Base class for all expression nodes.
 class ExprAST {
 public:
@@ -181,6 +187,8 @@ class VarDeclExprAST : public ExprAST {
   std::string name;
   VarType type;
   std::unique_ptr<ExprAST> initVal;
+  TableVarType table_type;
+  bool if_table = false;
 
 public:
   VarDeclExprAST(Location loc, llvm::StringRef name, VarType type,
@@ -191,6 +199,19 @@ public:
   llvm::StringRef getName() { return name; }
   ExprAST *getInitVal() { return initVal.get(); }
   const VarType &getType() { return type; }
+
+  const TableVarType &getTableType() { return table_type; }
+
+  void setTableType(TableVarType t_type){
+    table_type = std::move(t_type);
+  }
+  void isTable(bool t){
+    if_table = t;
+  }
+
+  bool ifTable(){
+    return if_table;
+  }
 
   /// LLVM style RTTI
   static bool classof(const ExprAST *c) { return c->getKind() == Expr_VarDecl; }
@@ -376,6 +397,35 @@ public:
 
   bool isEvent() { return isEvent_; }
 };
+
+/// This class represents a struct definition.
+class TableAST : public RecordAST {
+  Location location;
+  std::string name;
+  std::unique_ptr<VarDeclExprAST> key;
+  std::unique_ptr<VarDeclExprAST> value;
+
+public:
+  TableAST(Location location, const std::string &name,
+            std::unique_ptr<VarDeclExprAST> key_var, std::unique_ptr<VarDeclExprAST> value_var)
+      : RecordAST(Record_Struct), location(std::move(location)), name(name),
+        key(std::move(key_var)) , value(std::move(value_var)) {}
+
+  const Location &loc() { return location; }
+  llvm::StringRef getName() const { return name; }
+  std::unique_ptr<VarDeclExprAST> getKey() {
+    return std::move(key);
+  }
+
+  std::unique_ptr<VarDeclExprAST> getValue() {
+    return std::move(value);
+  }
+  /// LLVM style RTTI
+  static bool classof(const RecordAST *r) {
+    return r->getKind() == Record_Struct;
+  }
+};
+
 
 /// This class represents a list of functions to be processed together
 class ModuleAST {

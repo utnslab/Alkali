@@ -530,6 +530,9 @@ private:
     if (lexer.getCurToken() == tok_var)
       return parseVarDeclaration(requiresInitializer);
     
+    if(lexer.getCurToken() == tok_table)
+      return parseTableDeclaration(requiresInitializer);
+    
     if(lexer.getCurToken() == tok_identifier && lexer.getId() == "bits")
       return parseBitsDeclaration(requiresInitializer);
 
@@ -577,6 +580,85 @@ private:
     // Parse the rest of the declaration.
     return parseTypedDeclaration(typeName, bits_length, requiresInitializer, loc);
 
+  }
+  
+  /// Parse a table declaration
+  /// decl ::= table<key_type, value_type> identifier  (= expr)?
+  std::unique_ptr<VarDeclExprAST>
+  parseTableDeclaration(bool requiresInitializer) {
+    auto loc = lexer.getLastLocation();
+    std::string typeName("table");
+    lexer.getNextToken(); // eat table
+
+    if(lexer.getCurToken() != tok_angle_bracket_open)
+      return parseError<VarDeclExprAST>("<",
+                                        "after 'table' declaration");
+    loc = lexer.getLastLocation();
+    lexer.getNextToken(); // eat <    
+
+    // Parse: decl+
+    std::vector<std::unique_ptr<VarDeclExprAST>> decls;
+    while (lexer.getCurToken() != '>') {
+      auto decl = parseDeclaration(/*requiresInitializer=*/false);
+      if (!decl)
+        return nullptr;
+      decls.push_back(std::move(decl));
+
+      if (lexer.getCurToken() != ';')
+        return parseError<VarDeclExprAST>(";",
+                                     "after variable in struct definition");
+      lexer.consume(Token(';'));
+    }
+
+    if(lexer.getCurToken() != tok_angle_bracket_close)
+      return parseError<VarDeclExprAST>(">",
+                                        "after declaration");
+    loc = lexer.getLastLocation();
+    lexer.getNextToken(); // eat >
+
+    if(lexer.getCurToken() != tok_parenthese_open)
+      return parseError<VarDeclExprAST>("(",
+                                        "after 'table' declaration");
+    loc = lexer.getLastLocation();
+    lexer.getNextToken(); // eat (    
+
+    if (lexer.getCurToken() != tok_number)
+      return parseError<VarDeclExprAST>("num", "after 'table' declaration"); 
+    uint64_t table_length = lexer.getValue();
+    loc = lexer.getLastLocation();
+    lexer.getNextToken(); // eat num 
+
+    if(lexer.getCurToken() != tok_parenthese_close)
+      return parseError<VarDeclExprAST>("(",
+                                        "after 'table' declaration");
+
+    loc = lexer.getLastLocation();
+    lexer.getNextToken(); // eat ) 
+
+    if (lexer.getCurToken() != tok_identifier)
+      return parseError<VarDeclExprAST>("name", "in table declaration");
+    std::string id(lexer.getId());
+    lexer.getNextToken(); // eat id
+
+    assert(!requiresInitializer);
+    if(decls.size()!= 2)
+      return parseError<VarDeclExprAST>("more than 2 types", "in table <> declaration");
+
+    std::unique_ptr<ExprAST> expr;
+    
+    VarType type;
+    type.name = std::string(typeName);
+    type.length = table_length; // table size
+
+    TableVarType table_type;
+    table_type.key_type = decls[0]->getType();
+    table_type.value_type = decls[1]->getType();
+
+    auto tvar = std::make_unique<VarDeclExprAST>(loc, std::move(id), std::move(type),
+                                            std::move(expr));
+    tvar->setTableType(table_type);
+    tvar->isTable(true);
+    return tvar;
   }
 
   /// Parse a variable declaration, it starts with a `var` keyword followed by
@@ -644,7 +726,14 @@ private:
         if (!ret)
           return nullptr;
         exprList->push_back(std::move(ret));
-      } else if (lexer.getCurToken() == tok_identifier && lexer.getId() == "bits" && lexer.peekNextToken() == tok_angle_bracket_open) {
+      } else if (lexer.getCurToken() == tok_table){
+        // table<> declaration
+        auto tableDecl = parseDeclaration(/*requiresInitializer=*/false);
+        if (!tableDecl)
+          return nullptr;
+        exprList->push_back(std::move(tableDecl));
+      }
+      else if (lexer.getCurToken() == tok_identifier && lexer.getId() == "bits" && lexer.peekNextToken() == tok_angle_bracket_open) {
         // bits<> declaration
         auto bitsDecl = parseDeclaration(/*requiresInitializer=*/false);
         if (!bitsDecl)
