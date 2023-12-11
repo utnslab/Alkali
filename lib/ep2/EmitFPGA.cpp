@@ -1,5 +1,6 @@
 #include "ep2/dialect/Dialect.h"
 #include "ep2/dialect/Passes.h"
+#include "ep2/dialect/FPGAPasses.h"
 #include "mlir/IR/BuiltinDialect.h"
 
 #include "mlir/IR/BuiltinOps.h"
