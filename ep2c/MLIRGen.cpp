@@ -303,6 +303,16 @@ private:
     return it - structVars.begin();
   }
 
+  mlir::Value toRValue(mlir::Value value,
+                       std::optional<mlir::Type> ltype = std::nullopt) {
+    if (isa<mlir::ep2::ContextRefOp>(value.getDefiningOp())) {
+      auto resultType = ltype.value_or(value.getType());
+      return builder.create<LoadOp>(value.getDefiningOp()->getLoc(),
+                                    resultType, value);
+    }
+    return value;
+  }
+
   /// Emit a binary operation
   mlir::Value mlirGen(BinaryExprAST &binop) {
     // First emit the operations for each side of the operation before emitting
@@ -318,14 +328,18 @@ private:
     //
 
     // Otherwise, this is a normal binary op.
+    mlir::Value lhs = mlirGen(*binop.getLHS());
+    if (!lhs)
+      return nullptr;
+    if (binop.getOp() != '=')
+      lhs = toRValue(lhs);
+
     mlir::Value rhs = mlirGen(*binop.getRHS());
     if (!rhs)
       return nullptr;
+    // For assignment, change this to RValue (with reference to lvalue type)
+    rhs = toRValue(rhs, lhs.getType());
 
-    mlir::Value lhs = mlirGen(*binop.getLHS(), binop.getOp() == '=');
-
-    if (!lhs)
-      return nullptr;
     auto location = loc(binop.loc());
 
     // Derive the operation name from the binary operator. At the moment we only
@@ -338,6 +352,8 @@ private:
     case '*':
       return builder.create<MulOp>(location, lhs, rhs);
     case '=':
+      // TODO(zhiyuang): Here we do not bring type info into IR, need to do type
+      // check here
       if (isa<mlir::ep2::ContextRefOp>(lhs.getDefiningOp())) {
         builder.create<StoreOp>(location, lhs, rhs);
         return builder.create<NopOp>(location, builder.getNoneType());
@@ -458,7 +474,7 @@ private:
   /// builtin. Other identifiers are assumed to be user-defined functions.
   mlir::Value mlirGen(CallExprAST &call) {
     auto location = loc(call.loc());
-    auto caller = getPath(*call.getCallee(), false, true);
+    auto caller = getPath(*call.getCallee(), true);
 
     auto &path = call.getCallee()->getPath();
     std::string callee = std::string(path.back()->getName());
@@ -540,7 +556,7 @@ private:
   }
 
   // return either a struct access op or a variable op
-  mlir::Value getPath(PathExprAST &path, bool lvalue, bool limit = false) {
+  mlir::Value getPath(PathExprAST &path, bool limit = false) {
     auto location = loc(path.loc());
     if (path.getPathLength() == 0) {
       emitError(location) << "Not a function";
@@ -585,23 +601,12 @@ private:
     return value;
   }
 
-  mlir::Value mlirGen(PathExprAST &path, bool lhs) {
-    return getPath(path, lhs);
+  mlir::Value mlirGen(PathExprAST &path) {
+    return getPath(path);
   }
 
   /// Dispatch codegen for the right expression subclass using RTTI.
-  mlir::Value mlirGen(ExprAST &expr, bool lhs = false) {
-    auto res = mlirGenExprHelper(expr, lhs);
-    if (!lhs) {
-      mlir::Operation* op = res.getDefiningOp();
-      if (op != nullptr && isa<ContextRefOp>(op)) {
-        res = builder.create<LoadOp>(loc(expr.loc()), cast<ContextRefOp>(op).getValue().getType().getValueType(), res);
-      }
-    }
-    return res;
-  }
-
-  mlir::Value mlirGenExprHelper(ExprAST &expr, bool lhs) {
+  mlir::Value mlirGen(ExprAST &expr) {
     switch (expr.getKind()) {
     case ep2::ExprAST::Expr_BinOp:
       return mlirGen(cast<BinaryExprAST>(expr));
@@ -616,7 +621,7 @@ private:
     case ep2::ExprAST::Expr_Num:
       return mlirGen(cast<NumberExprAST>(expr));
     case ep2::ExprAST::Expr_Path:
-      return mlirGen(cast<PathExprAST>(expr), lhs);
+      return mlirGen(cast<PathExprAST>(expr));
     case ep2::ExprAST::Expr_Init:
       return mlirGen(cast<InitExprAST>(expr));
     default:

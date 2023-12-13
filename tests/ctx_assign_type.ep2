@@ -1,0 +1,10 @@
+event NET_RECV {
+    atom at;
+    context ctx;
+    buf packet;
+}
+
+handler NET_RECV:process_packet (context ctx, buf packet) {
+    bits<48> tmp_mac;
+    tmp_mac = ctx.tmp_mac;
+}
