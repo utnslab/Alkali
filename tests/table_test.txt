@@ -1,7 +1,9 @@
 # Specify the functionality of the target archiecture
 ############## main program ###########
 
-event LOAD_TABLE{context ctx;}
+event LOAD_TABLE {
+    context ctx;
+}
 
 struct eth_header_t {
     bits<48> dst_mac;
@@ -9,10 +11,9 @@ struct eth_header_t {
     bits<16> ether_type;
 }
 
-
 handler LOAD_TABLE:load_table (context ctx) {
-    table <bits<16> k; bits<32> v;>(16) table1;
-    table <eth_header_t k; buf v;>(16) table2;
+    table<bits<16>, bits<32>, 16> table1;
+    table<eth_header_t, buf, 16> table2;
 
     eth_header_t tmp;
 

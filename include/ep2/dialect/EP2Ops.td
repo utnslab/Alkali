@@ -96,7 +96,7 @@ def EP2_TableType: EP2_BaseType<"Table", "table"> {
   }];
 
   let parameters = (ins "Type":$keyType, "Type":$valueType,  AttrParameter<"int", "size">:$size );
-  let assemblyFormat = "`<` $keyType `,` $valueType `>` `(` $size `)` ";
+  let assemblyFormat = "`<` $keyType `,` $valueType `,` $size `>` ";
 }
 
 def EP2_AtomType: EP2_BaseType<"Atom", "atom"> {
@@ -367,14 +367,14 @@ def EmitOp : EP2_Op<"emit"> {
 }
 
 //===----------------------------------------------------------------------===//
+// Table Related Operations
 // LookupOp
 //===----------------------------------------------------------------------===//
 
-def LookupOp : EP2_Op<"lookup"> {
+def LookupOp : EP2_Op<"lookup", [Pure]> {
   let summary = "lookup op for table";
   let description = [{
     Lookup from a table using key, return the value.
-
   }];
 
   let arguments = (ins EP2_TableType:$table, EP2_Type:$key);
@@ -389,14 +389,13 @@ def UpdateOp : EP2_Op<"update"> {
   let summary = "update op for table";
   let description = [{
     update a table using key and value.
-
   }];
 
   let arguments = (ins EP2_TableType:$table, EP2_Type:$key, EP2_Type:$value);
 }
 
-
 //===----------------------------------------------------------------------===//
+// Reference Related Operations
 // LoadOp & StoreOp & Nop
 //===----------------------------------------------------------------------===//
 

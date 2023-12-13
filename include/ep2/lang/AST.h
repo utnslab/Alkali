@@ -29,17 +29,52 @@
 
 namespace ep2 {
 
+/// A variable type template. Either a value (here only int) or a type
+struct VarType;
+struct VarTemplateParam {
+  enum VarTemplateParamKind {
+    VarTemplateParam_Integer,
+    VarTemplateParam_Type
+  };
+
+  VarTemplateParamKind kind;
+  VarTemplateParamKind getKind() const { return kind; }
+
+  VarTemplateParam(int64_t value)
+      : kind(VarTemplateParam_Integer), value(value) {}
+  VarTemplateParam(std::unique_ptr<VarType> type)
+      : kind(VarTemplateParam_Type), type(std::move(type)) {}
+
+  std::shared_ptr<VarType> type;
+  int64_t value;
+};
+
 /// A variable type with either name or shape information.
 struct VarType {
   std::string name;
-  std::int64_t length;
-  std::vector<int64_t> shape;
-};
+  std::vector<VarTemplateParam> params;
 
-/// A table type with either name or shape information.
-struct TableVarType {
-  VarType key_type;
-  VarType value_type;
+  bool
+  checkParam(std::vector<VarTemplateParam::VarTemplateParamKind> kinds) const {
+    if (kinds.size() != params.size())
+      return false;
+    for (size_t i = 0; i < params.size(); i++)
+      if (params[i].getKind() != kinds[i])
+        return false;
+    return true;
+  }
+
+  // void print(int indent = 0) {
+  //   auto indent_str = std::string(indent * 2, ' ');
+  //   llvm::errs() << indent_str << "Type: " << name << "\n";
+  //   for (auto &param : params) {
+  //     if (param.kind == VarTemplateParam::VarTemplateParam_Integer) {
+  //       llvm::errs() << indent_str <<  "  Integer: " << param.value << "\n";
+  //     } else if (param.kind == VarTemplateParam::VarTemplateParam_Type) {
+  //       param.type->print(indent + 1);
+  //     }
+  //   }
+  // }
 };
 
 /// Base class for all expression nodes.
@@ -187,8 +222,6 @@ class VarDeclExprAST : public ExprAST {
   std::string name;
   VarType type;
   std::unique_ptr<ExprAST> initVal;
-  TableVarType table_type;
-  bool if_table = false;
 
 public:
   VarDeclExprAST(Location loc, llvm::StringRef name, VarType type,
@@ -199,19 +232,6 @@ public:
   llvm::StringRef getName() { return name; }
   ExprAST *getInitVal() { return initVal.get(); }
   const VarType &getType() { return type; }
-
-  const TableVarType &getTableType() { return table_type; }
-
-  void setTableType(TableVarType t_type){
-    table_type = std::move(t_type);
-  }
-  void isTable(bool t){
-    if_table = t;
-  }
-
-  bool ifTable(){
-    return if_table;
-  }
 
   /// LLVM style RTTI
   static bool classof(const ExprAST *c) { return c->getKind() == Expr_VarDecl; }

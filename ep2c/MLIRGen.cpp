@@ -176,12 +176,9 @@ private:
         return emitError(loc(variable->loc()))
                << "error: variables within a struct definition must not have "
                   "initializers";
-      if (!variable->getType().shape.empty())
-        return emitError(loc(variable->loc()))
-               << "error: variables within a struct definition must not have "
-                  "initializers";
+      // TODO: why check shape here?
 
-      mlir::Type type = getUniType(*variable);
+      mlir::Type type = getVarType(variable->getType(), variable->loc());
       if (!type)
         return mlir::failure();
       elementTypes.push_back(type);
@@ -202,7 +199,7 @@ private:
     llvm::SmallVector<mlir::Type, 4> argTypes;
     argTypes.reserve(proto.getArgs().size());
     for (auto &arg : proto.getArgs()) {
-      mlir::Type type = getUniType(*arg);
+      mlir::Type type = getVarType(arg->getType(), arg->loc());
       if (!type)
         return nullptr;
       argTypes.push_back(type);
@@ -210,7 +207,7 @@ private:
     auto funcType = builder.getFunctionType(argTypes, std::nullopt);
     auto funcOp = builder.create<mlir::ep2::FuncOp>(location, proto.getMangledName(),
                                              funcType);
-
+    
     // Set Attrs
     // TODO: change attrs to fields
     funcOp->setAttr("event", builder.getStringAttr(proto.getName()));
@@ -225,6 +222,8 @@ private:
   mlir::ep2::FuncOp mlirGen(FunctionAST &funcAST) {
     // Create a scope in the symbol table to hold variable declarations.
     SymbolTableScopeT varScope(symbolTable);
+
+    
 
     // Create an MLIR function for the given prototype.
     builder.setInsertionPointToEnd(theModule.getBody());
@@ -282,7 +281,6 @@ private:
     auto varIt = symbolTable.lookup(name);
     if (!varIt.first)
       return nullptr;
-    assert(!varIt.second->ifTable());
     structName = varIt.second->getType().name;
     if (structName.empty())
       return nullptr;
@@ -430,7 +428,7 @@ private:
     for (auto &var : lit.getValues()) {
       if (auto *number = llvm::dyn_cast<NumberExprAST>(var.get())) {
         attrElements.push_back(getConstantAttr(*number));
-        typeElements.push_back(getType(std::nullopt));
+        typeElements.push_back(builder.getType<AnyType>());
       } else {
         auto *structLit = llvm::cast<StructLiteralExprAST>(var.get());
         auto attrTypePair = getConstantAttr(*structLit);
@@ -488,9 +486,7 @@ private:
       update(targetAst, extractOp);
       // TODO(zhiyuang): else add access
       return extractOp;
-    }
-    // generate struct write
-    else if (callee == "emit") {
+    } else if (callee == "emit") { // generate struct write
       if (!caller || operands.size() != 1) {
         emitError(location) << "callop: invalid emit";
         return nullptr;
@@ -499,8 +495,7 @@ private:
       auto &target = operands[0];
       builder.create<EmitOp>(location, caller, target);
       return builder.create<NopOp>(location);
-    }
-    else if(callee == "lookup"){
+    } else if(callee == "lookup"){
       if (!caller || operands.size() != 1) {
         emitError(location) << "callop: invalid lookup";
         return nullptr;
@@ -513,8 +508,7 @@ private:
       // // single layer 
       update(targetAst, lookupOp);
       return lookupOp;
-    }
-    else if(callee == "update"){
+    } else if(callee == "update"){
       if (!caller || operands.size() != 2) {
         emitError(location) << "callop: invalid update";
         return nullptr;
@@ -643,8 +637,7 @@ private:
     mlir::Value value;
     if (!init) {
       // build default initalization
-      mlir::Type type = getUniType(vardecl);   
-      
+      mlir::Type type = getVarType(vardecl.getType(), vardecl.loc());
       if (!type) {
         emitError(location)
             << "do not get a type for default initialization";
@@ -664,7 +657,7 @@ private:
     if (!varType.name.empty()) {
       // Check that the initializer type is the same as the variable
       // declaration.
-      mlir::Type type = getUniType(vardecl);    
+      mlir::Type type = getVarType(varType, vardecl.loc());
       if (!type)
         return nullptr;
       if (type != value.getType()) {
@@ -736,28 +729,8 @@ private:
   /// Build an MLIR table type from a ep2 AST variable type (forward to the generic
   /// getType above for non-struct types).
   mlir::Type getUniType(VarDeclExprAST &vardecl) {
-      mlir::Type type;
-      // build default initalization
-      if(vardecl.ifTable()){
-        type = getTableType(vardecl.getType(), vardecl.getTableType(), vardecl.loc());
-      } else{
-        type = getVarType(vardecl.getType(), vardecl.loc());
-      }
-      return type;
+    return getVarType(vardecl.getType(), vardecl.loc());
   }
-
-  /// Build an MLIR table type from a ep2 AST variable type (forward to the generic
-  /// getType above for non-struct types).
-  mlir::Type getTableType(const VarType &type, const TableVarType &table, const Location &location) {
-    if (!type.name.empty() && type.name == "table") {    
-        auto t1 = getVarType(table.key_type, location);
-        auto t2 = getVarType(table.value_type, location);
-        return builder.getType<TableType>(t1, t2, type.length);
-    }
-    emitError(loc(location))
-        << "error: getTableType call with not a table type '" << type.name << "'";
-  }
-
 
   /// Build an MLIR type from a ep2 AST variable type (forward to the generic
   /// getType above for non-struct types).
@@ -768,19 +741,31 @@ private:
         return builder.getI64Type();
       if (type.name == "int")
         return builder.getI32Type();
-      // TODO(zhiyuang): get rid of this. Find type for atom (should be easy) and context
       else if (type.name == "atom")
         return builder.getType<AtomType>();
       else if (type.name == "context")
         return builder.getType<ContextType>();
       else if (type.name == "buf")
         return builder.getType<BufferType>();
-      else if (type.name == "bits")
-        return builder.getIntegerType(type.length);
-      else if (type.name == "table")
-      {        
+      else if (type.name == "bits") {
+        if (!type.checkParam({VarTemplateParam::VarTemplateParam_Integer})) {
+          emitError(loc(location)) << "error: not valid parameter for bits'"
+                                   << type.params.size() << "'";
+          return nullptr;
+        }
+        return builder.getIntegerType(type.params[0].value);
+      } else if (type.name == "table") {
+        if (!type.checkParam({VarTemplateParam::VarTemplateParam_Type,
+                              VarTemplateParam::VarTemplateParam_Type,
+                              VarTemplateParam::VarTemplateParam_Integer})) {
           emitError(loc(location))
-            << "error: Should not call getVarType for table type '" << type.name << "'";
+              << "error: Wrong Type parameter for table'" << type.params.size() << "'";
+          return nullptr;
+        }
+        // // TODO(zhiyuang): correct location
+        auto kt = getVarType(*type.params[0].type, location);
+        auto vt = getVarType(*type.params[1].type, location);
+        return builder.getType<TableType>(kt, vt, type.params[2].value);
       }
 
       auto it = structMap.find(type.name);
@@ -792,7 +777,7 @@ private:
       return it->second.first;
     }
 
-    return getType(type.shape);
+    return builder.getType<AnyType>();
   }
 };
 

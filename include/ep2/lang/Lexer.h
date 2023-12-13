@@ -54,7 +54,6 @@ enum Token : int {
   tok_controller = -8,
   tok_generate = -9,
   tok_extern = -10,
-  tok_table = -11,
 
   // primary
   tok_identifier = -56,
@@ -86,7 +85,7 @@ public:
 
   /// Move to the next token in the stream, asserting on the current token
   /// matching the expectation.
-  void consume(Token tok) {
+  inline void consume(Token tok) {
     assert(tok == curTok && "consume Token mismatch expectation");
     getNextToken();
   }
@@ -195,8 +194,6 @@ private:
         return tok_generate;
       if (identifierStr == "extern")
         return tok_extern;
-      if (identifierStr == "table")
-        return tok_table;
       return tok_identifier;
     }
 

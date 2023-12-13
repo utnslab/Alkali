@@ -444,58 +444,9 @@ private:
     return parseBinOpRHS(0, std::move(lhs));
   }
 
-  /// type ::= < shape_list >
-  /// shape_list ::= num | num , shape_list
-  std::unique_ptr<VarType> parseType() {
-    if (lexer.getCurToken() != '<')
-      return parseError<VarType>("<", "to begin type");
-    lexer.getNextToken(); // eat <
-
-    auto type = std::make_unique<VarType>();
-
-    while (lexer.getCurToken() == tok_number) {
-      type->shape.push_back(lexer.getValue());
-      lexer.getNextToken();
-      if (lexer.getCurToken() == ',')
-        lexer.getNextToken();
-    }
-
-    if (lexer.getCurToken() != '>')
-      return parseError<VarType>(">", "to end type");
-    lexer.getNextToken(); // eat >
-    return type;
-  }
-
   /// Parse a typed variable declaration.
   std::unique_ptr<VarDeclExprAST>
-  parseTypedDeclaration(llvm::StringRef typeName, bool requiresInitializer,
-                        const Location &loc) {
-    // Parse the variable name.
-    if (lexer.getCurToken() != tok_identifier)
-      return parseError<VarDeclExprAST>("name", "in variable declaration");
-    std::string id(lexer.getId());
-    lexer.getNextToken(); // eat id
-
-    // Parse the initializer.
-    std::unique_ptr<ExprAST> expr;
-    if (requiresInitializer) {
-      if (lexer.getCurToken() != '=')
-        return parseError<VarDeclExprAST>("initializer",
-                                          "in variable declaration");
-      lexer.consume(Token('='));
-      expr = parseExpression();
-    }
-
-    VarType type;
-    type.name = std::string(typeName);
-    return std::make_unique<VarDeclExprAST>(loc, std::move(id), std::move(type),
-                                            std::move(expr));
-  }
-
-
-  /// Parse a typed variable declaration, with var length specified
-  std::unique_ptr<VarDeclExprAST>
-  parseTypedDeclaration(llvm::StringRef typeName, int64_t length, 
+  parseTypedDeclaration(std::unique_ptr<VarType> type,
                         bool requiresInitializer, const Location &loc) {
     // Parse the variable name.
     if (lexer.getCurToken() != tok_identifier)
@@ -513,187 +464,51 @@ private:
       expr = parseExpression();
     }
 
-    VarType type;
-    type.name = std::string(typeName);
-    type.length = length;
-    return std::make_unique<VarDeclExprAST>(loc, std::move(id), std::move(type),
+    return std::make_unique<VarDeclExprAST>(loc, std::move(id), *std::move(type),
                                             std::move(expr));
+  }
+
+  std::unique_ptr<VarType> parseType() {
+    if (lexer.getCurToken() != tok_identifier)
+      return parseError<VarType>("type name", "in variable declaration");
+    std::string typeName(lexer.getId());
+    lexer.getNextToken(); // eat id
+
+    auto type = std::make_unique<VarType>();
+    type->name = typeName;
+
+    // optionally, we have tempalte parameters
+    // TODO(zhiyuang): other type?
+    if (lexer.getCurToken() == '<') {
+      do {
+        lexer.getNextToken();
+        if (lexer.getCurToken() == tok_number) {
+          int64_t value = lexer.getValue();
+          type->params.emplace_back(value);
+          lexer.consume(tok_number);
+        } else if (lexer.getCurToken() == tok_identifier) {
+          type->params.emplace_back(parseType());
+        } else {
+          return parseError<VarType>("template parameter", "in variable declaration");
+        }
+      } while (lexer.getCurToken() == ',');
+
+      // at last we consmue '>'.
+      lexer.consume(tok_angle_bracket_close);
+    }
+    return type;
   }
 
   /// Parse a variable declaration, for either a tensor value or a struct value,
   /// with an optionally required initializer.
-  /// decl ::= var identifier [ type ] (= expr)? 
-  /// decl ::= bits<num> identifier  (= expr)?
-  /// decl ::= identifier identifier (= expr)?
+  /// decl ::= identifier[<params (, params)*>] identifier (= expr)?
   std::unique_ptr<VarDeclExprAST> parseDeclaration(bool requiresInitializer) {
-    // Check to see if this is a 'var' declaration.
-    if (lexer.getCurToken() == tok_var)
-      return parseVarDeclaration(requiresInitializer);
-    
-    if(lexer.getCurToken() == tok_table)
-      return parseTableDeclaration(requiresInitializer);
-    
-    if(lexer.getCurToken() == tok_identifier && lexer.getId() == "bits")
-      return parseBitsDeclaration(requiresInitializer);
-
+    auto loc = lexer.getLastLocation();
     // Parse the type name.
-    if (lexer.getCurToken() != tok_identifier)
-      return parseError<VarDeclExprAST>("type name", "in variable declaration");
-    auto loc = lexer.getLastLocation();
-    std::string typeName(lexer.getId());
-    lexer.getNextToken(); // eat id
+    auto type = parseType();
 
     // Parse the rest of the declaration.
-    return parseTypedDeclaration(typeName, requiresInitializer, loc);
-  }
-
-  /// Parse a bits declaration, for either a tensor value or a struct value,
-  /// with an optionally required initializer.
-  /// decl ::= bits<num> identifier  (= expr)?
-  std::unique_ptr<VarDeclExprAST>
-  parseBitsDeclaration(bool requiresInitializer) {
-    if (lexer.getId() != "bits")
-      return parseError<VarDeclExprAST>("bits", "to begin declaration");
-    
-    auto loc = lexer.getLastLocation();
-    std::string typeName(lexer.getId());
-    lexer.getNextToken(); // eat bits
-
-    if(lexer.getCurToken() != tok_angle_bracket_open)
-      return parseError<VarDeclExprAST>("<",
-                                        "after 'bits' declaration");
-    loc = lexer.getLastLocation();
-    lexer.getNextToken(); // eat <       
-
-    if (lexer.getCurToken() != tok_number)
-      return parseError<VarDeclExprAST>("num", "after 'bits<' declaration"); 
-    uint64_t bits_length = lexer.getValue();
-    loc = lexer.getLastLocation();
-    lexer.getNextToken(); // eat num 
-
-    if(lexer.getCurToken() != tok_angle_bracket_close)
-      return parseError<VarDeclExprAST>(">",
-                                        "after 'bits<num' declaration");
-    loc = lexer.getLastLocation();
-    lexer.getNextToken(); // eat > 
-
-    // Parse the rest of the declaration.
-    return parseTypedDeclaration(typeName, bits_length, requiresInitializer, loc);
-
-  }
-  
-  /// Parse a table declaration
-  /// decl ::= table<key_type, value_type> identifier  (= expr)?
-  std::unique_ptr<VarDeclExprAST>
-  parseTableDeclaration(bool requiresInitializer) {
-    auto loc = lexer.getLastLocation();
-    std::string typeName("table");
-    lexer.getNextToken(); // eat table
-
-    if(lexer.getCurToken() != tok_angle_bracket_open)
-      return parseError<VarDeclExprAST>("<",
-                                        "after 'table' declaration");
-    loc = lexer.getLastLocation();
-    lexer.getNextToken(); // eat <    
-
-    // Parse: decl+
-    std::vector<std::unique_ptr<VarDeclExprAST>> decls;
-    while (lexer.getCurToken() != '>') {
-      auto decl = parseDeclaration(/*requiresInitializer=*/false);
-      if (!decl)
-        return nullptr;
-      decls.push_back(std::move(decl));
-
-      if (lexer.getCurToken() != ';')
-        return parseError<VarDeclExprAST>(";",
-                                     "after variable in struct definition");
-      lexer.consume(Token(';'));
-    }
-
-    if(lexer.getCurToken() != tok_angle_bracket_close)
-      return parseError<VarDeclExprAST>(">",
-                                        "after declaration");
-    loc = lexer.getLastLocation();
-    lexer.getNextToken(); // eat >
-
-    if(lexer.getCurToken() != tok_parenthese_open)
-      return parseError<VarDeclExprAST>("(",
-                                        "after 'table' declaration");
-    loc = lexer.getLastLocation();
-    lexer.getNextToken(); // eat (    
-
-    if (lexer.getCurToken() != tok_number)
-      return parseError<VarDeclExprAST>("num", "after 'table' declaration"); 
-    uint64_t table_length = lexer.getValue();
-    loc = lexer.getLastLocation();
-    lexer.getNextToken(); // eat num 
-
-    if(lexer.getCurToken() != tok_parenthese_close)
-      return parseError<VarDeclExprAST>("(",
-                                        "after 'table' declaration");
-
-    loc = lexer.getLastLocation();
-    lexer.getNextToken(); // eat ) 
-
-    if (lexer.getCurToken() != tok_identifier)
-      return parseError<VarDeclExprAST>("name", "in table declaration");
-    std::string id(lexer.getId());
-    lexer.getNextToken(); // eat id
-
-    assert(!requiresInitializer);
-    if(decls.size()!= 2)
-      return parseError<VarDeclExprAST>("more than 2 types", "in table <> declaration");
-
-    std::unique_ptr<ExprAST> expr;
-    
-    VarType type;
-    type.name = std::string(typeName);
-    type.length = table_length; // table size
-
-    TableVarType table_type;
-    table_type.key_type = decls[0]->getType();
-    table_type.value_type = decls[1]->getType();
-
-    auto tvar = std::make_unique<VarDeclExprAST>(loc, std::move(id), std::move(type),
-                                            std::move(expr));
-    tvar->setTableType(table_type);
-    tvar->isTable(true);
-    return tvar;
-  }
-
-  /// Parse a variable declaration, it starts with a `var` keyword followed by
-  /// and identifier and an optional type (shape specification) before the
-  /// optionally required initializer.
-  /// decl ::= var identifier [ type ] (= expr)?
-  std::unique_ptr<VarDeclExprAST>
-  parseVarDeclaration(bool requiresInitializer) {
-    if (lexer.getCurToken() != tok_var)
-      return parseError<VarDeclExprAST>("var", "to begin declaration");
-    auto loc = lexer.getLastLocation();
-    lexer.getNextToken(); // eat var
-
-    if (lexer.getCurToken() != tok_identifier)
-      return parseError<VarDeclExprAST>("identified",
-                                        "after 'var' declaration");
-    std::string id(lexer.getId());
-    lexer.getNextToken(); // eat id
-
-    std::unique_ptr<VarType> type; // Type is optional, it can be inferred
-    if (lexer.getCurToken() == '<') {
-      type = parseType();
-      if (!type)
-        return nullptr;
-    }
-    if (!type)
-      type = std::make_unique<VarType>();
-
-    std::unique_ptr<ExprAST> expr;
-    if (requiresInitializer) {
-      lexer.consume(Token('='));
-      expr = parseExpression();
-    }
-    return std::make_unique<VarDeclExprAST>(std::move(loc), std::move(id),
-                                            std::move(*type), std::move(expr));
+    return parseTypedDeclaration(std::move(type), requiresInitializer, loc);
   }
 
   /// Parse a block: a list of expression separated by semicolons and wrapped in
@@ -726,25 +541,12 @@ private:
         if (!ret)
           return nullptr;
         exprList->push_back(std::move(ret));
-      } else if (lexer.getCurToken() == tok_table){
-        // table<> declaration
-        auto tableDecl = parseDeclaration(/*requiresInitializer=*/false);
-        if (!tableDecl)
-          return nullptr;
-        exprList->push_back(std::move(tableDecl));
-      }
-      else if (lexer.getCurToken() == tok_identifier && lexer.getId() == "bits" && lexer.peekNextToken() == tok_angle_bracket_open) {
-        // bits<> declaration
-        auto bitsDecl = parseDeclaration(/*requiresInitializer=*/false);
-        if (!bitsDecl)
-          return nullptr;
-        exprList->push_back(std::move(bitsDecl));
-      }
-      else if (lexer.getCurToken() == tok_identifier && lexer.peekNextToken() == tok_identifier) {
-        auto loc = lexer.getLastLocation();
-        auto type = lexer.getId();
-        lexer.consume(tok_identifier);
-        auto decl = parseTypedDeclaration(type, false, loc);
+      } else if (lexer.getCurToken() == tok_identifier &&
+        (lexer.peekNextToken() == tok_identifier || lexer.peekNextToken() == tok_angle_bracket_open)) {
+        // If its variable declaration, we judge this by
+        // expr = type name
+        //      | type < params > name
+        auto decl = parseDeclaration(/* requiresInitializer = */false);
         if (!decl)
           return nullptr;
         exprList->push_back(std::move(decl));
@@ -828,7 +630,7 @@ private:
         }
 
         args.push_back(
-            std::make_unique<VarDeclExprAST>(std::move(loc), name, type));
+            std::make_unique<VarDeclExprAST>(std::move(loc), name, std::move(type)));
         if (lexer.getCurToken() != ',')
           break;
         lexer.consume(Token(','));
@@ -843,7 +645,7 @@ private:
     // success.
     lexer.consume(Token(')'));
     return std::make_unique<PrototypeAST>(std::move(loc), fnName,
-                                          std::move(args), atom, type);
+                                          std::move(args), atom, std::move(type));
   }
 
   /// Parse a function definition, we expect a prototype initiated with the
