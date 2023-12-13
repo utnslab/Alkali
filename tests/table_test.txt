@@ -1,0 +1,25 @@
+# Specify the functionality of the target archiecture
+############## main program ###########
+
+event LOAD_TABLE {
+    context ctx;
+}
+
+struct eth_header_t {
+    bits<48> dst_mac;
+    bits<48> src_mac;
+    bits<16> ether_type;
+}
+
+handler LOAD_TABLE:load_table (context ctx) {
+    table<bits<16>, bits<32>, 16> table1;
+    table<eth_header_t, buf, 16> table2;
+
+    eth_header_t tmp;
+
+    table1.update(10, 11);
+    table1.update(tmp, 12);
+
+    table1.lookup(10);
+    table2.lookup(tmp);
+}

@@ -85,7 +85,7 @@ public:
 
   /// Move to the next token in the stream, asserting on the current token
   /// matching the expectation.
-  void consume(Token tok) {
+  inline void consume(Token tok) {
     assert(tok == curTok && "consume Token mismatch expectation");
     getNextToken();
   }

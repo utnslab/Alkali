@@ -89,6 +89,16 @@ def EP2_BufferType: EP2_BaseType<"Buffer", "buf"> {
   }];
 }
 
+def EP2_TableType: EP2_BaseType<"Table", "table"> {
+  let summary = "Table type";
+  let description = [{
+    This is a table with a key value look up interface
+  }];
+
+  let parameters = (ins "Type":$keyType, "Type":$valueType,  AttrParameter<"int", "size">:$size );
+  let assemblyFormat = "`<` $keyType `,` $valueType `,` $size `>` ";
+}
+
 def EP2_AtomType: EP2_BaseType<"Atom", "atom"> {
   let summary = "Atom type. Atom with same name are unique";
   let description = [{
@@ -116,7 +126,7 @@ def EP2_ContextRefType: EP2_BaseType<"ContextRef", "conref"> {
 }
 
 // Provide a definition of the types that are used within the EP2 dialect.
-def EP2_Type : AnyTypeOf<[AnyInteger, EP2_StructType, EP2_BufferType,
+def EP2_Type : AnyTypeOf<[AnyInteger, EP2_StructType, EP2_BufferType, EP2_TableType,
                           EP2_AtomType, EP2_ContextType, EP2_ContextRefType]>;
 
 
@@ -189,6 +199,22 @@ def AddOp : EP2_Op<"add",
   let summary = "element-wise addition operation";
   let description = [{
     The "add" operation performs element-wise addition between two tensors.
+    The shapes of the tensor operands are expected to match.
+  }];
+
+  let arguments = (ins AnyInteger:$lhs, AnyInteger:$rhs);
+  let results = (outs AnyInteger);
+}
+
+//===----------------------------------------------------------------------===//
+// SubOp
+//===----------------------------------------------------------------------===//
+
+def SubOp : EP2_Op<"sub",
+    [Pure]> {
+  let summary = "element-wise sub operation";
+  let description = [{
+    The "sub" operation performs element-wise sub between two tensors.
     The shapes of the tensor operands are expected to match.
   }];
 
@@ -341,6 +367,35 @@ def EmitOp : EP2_Op<"emit"> {
 }
 
 //===----------------------------------------------------------------------===//
+// Table Related Operations
+// LookupOp
+//===----------------------------------------------------------------------===//
+
+def LookupOp : EP2_Op<"lookup", [Pure]> {
+  let summary = "lookup op for table";
+  let description = [{
+    Lookup from a table using key, return the value.
+  }];
+
+  let arguments = (ins EP2_TableType:$table, EP2_Type:$key);
+  let results = (outs EP2_Type:$value);
+}
+
+//===----------------------------------------------------------------------===//
+// UpdateOp
+//===----------------------------------------------------------------------===//
+
+def UpdateOp : EP2_Op<"update"> {
+  let summary = "update op for table";
+  let description = [{
+    update a table using key and value.
+  }];
+
+  let arguments = (ins EP2_TableType:$table, EP2_Type:$key, EP2_Type:$value);
+}
+
+//===----------------------------------------------------------------------===//
+// Reference Related Operations
 // LoadOp & StoreOp & Nop
 //===----------------------------------------------------------------------===//
 

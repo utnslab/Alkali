@@ -209,8 +209,9 @@ void ASTDumper::dump(const VarType &type) {
   llvm::errs() << "<";
   if (!type.name.empty())
     llvm::errs() << type.name;
-  else
-    llvm::interleaveComma(type.shape, llvm::errs());
+  // TODO(zhiyuang): print params, requires a << osstream operator for TypeParam
+  // else
+  //   llvm::interleaveComma(type.params, llvm::errs());
   llvm::errs() << ">";
 }
 
