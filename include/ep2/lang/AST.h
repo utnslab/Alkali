@@ -418,35 +418,6 @@ public:
   bool isEvent() { return isEvent_; }
 };
 
-/// This class represents a struct definition.
-class TableAST : public RecordAST {
-  Location location;
-  std::string name;
-  std::unique_ptr<VarDeclExprAST> key;
-  std::unique_ptr<VarDeclExprAST> value;
-
-public:
-  TableAST(Location location, const std::string &name,
-            std::unique_ptr<VarDeclExprAST> key_var, std::unique_ptr<VarDeclExprAST> value_var)
-      : RecordAST(Record_Struct), location(std::move(location)), name(name),
-        key(std::move(key_var)) , value(std::move(value_var)) {}
-
-  const Location &loc() { return location; }
-  llvm::StringRef getName() const { return name; }
-  std::unique_ptr<VarDeclExprAST> getKey() {
-    return std::move(key);
-  }
-
-  std::unique_ptr<VarDeclExprAST> getValue() {
-    return std::move(value);
-  }
-  /// LLVM style RTTI
-  static bool classof(const RecordAST *r) {
-    return r->getKind() == Record_Struct;
-  }
-};
-
-
 /// This class represents a list of functions to be processed together
 class ModuleAST {
   std::vector<std::unique_ptr<RecordAST>> records;
