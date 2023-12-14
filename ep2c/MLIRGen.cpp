@@ -305,8 +305,8 @@ private:
 
   mlir::Value toRValue(mlir::Value value,
                        std::optional<mlir::Type> ltype = std::nullopt) {
-    if (isa<mlir::ep2::ContextRefOp>(value.getDefiningOp())) {
-      auto resultType = ltype.value_or(value.getType());
+    if (value.getDefiningOp() != nullptr && isa<mlir::ep2::ContextRefOp>(value.getDefiningOp())) {
+      auto resultType = ltype.value_or(cast<mlir::ep2::ContextRefType>(value.getDefiningOp()->getResultTypes()[0]).getValueType());
       return builder.create<LoadOp>(value.getDefiningOp()->getLoc(),
                                     resultType, value);
     }
