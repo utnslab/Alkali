@@ -115,6 +115,7 @@ def EP2_ContextType: EP2_BaseType<"Context", "context"> {
   }];
 }
 
+// References
 def EP2_ContextRefType: EP2_BaseType<"ContextRef", "conref"> {
   let summary = "Context Type, allows dynamic access to context";
   let description = [{
@@ -125,10 +126,12 @@ def EP2_ContextRefType: EP2_BaseType<"ContextRef", "conref"> {
   let assemblyFormat = "`<` $valueType `>`";
 }
 
+// Type collections
 // Provide a definition of the types that are used within the EP2 dialect.
 def EP2_Type : AnyTypeOf<[AnyInteger, EP2_StructType, EP2_BufferType, EP2_TableType,
                           EP2_AtomType, EP2_ContextType, EP2_ContextRefType]>;
 
+def EP2_Integer : AnyTypeOf<[AnyInteger, EP2_AnyType]>;
 
 //===----------------------------------------------------------------------===//
 // Operations
@@ -202,8 +205,8 @@ def AddOp : EP2_Op<"add",
     The shapes of the tensor operands are expected to match.
   }];
 
-  let arguments = (ins AnyInteger:$lhs, AnyInteger:$rhs);
-  let results = (outs AnyInteger);
+  let arguments = (ins EP2_Integer:$lhs, EP2_Integer:$rhs);
+  let results = (outs EP2_Integer);
 }
 
 //===----------------------------------------------------------------------===//
@@ -218,8 +221,8 @@ def SubOp : EP2_Op<"sub",
     The shapes of the tensor operands are expected to match.
   }];
 
-  let arguments = (ins AnyInteger:$lhs, AnyInteger:$rhs);
-  let results = (outs AnyInteger);
+  let arguments = (ins EP2_Integer:$lhs, EP2_Integer:$rhs);
+  let results = (outs EP2_Integer);
 }
 
 //===----------------------------------------------------------------------===//
@@ -455,6 +458,23 @@ def InitOp : EP2_Op<"init", [Pure]> {
   // let hasVerifier = 1;
 }
 
+def RefInitOp : EP2_Op<"ref_init"> {
+  let summary = "Default Initialize an EP2 Reference to a value Type";
+  let description = [{
+    Perform a default initialization of an EP2 Value Type.
+    For Value Types, it will perform zero-initilaization.
+  }];
+
+  let arguments = (ins Variadic<EP2_Type>:$args);
+  let results = (outs EP2_ContextRefType:$value);
+
+  // TODO(zhiyuang): set the type
+  let builders = [
+    OpBuilder<(ins "Type":$type),
+    [{ build($_builder, $_state, type, {}); }]>
+  ];
+}
+
 //===----------------------------------------------------------------------===//
 // MulOp
 //===----------------------------------------------------------------------===//
@@ -467,8 +487,8 @@ def MulOp : EP2_Op<"mul",
     tensors. The shapes of the tensor operands are expected to match.
   }];
 
-  let arguments = (ins AnyInteger:$lhs, AnyInteger:$rhs);
-  let results = (outs F64Tensor);
+  let arguments = (ins EP2_Integer:$lhs, EP2_Integer:$rhs);
+  let results = (outs EP2_Integer);
 
   // Indicate that the operation has a custom parser and printer method.
   let hasCustomAssemblyFormat = 1;

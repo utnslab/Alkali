@@ -1,9 +1,3 @@
-
-struct context {
-    long desc_addr;
-    int desc_size;
-}
-
 struct Desc_Hdr {
     long    data_addr;
     int     size;

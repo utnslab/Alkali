@@ -24,6 +24,7 @@
 #include <utility>
 #include <vector>
 #include <unordered_map>
+#include <map>
 #include <optional>
 #include <string>
 
@@ -360,16 +361,22 @@ public:
     Record_Struct,
     Record_Event,
     Record_Handler,
-    Record_Controller
+    Record_Controller,
+    Record_Global,
   };
 
   RecordAST(RecordASTKind kind) : kind(kind) {}
   virtual ~RecordAST() = default;
 
   RecordASTKind getKind() const { return kind; }
+  void setAttributes(std::map<std::string, std::string> &&attributes) {
+    this->attributes = attributes;
+  }
+  std::map<std::string, std::string> &getAttributes() { return attributes; }
 
 private:
   const RecordASTKind kind;
+  std::map<std::string, std::string> attributes;
 };
 
 /// This class represents a function definition itself.
@@ -418,18 +425,33 @@ public:
   bool isEvent() { return isEvent_; }
 };
 
+class GlobalAST : public RecordAST {
+  Location location;
+  std::string name;
+  std::unique_ptr<VarDeclExprAST> variable;
+
+ public:
+  GlobalAST(Location location, llvm::StringRef name,
+            std::unique_ptr<VarDeclExprAST> variable)
+      : RecordAST(Record_Global), location(std::move(location)), name(name),
+        variable(std::move(variable)) {}
+  
+  VarDeclExprAST &getDecl() { return *variable; }
+  static bool classof(const RecordAST *r) {
+    return r->getKind() == Record_Global;
+  }
+};
+
 /// This class represents a list of functions to be processed together
 class ModuleAST {
   std::vector<std::unique_ptr<RecordAST>> records;
-  std::unordered_map<std::string, VarType> contextFields;
 
 public:
-  ModuleAST(std::vector<std::unique_ptr<RecordAST>> records, std::unordered_map<std::string, VarType> contextFields)
-      : records(std::move(records)), contextFields(std::move(contextFields)) {}
+  ModuleAST(std::vector<std::unique_ptr<RecordAST>> records)
+      : records(std::move(records)) {}
 
   auto begin() { return records.begin(); }
   auto end() { return records.end(); }
-  VarType getTypeCtxField(const std::string& k) { return contextFields[k]; }
 };
 
 void dump(ModuleAST &);

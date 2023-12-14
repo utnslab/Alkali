@@ -45,10 +45,12 @@ public:
     // Parse functions and structs one at a time and accumulate in this vector.
     // module ::= funcion | struct | event | handler | controller
     std::vector<std::unique_ptr<RecordAST>> records;
-    std::unordered_map<std::string, VarType> contextFields;
 
+    // clear after we emit a record
+    std::map<std::string, std::string> attributes;
     while (true) {
       std::unique_ptr<RecordAST> record;
+
       auto tok = lexer.getCurToken();
       switch (tok) {
       case tok_eof:
@@ -60,31 +62,36 @@ public:
         record = parseDefinition(tok);
         break;
       // Struct types
-      case tok_struct: {
-        record = parseStruct(tok);
-        StructAST* str = static_cast<StructAST*>(record.get());
-        if (str->getName() == "context") {
-          for (const auto& field : str->getVariables()) {
-            contextFields.emplace(field->getName().str(), field->getType());
-          }
-          continue;
-        }
-        break;
-      }
+      case tok_struct:     // FALL THROUGH
       case tok_event:
         record = parseStruct(tok);
         break;
-      // modifiers 
+      // modifiers or attritibutes
       case tok_extern:
-        // TODO: add modifier capture
+        attributes.insert_or_assign("extern", "true");
         lexer.consume(tok_extern);
         continue;
+      // TODO: add general attributes
+      // Global variables
+      case tok_global: {
+        lexer.consume(tok_global);
+        // TODO(zhiyuang): add more constraints (attrs) here
+        auto decl = parseDeclaration(/*requiresInitializer=*/false);
+        record = std::make_unique<GlobalAST>(decl->loc(), decl->getName(),
+                                             std::move(decl));
+        break;
+      }
       default:
-        return parseError<ModuleAST>("'def' or 'struct'",
+        return parseError<ModuleAST>("Top level definitions (struct, function, global Ops)",
                                      "when parsing top level module records");
       }
+
       if (!record)
         break;
+
+      record->setAttributes(std::move(attributes));
+      attributes.clear();
+
       records.push_back(std::move(record));
     }
 
@@ -92,7 +99,7 @@ public:
     if (lexer.getCurToken() != tok_eof)
       return parseError<ModuleAST>("nothing", "at end of module");
 
-    return std::make_unique<ModuleAST>(std::move(records), std::move(contextFields));
+    return std::make_unique<ModuleAST>(std::move(records));
   }
 
 private:

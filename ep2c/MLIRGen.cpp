@@ -73,17 +73,27 @@ public:
     this->modAST = &moduleAST;
 
     for (auto &record : moduleAST) {
+      mlir::Operation *op = nullptr;
       if (FunctionAST *funcAST = llvm::dyn_cast<FunctionAST>(record.get())) {
         mlir::ep2::FuncOp func = mlirGen(*funcAST);
+        op = func;
+
         if (!func)
           return nullptr;
         functionMap.insert({func.getName(), func});
       } else if (StructAST *str = llvm::dyn_cast<StructAST>(record.get())) {
         if (failed(mlirGen(*str)))
           return nullptr;
+      } else if (GlobalAST *globalAST = llvm::dyn_cast<GlobalAST>(record.get())) {
+        // TODO(zhiyuang): fill
+        // ok to just insert at top most level, as a global ref
       } else {
         llvm_unreachable("unknown record type");
       }
+
+      if (op)
+        for (auto &[k, v]: record->getAttributes())
+          op->setAttr(k, builder.getStringAttr(v));
     }
 
     // Verify the module after we have finished constructing it, this will check
@@ -575,8 +585,7 @@ private:
       } else {
         // If it is a context..
         if (isa<ContextType>(value.getType())) {
-          auto assnType = getVarType(modAST->getTypeCtxField(curVarExpr->getName().str()), path.loc());
-          auto internalType = builder.getType<ContextRefType>(assnType);
+          auto internalType = builder.getType<ContextRefType>(getVarType());
           value = builder.create<ContextRefOp>(location, internalType, curVarExpr->getName(), value);
           continue;
         }
@@ -722,19 +731,8 @@ private:
   }
 
   /// Build a tensor type from a list of shape dimensions.
-  mlir::Type getType(ArrayRef<int64_t> shape) {
-    // If the shape is empty, then this type is unranked.
-    if (shape.empty())
-      return mlir::UnrankedTensorType::get(builder.getF64Type());
-
-    // Otherwise, we use the given shape.
-    return mlir::RankedTensorType::get(shape, builder.getF64Type());
-  }
-
-  /// Build an MLIR table type from a ep2 AST variable type (forward to the generic
-  /// getType above for non-struct types).
-  mlir::Type getUniType(VarDeclExprAST &vardecl) {
-    return getVarType(vardecl.getType(), vardecl.loc());
+  mlir::Type getVarType() {
+    return builder.getType<AnyType>();
   }
 
   /// Build an MLIR type from a ep2 AST variable type (forward to the generic

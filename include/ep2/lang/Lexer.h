@@ -54,6 +54,7 @@ enum Token : int {
   tok_controller = -8,
   tok_generate = -9,
   tok_extern = -10,
+  tok_global = -11,
 
   // primary
   tok_identifier = -56,
@@ -194,6 +195,8 @@ private:
         return tok_generate;
       if (identifierStr == "extern")
         return tok_extern;
+      if (identifierStr == "global")
+        return tok_global;
       return tok_identifier;
     }
 
