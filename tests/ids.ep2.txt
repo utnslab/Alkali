@@ -1,0 +1,105 @@
+#Specify the functionality of the target archiecture
+
+struct dma_desc_t {
+  bits<16> queue_id;
+  bits<16> meta;
+}
+
+# assume 256 bits key
+struct decrypt_cmd_t {
+  bits<16> length;
+  bits<256> key;
+}
+
+extern event NET_RECV {context ctx; buf packet;}
+extern event NET_SEND{context ctx; buf packet;}
+
+
+extern event DMA_SEND{context ctx; buf data; dma_desc_t desc;}
+extern event DMA_RECV{context ctx; buf data; dma_desc_t desc;}
+
+extern event DECRYPT_REQ {context ctx; buf data; decrypt_cmd_t cmd;}
+extern event DECRYPT_CMPL {context ctx; buf data;}
+
+extern handler NET_SEND(context ctx, buf packet) {}
+extern handler DECRYPT_REQ(context ctx, buf data, decrypt_cmd_t cmd) {
+  buf decrypted_data;
+  generate DECRYPT_CMPL{ctx, decrypted_data};
+}
+extern handler DMA_SEND(context ctx, buf data, dma_desc_t desc) {}
+
+
+##############main program########## #
+
+struct eth_header_t {
+  bits<48> dst_mac;
+  bits<48> src_mac;
+  bits<16> ether_type;
+}
+
+#Totoal 8 bytes
+struct udp_header_t {
+    bits<16> sport;                    
+    bits<16> dport;                    
+
+    bits<16> len;                      
+    bits<16> sum;                      
+};
+
+struct rpc_header_t {
+  bits<32> channel_id;
+  bits<32> seq;
+  bits<32> seg_size;
+  bits<32> total_size;
+}
+
+handler NET_RECV : process_packet(context ctx, buf packet) {
+  eth_header_t eth_header;
+  ip_header_t ip_header;
+  rpc_header_t rpc_header;
+
+  packet.extract(eth_header);
+  packet.extract(ip_header);
+  packet.extract(rpc_header);
+
+  ctx.eth_header = eth_header;
+  ctx.ip_header = ip_header;
+
+  ## Remove protocol specific header (E.g. RFC4106)
+  cmd.length = ip_header.length - 24 - 8;
+  generate MSG_REASSEMBLE{ctx, packet, rpc_header};
+}
+
+struct agg_buf_t {
+  bits<32> rest_bytes;
+  bits<32> next_seq;
+  buf tmp_buf;
+}
+
+handler MSG_REASSEMBLE: msg_reassemble(context ctx, buf data, rpc_header_t rpc_header) {
+  table <bits<16> a; agg_buf_t b;>(16) buf_reassemble;
+  agg_buf_t agg_buf;
+  agg_buf_t new_buf;
+
+  agg_buf = buf_reassemble.lookup(rpc_header.channel_id); 
+  if(agg_buf.rest_bytes == 0){
+    agg_buf.rest_bytes = rpc_header.total_size;
+  }
+
+  if(agg_buf.next_seq + 1 == rpc_header.seq){
+    agg_buf.next_seq = agg_buf.next_seq + 1;
+    agg_buf.emit(data);
+    agg_buf.rest_bytes = agg_buf.rest_bytes - rpc_header.seg_size;
+  }
+
+  if(agg_buf.rest_bytes > 0){
+    buf_reassemble.update(rpc_header.channel_id, agg_buf);
+  }
+  else{
+    # assume aligned case
+    new_buf.rest_bytes = 0;
+    buf_reassemble.update(rpc_header.channel_id, new_buf);
+
+    generate IDS_REQ{ctx, agg_buf};
+  }
+}

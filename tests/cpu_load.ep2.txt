@@ -1,0 +1,126 @@
+# Specify the functionality of the target archiecture
+
+struct dma_desc_t {
+    bits<16> queue_id; 
+    bits<16> service_id; 
+    bits<16> scale_up_or_down; # 1 scale up, 2 scale down
+}
+
+extern event NET_RECV {context ctx; buf packet;}
+extern event NET_SEND{context ctx; buf packet;}
+
+extern event DMA_SEND{context ctx; buf data; dma_desc_t desc;}
+extern event DMA_RECV{context ctx; buf data; dma_desc_t desc;}
+
+extern handler NET_SEND (context ctx, buf packet) {
+}
+
+extern handler DMA_SEND (context ctx, buf data, dma_desc_t desc) {
+}
+
+bitmask<16>;
+############## main program ###########
+
+struct eth_header_t {
+    bits<48> dst_mac;
+    bits<48> src_mac;
+    bits<16> ether_type;
+}
+
+# Totoal 24 bytes
+struct ip_header_t {
+    # Version (4),  IHL (4), DSCP (6), ECN(2)
+    bits<8> misc; 
+    bits<16> length;
+    bits<16> identification;
+    # Flags (3), Fragment Offset (13)
+    bits<16> fragment_offset;
+    
+    # TTL (8), Transport Protocol (8)
+    bits<16> TTL_transport;
+    bits<16> checksum;
+    bits<32> source_ip;
+    bits<32> dst_ip;
+    bits<32> options;
+}
+
+
+event LOAD_TABLE{context ctx; int queue_id; int if_increase;}
+event LOAD_RETURN_MIN{context ctx; int queue_id;}
+
+static shared table <bits<32> a; bits<16> b;>(16) service_load;
+static shared table <bits<16> a; bits<16> b;>(16) service_load;
+static shared table <bits<16> a; bitmask<16> b;>(16) service_core_mapping_table;
+
+handler DMA_RECV:process_loadupdate (context ctx, buf packet,  dma_desc_t desc) {
+    if(desc.scale_up_or_down == 1)
+        generate CORE_MAP_TABLE_SET{ctx, desc.service_id, desc.queue_id};
+    else if(desc.scale_up_or_down == 2)
+        generate CORE_MAP_TABLE_UNSET{ctx, desc.service_id, desc.queue_id};
+    
+    generate LOAD_TABLE_SUB{ctx, desc.service_id};
+}
+
+hanlder TABLE_UPDATE:mapping_table_update (context ctx, int service_id, int scale_up_or_down, int target_core) {
+    if(scale_up_or_down == 1){
+        bitmask<16> core_map = service_core_mapping_table.lookup(service_id);
+        core_map.set(target_core);
+        service_core_mapping_table.update(service_id, core_map);
+    }
+    else(
+        bitmask<16> core_map = service_core_mapping_table.lookup(service_id);
+        core_map.unset(target_core);
+        service_core_mapping_table.update(service_id, core_map);
+    )
+}
+
+handler NET_RECV:process_packet (context ctx, buf packet) {
+    int service_id = service_table.lookup(ip_header);
+    bitmask<16> core_map =  service_core_mapping_table.lookup(service_id);
+    int service_core_count = core_map.count();
+    int offset = hash(ip_header) % service_core_count;
+    int target_core = core_map.lookupsetbit(offset);
+    int load = service_load.lookup(service_id);
+
+    buf dma_out;
+    dma_desc_t desc;
+
+    desc.queue_id = target_core;
+    desc.service_id = service_id;
+    if(load > 16)
+        desc.scale_up_or_down = 1;
+    
+    dma_out.emit(ctx.packet);
+    generate LOAD_TABLE_ADD{ctx, service_id};
+    generate DMA_SEND{ctx, dma_out, desc};
+}
+
+sync_group G1 {LOAD_TABLE_ADD:load_table_add, LOAD_TABLE_SUB:load_table}
+
+@sync(G1)
+handler LOAD_TABLE_ADD:load_table_add (context ctx, int service_id) {
+    int load = service_load.lookup(service_id);
+    service_load.update(service_id, load+1);
+}
+
+@sync(G1)
+handler LOAD_TABLE_SUB:load_table_sub (context ctx, int service_id) {
+    int load = service_load.lookup(service_id);
+    service_load.update(service_id, load-1);
+}
+
+sync_group G2 {CORE_MAP_TABLE_SET:set_core_mapping_table, CORE_MAP_TABLE_UNSET:unset_core_mapping_table}
+
+@sync(G2)
+hanlder CORE_MAP_TABLE_SET:set_core_mapping_table (context ctx, int service_id, int target_core) {
+    bitmask<16> core_map = service_core_mapping_table.lookup(service_id);
+    core_map.set(target_core);
+    service_core_mapping_table.update(service_id, core_map);
+}
+
+@sync(G2)
+hanlder CORE_MAP_TABLE_UNSET:unset_core_mapping_table (context ctx, int service_id, int target_core) {
+    bitmask<16> core_map = service_core_mapping_table.lookup(service_id);
+    core_map.unset(target_core);
+    service_core_mapping_table.update(service_id, core_map);
+}

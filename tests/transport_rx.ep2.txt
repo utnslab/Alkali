@@ -1,0 +1,190 @@
+struct dma_desc_t {
+    bits<16> queue_id; 
+    bits<16> meta;
+}
+
+extern event NET_RECV {context ctx; buf packet;}
+extern event NET_SEND{context ctx; buf packet;}
+
+extern event DMA_SEND{context ctx; buf data; dma_desc_t desc;}
+extern event DMA_RECV{context ctx; buf data; dma_desc_t desc;}
+
+extern handler NET_SEND (context ctx, buf packet) {
+}
+
+extern handler DMA_SEND (context ctx, buf data, dma_desc_t desc) {
+}
+
+############## main program ###########
+
+struct eth_header_t {
+    bits<48> dst_mac;
+    bits<48> src_mac;
+    bits<16> ether_type;
+}
+
+# Totoal 24 bytes
+struct ip_header_t {
+    # Version (4),  IHL (4), DSCP (6), ECN(2)
+    bits<8> misc; 
+    bits<16> length;
+    bits<16> identification;
+    # Flags (3), Fragment Offset (13)
+    bits<16> fragment_offset;
+    
+    # TTL (8), Transport Protocol (8)
+    bits<16> TTL_transport;
+    bits<16> checksum;
+    bits<32> source_ip;
+    bits<32> dst_ip;
+    bits<32> options;
+}
+
+struct tcp_header_t {
+    bits<16> sport;                   # /** Source port */
+    bits<16> dport;                   # /** Destination port */
+
+    bits<32> seq;                     # /** Sequence number */
+
+    bits<32> ack;                     # /** Acknowledgement number */
+
+    bits<8>  off;                   # /** Data offset */
+    bits<8>  flags;                   # /** Flags */
+    bits<16> win;                     # /** Window */
+
+    bits<16> sum;                     # /** Checksum */
+    bits<16> urp;                     # /** Urgent pointer */
+};
+
+struct flow_state_t
+{
+    bits<32> tx_next_seq;             # /*> Sequence number of next byte to be sent */
+    bits<16> flags;                   # /*> RX/TX Flags */
+    bits<16> dupack_cnt;              # /*> Duplicate ACK count */
+    bits<32> rx_len;                  # /*> Length of receive buffer */
+    bits<32> rx_avail;                # /*> Available RX buffer space */
+    bits<32> rx_next_seq;             # /*> Next sequence number expected */
+    bits<32> rx_next_pos;             # /*> Offset of next byte in RX buffer */
+    bits<32> rx_ooo_len;              # /*> Length of Out-of-Order bytes */
+    bits<32> rx_ooo_start;            # /*> Start position of Out-of-Order bytes */
+}
+
+struct pkt_info_t
+{
+    bits<32> flow_id;
+    bits<32> pk_len;                  # /*> Length of receive buffer */
+    bits<32> pk_seq;                  # /*> Next sequence number expected */
+}
+
+struct ack_info_t
+{
+    bits<32> seq;
+    bits<32> ack;
+    bits<32> win;
+}
+
+handler NET_RECV:process_packet (context ctx, buf packet) {
+    ctx.seq = global_seq ++;
+    eth_header_t eth_header;
+    ip_header_t ip_header;
+    tcp_header_t tcp_header;
+    pkt_info_t pkt_info;
+
+    packet.extract(eth_header);
+    packet.extract(ip_header);
+    packet.extract(tcp_header);
+
+    ctx.eth_header = eth_header;
+    ctx.ip_header = ip_header;
+    ctx.tcp_header = tcp_header;
+
+    pkt_info.pk_len = 0;
+    pkt_info.pk_seq = 1;
+    pkt_info.flow_id = 0;
+    generate OoO_DETECT{ctx, pkt_info};
+}
+
+# TODO reorder buf
+controller(reorderbuf)
+@sync
+handler OoO_DETECT:OoO_detection (context ctx, pkt_info_t pkt_info) {
+    # possible optimizations, table concacting
+    table <bits<16> a; flow_state_t b;>(16) flow_table;
+    
+    flow_state_t flow_state = flow_table.lookup(pkt_info.flow_id);
+
+    int trim_start = flow_state.rx_next_seq - pkt_info.pk_seq;
+    int trim_end = pkt_bytes - trim - flow_state.avail;
+    if((pkt_bytes - trim) < flow_state.avail)
+    {
+        trim_end = 0;
+    }
+
+    int payload_bytes = pkt_info.pk_len - (trim_start + trim_end);
+
+    if(trim > pkt_info.pk_len ){
+        #OoO DROP
+    }
+    else{
+        int payload_bytes = pkt_info.pk_len - (trim_start + trim_end);
+        if(payload_bytes != 0){
+            int dma_pos =  flow_state.rx_next_pos;
+            flow_state.rx_avail = flow_state.rx_avail - payload_bytes;
+            flow_state.rx_next_seq = flow_state.rx_next_seq + payload_bytes;
+            flow_state.rx_next_pos = flow_state.rx_next_pos + payload_bytes;
+
+            dma_write_cmd_t dma_cmd;
+            dma_cmd.addr = dma_pos;
+            dma_cmd.size = payload_bytes;
+            generate DMA_WRITE(ctx, dma_cmd)
+        }
+
+        flow_table.update(flow_id, flow_state);
+
+        ack_info_t ack;
+        ack.seq = flow_state.tx_next_seq;
+        ack.ack = flow_state.rx_next_seq;
+        ack.win = flow_state.rx_avail;
+
+        generate ACK_GEN(ctx, ack);
+    }
+}
+
+handler ACK_GEN:ack_gen (context ctx, ack_info_t ack){
+    eth_header_t ack_eth_header;
+    ip_header_t ack_ip_header;
+    tcp_header_t ack_tcp_header;
+    bits<32> tmp_ip;
+    bits<48> tmp_mac;
+    bits<16> tmp_port;
+    buf packet_out;
+
+    ack_eth_header = ctx.eth_header.ether_type;
+    tmp_mac = ack_eth_header.dst_mac;
+    ack_eth_header.dst_mac = ack_eth_header.src_mac;
+    ack_eth_header.src_mac = tmp_mac;
+    
+    
+    ack_ip_header = ctx.ip_header;
+    tmp_ip = ack_ip_header.source_ip;
+    ack_ip_header.source_ip = ack_ip_header.dst_ip;
+    ack_ip_header.dst_ip = tmp_ip;
+    ack_ip_header.length = 64; # FIXED ACK Length
+
+    
+    ack_tcp_header = ctx.tcp_header;
+    tmp_port = ack_tcp_header.sport;
+    ack_tcp_header.sport = ack_tcp_header.dport;
+    ack_tcp_header.dport = tmp_port;
+
+    ack_tcp_header.seq  = ack.seq;
+    ack_tcp_header.ack  = ack.ack;
+
+
+    packet_out.emit(ack_eth_header);
+    packet_out.emit(ack_ip_header);
+    packet_out.emit(ack_tcp_header);
+    packet_out.emit(ctx.packet);
+
+    generate NET_SEND{ctx, packet_out};
+}
