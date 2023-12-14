@@ -8,6 +8,7 @@ add_mlir_dialect_library(MLIREP2
         NopEliminationPass.cpp
         LowerToLLVMPass.cpp
         FunctionRewritePass.cpp
+        ContextRefTypeAssignPass.cpp
         HandlerDependencyAnalysis.cpp
         ContextAnalysis.cpp
         AtomAnalysis.cpp
