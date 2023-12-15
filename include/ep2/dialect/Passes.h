@@ -77,6 +77,16 @@ struct FunctionRewritePass :
     StringRef getDescription() const final { return "Rewrite EP2 Function to generate to functions"; }
 };
 
+struct ContextTypeInferencePass : PassWrapper<ContextTypeInferencePass, OperationPass<ModuleOp>> {
+    void runOnOperation() final;
+    void getDependentDialects(DialectRegistry &registry) const override {
+        registry.insert<EP2Dialect>();
+    }
+
+    StringRef getArgument() const final { return "ep2-context-infer"; }
+    StringRef getDescription() const final { return "Infer context types across different handlers"; }
+};
+
 // Lower to LLVM Pass
 struct LowerToLLVMPass : public PassWrapper<LowerToLLVMPass, OperationPass<ModuleOp>> {
     void runOnOperation() final;

@@ -154,7 +154,7 @@ def EP2_ContextRefType: EP2_BaseType<"ContextRef", "conref"> {
 
 // Type collections
 // Provide a definition of the types that are used within the EP2 dialect.
-def EP2_Type : AnyTypeOf<[AnyInteger, EP2_StructType, EP2_BufferType, EP2_TableType,
+def EP2_Type : AnyTypeOf<[AnyInteger, EP2_AnyType, EP2_StructType, EP2_BufferType, EP2_TableType,
                           EP2_AtomType, EP2_ContextType, EP2_ContextRefType]>;
 
 def EP2_Integer : AnyTypeOf<[AnyInteger, EP2_AnyType]>;
@@ -303,6 +303,7 @@ def FuncOp : EP2_Op<"func", [
   }];
   let hasCustomAssemblyFormat = 1;
   let skipDefaultBuilders = 1;
+  let hasCanonicalizer = 1;
 }
 
 //===----------------------------------------------------------------------===//
@@ -436,7 +437,6 @@ def LoadOp : EP2_Op<"load"> {
 
   let arguments = (ins EP2_ContextRefType:$ref);
   let results = (outs EP2_Type:$output);
-  // let hasVerifier = 1;
 }
 
 def StoreOp : EP2_Op<"store"> {
@@ -446,7 +446,6 @@ def StoreOp : EP2_Op<"store"> {
   }];
 
   let arguments = (ins EP2_ContextRefType:$output, EP2_Type:$value);
-  // let hasVerifier = 1;
 }
 
 def NopOp : EP2_Op<"nop", [Pure]> {

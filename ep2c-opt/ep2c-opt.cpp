@@ -37,6 +37,7 @@ int main(int argc, char **argv) {
  
   mlir::PassRegistration<mlir::ep2::NopEliminationPass>();
   mlir::PassRegistration<mlir::ep2::FunctionRewritePass>();
+  mlir::PassRegistration<mlir::ep2::ContextTypeInferencePass>();
   mlir::registerAllPasses();
  
   return mlir::asMainReturnCode(

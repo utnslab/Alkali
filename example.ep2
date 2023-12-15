@@ -42,6 +42,8 @@ handler DMA_READ_CMPL:receive_desc (context ctx, buf recv_buf) {
 }
 
 handler DMA_READ_REQ:receive_payload_1 (context ctx, long addr, int size) {
-    ctx.desc_addr = ctx.desc_addr + addr;
+    long addr2;
+    addr2 = ctx.desc_addr;
+    ctx.desc_addr = addr2 + addr;
 }
 

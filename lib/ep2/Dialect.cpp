@@ -20,6 +20,8 @@
 #include "mlir/Interfaces/FunctionImplementation.h"
 #include "mlir/Transforms/InliningUtils.h"
 
+#include "mlir/Transforms/DialectConversion.h"
+
 using namespace mlir;
 using namespace mlir::ep2;
 
@@ -199,6 +201,34 @@ mlir::LogicalResult StructConstantOp::verify() {
 // FuncOp
 //===----------------------------------------------------------------------===//
 
+namespace FuncOpImpl{
+struct RefUniquerPattern : public RewritePattern {
+  RefUniquerPattern(MLIRContext *context)
+      : RewritePattern("ep2.func", 1, context) {}
+
+  LogicalResult matchAndRewrite(Operation *op,
+                                PatternRewriter &rewriter) const override {
+    if (!isa<ep2::FuncOp>(op))
+      return failure();
+
+    auto funcOp = cast<ep2::FuncOp>(op);
+    std::map<llvm::StringRef, mlir::Value> refMap;
+
+    for (auto &block : funcOp.getBlocks()) {
+      for (auto &op : block.getOperations()) {
+        if (auto refOp = dyn_cast<ep2::ContextRefOp>(op)) {
+          auto name = refOp.getName();
+          auto [it, isNew] = refMap.try_emplace(name, refOp.getResult());
+          if (!isNew)
+            rewriter.replaceAllUsesWith(refOp.getResult(), it->second);
+        }
+      }
+    }
+    return success();
+  }
+};
+} // namespace FuncOpImpl
+
 void FuncOp::build(mlir::OpBuilder &builder, mlir::OperationState &state,
                    llvm::StringRef name, mlir::FunctionType type,
                    llvm::ArrayRef<mlir::NamedAttribute> attrs) {
@@ -229,6 +259,11 @@ void FuncOp::print(mlir::OpAsmPrinter &p) {
   mlir::function_interface_impl::printFunctionOp(
       p, *this, /*isVariadic=*/false, getFunctionTypeAttrName(),
       getArgAttrsAttrName(), getResAttrsAttrName());
+}
+
+void FuncOp::getCanonicalizationPatterns(RewritePatternSet &results,
+                                         MLIRContext *context) {
+  results.add<FuncOpImpl::RefUniquerPattern>(context);
 }
 
 //===----------------------------------------------------------------------===//
