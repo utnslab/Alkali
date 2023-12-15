@@ -10,6 +10,7 @@ add_mlir_dialect_library(MLIREP2
         NopEliminationPass.cpp
         ContextRefTypeAssignPass.cpp
         EmitFPGA.cpp
+        HandlerInOutAnalysis.cpp
         AtomAnalysis.cpp
         ContextTypeInferencePass.cpp
         LowerEmitcPass.cpp

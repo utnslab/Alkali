@@ -57,21 +57,21 @@ extract#(
 	 .clk(clk), 
 	 .rst(rst) ,
 	//input buf
-	.s_inbuf_axis_tdata(arg1_tdata),
-	.s_inbuf_axis_tkeep(arg1_tkeep),
-	.s_inbuf_axis_tlast(arg1_tlast),
-	.s_inbuf_axis_tvalid(arg1_tvalid),
-	.s_inbuf_axis_tready(arg1_tready),
+	.s_inbuf_axis_tdata({arg1_tdata}),
+	.s_inbuf_axis_tkeep({arg1_tkeep}),
+	.s_inbuf_axis_tlast({arg1_tlast}),
+	.s_inbuf_axis_tvalid({arg1_tvalid}),
+	.s_inbuf_axis_tready({arg1_tready}),
 	//output buf
-	.m_outbuf_axis_tdata(bufvar_6_tdata),
-	.m_outbuf_axis_tkeep(bufvar_6_tkeep),
-	.m_outbuf_axis_tlast(bufvar_6_tlast),
-	.m_outbuf_axis_tvalid(bufvar_6_tvalid),
-	.m_outbuf_axis_tready(bufvar_6_tready),
+	.m_outbuf_axis_tdata({bufvar_6_tdata}),
+	.m_outbuf_axis_tkeep({bufvar_6_tkeep}),
+	.m_outbuf_axis_tlast({bufvar_6_tlast}),
+	.m_outbuf_axis_tvalid({bufvar_6_tvalid}),
+	.m_outbuf_axis_tready({bufvar_6_tready}),
 	//output struct
-	.m_extracted_axis_tdata(structvar_7_tdata),
-	.m_extracted_axis_tvalid(structvar_7_tvalid),
-	.m_extracted_axis_tready(structvar_7_tready)
+	.m_extracted_axis_tdata({structvar_7_tdata}),
+	.m_extracted_axis_tvalid({structvar_7_tvalid}),
+	.m_extracted_axis_tready({structvar_7_tready})
 );
 
 //extract_module_8 output buf
@@ -94,21 +94,21 @@ extract#(
 	 .clk(clk), 
 	 .rst(rst) ,
 	//input buf
-	.s_inbuf_axis_tdata(bufvar_6_tdata),
-	.s_inbuf_axis_tkeep(bufvar_6_tkeep),
-	.s_inbuf_axis_tlast(bufvar_6_tlast),
-	.s_inbuf_axis_tvalid(bufvar_6_tvalid),
-	.s_inbuf_axis_tready(bufvar_6_tready),
+	.s_inbuf_axis_tdata({bufvar_6_tdata}),
+	.s_inbuf_axis_tkeep({bufvar_6_tkeep}),
+	.s_inbuf_axis_tlast({bufvar_6_tlast}),
+	.s_inbuf_axis_tvalid({bufvar_6_tvalid}),
+	.s_inbuf_axis_tready({bufvar_6_tready}),
 	//output buf
-	.m_outbuf_axis_tdata(bufvar_9_tdata),
-	.m_outbuf_axis_tkeep(bufvar_9_tkeep),
-	.m_outbuf_axis_tlast(bufvar_9_tlast),
-	.m_outbuf_axis_tvalid(bufvar_9_tvalid),
-	.m_outbuf_axis_tready(bufvar_9_tready),
+	.m_outbuf_axis_tdata({bufvar_9_tdata}),
+	.m_outbuf_axis_tkeep({bufvar_9_tkeep}),
+	.m_outbuf_axis_tlast({bufvar_9_tlast}),
+	.m_outbuf_axis_tvalid({bufvar_9_tvalid}),
+	.m_outbuf_axis_tready({bufvar_9_tready}),
 	//output struct
-	.m_extracted_axis_tdata(structvar_10_tdata),
-	.m_extracted_axis_tvalid(structvar_10_tvalid),
-	.m_extracted_axis_tready(structvar_10_tready)
+	.m_extracted_axis_tdata({structvar_10_tdata}),
+	.m_extracted_axis_tvalid({structvar_10_tvalid}),
+	.m_extracted_axis_tready({structvar_10_tready})
 );
 
 //Access Struct
@@ -129,23 +129,23 @@ struct_access#(
 	 .clk(clk), 
 	 .rst(rst) ,
 	//struct input
-	.s_struct_axis_tdata(structvar_7_tdata),
-	.s_struct_axis_tvalid(structvar_7_tvalid),
-	.s_struct_axis_tready(structvar_7_tready),
+	.s_struct_axis_tdata({structvar_7_tdata}),
+	.s_struct_axis_tvalid({structvar_7_tvalid}),
+	.s_struct_axis_tready({structvar_7_tready}),
 	//struct output
-	.m_struct_axis_tdata(structvar_13_tdata),
-	.m_struct_axis_tvalid(structvar_13_tvalid),
-	.m_struct_axis_tready(structvar_13_tready),
+	.m_struct_axis_tdata({structvar_13_tdata}),
+	.m_struct_axis_tvalid({structvar_13_tvalid}),
+	.m_struct_axis_tready({structvar_13_tready}),
 	//output val
-	.m_val_axis_tdata(struct_accessed_INT_12_tdata),
-	.m_val_axis_tvalid(struct_accessed_INT_12_tvalid),
-	.m_val_axis_tready(struct_accessed_INT_12_tready)
+	.m_val_axis_tdata({struct_accessed_INT_12_tdata}),
+	.m_val_axis_tvalid({struct_accessed_INT_12_tvalid}),
+	.m_val_axis_tready({struct_accessed_INT_12_tready})
 );
 
 //Access Struct
  wire [48-1:0] struct_accessed_INT_15_tdata;
  wire  struct_accessed_INT_15_tvalid;
- wire  struct_accessed_INT_15_tready;
+ wire  struct_accessed_INT_15_tready=1;
 
 //Struct Assign new Struct
  wire [112-1:0] structvar_16_tdata;
@@ -154,29 +154,29 @@ struct_access#(
 
 struct_access#(
 .STRUCT_WIDTH(112),
-.ACCESS_OFFSET(0),
+.ACCESS_OFFSET(48),
 .ACCESS_SIZE(48)
 )struct_access_14(
 	 .clk(clk), 
 	 .rst(rst) ,
 	//struct input
-	.s_struct_axis_tdata(structvar_13_tdata),
-	.s_struct_axis_tvalid(structvar_13_tvalid),
-	.s_struct_axis_tready(structvar_13_tready),
+	.s_struct_axis_tdata({structvar_13_tdata}),
+	.s_struct_axis_tvalid({structvar_13_tvalid}),
+	.s_struct_axis_tready({structvar_13_tready}),
 	//struct output
-	.m_struct_axis_tdata(structvar_16_tdata),
-	.m_struct_axis_tvalid(structvar_16_tvalid),
-	.m_struct_axis_tready(structvar_16_tready),
+	.m_struct_axis_tdata({structvar_16_tdata}),
+	.m_struct_axis_tvalid({structvar_16_tvalid}),
+	.m_struct_axis_tready({structvar_16_tready}),
 	//output val
-	.m_val_axis_tdata(struct_accessed_INT_15_tdata),
-	.m_val_axis_tvalid(struct_accessed_INT_15_tvalid),
-	.m_val_axis_tready(struct_accessed_INT_15_tready)
+	.m_val_axis_tdata({struct_accessed_INT_15_tdata}),
+	.m_val_axis_tvalid({struct_accessed_INT_15_tvalid}),
+	.m_val_axis_tready({struct_accessed_INT_15_tready})
 );
 
 //Access Struct
  wire [48-1:0] struct_accessed_INT_18_tdata;
  wire  struct_accessed_INT_18_tvalid;
- wire  struct_accessed_INT_18_tready=1;
+ wire  struct_accessed_INT_18_tready;
 
 //Struct Assign new Struct
  wire [112-1:0] structvar_19_tdata;
@@ -185,23 +185,23 @@ struct_access#(
 
 struct_access#(
 .STRUCT_WIDTH(112),
-.ACCESS_OFFSET(48),
+.ACCESS_OFFSET(0),
 .ACCESS_SIZE(48)
 )struct_access_17(
 	 .clk(clk), 
 	 .rst(rst) ,
 	//struct input
-	.s_struct_axis_tdata(structvar_16_tdata),
-	.s_struct_axis_tvalid(structvar_16_tvalid),
-	.s_struct_axis_tready(structvar_16_tready),
+	.s_struct_axis_tdata({structvar_16_tdata}),
+	.s_struct_axis_tvalid({structvar_16_tvalid}),
+	.s_struct_axis_tready({structvar_16_tready}),
 	//struct output
-	.m_struct_axis_tdata(structvar_19_tdata),
-	.m_struct_axis_tvalid(structvar_19_tvalid),
-	.m_struct_axis_tready(structvar_19_tready),
+	.m_struct_axis_tdata({structvar_19_tdata}),
+	.m_struct_axis_tvalid({structvar_19_tvalid}),
+	.m_struct_axis_tready({structvar_19_tready}),
 	//output val
-	.m_val_axis_tdata(struct_accessed_INT_18_tdata),
-	.m_val_axis_tvalid(struct_accessed_INT_18_tvalid),
-	.m_val_axis_tready(struct_accessed_INT_18_tready)
+	.m_val_axis_tdata({struct_accessed_INT_18_tdata}),
+	.m_val_axis_tvalid({struct_accessed_INT_18_tvalid}),
+	.m_val_axis_tready({struct_accessed_INT_18_tready})
 );
 
 //struct_assign_20 output struct
@@ -217,17 +217,17 @@ struct_assign#(
 	 .clk(clk), 
 	 .rst(rst) ,
 	//input struct
-	.s_struct_axis_tdata(structvar_19_tdata),
-	.s_struct_axis_tvalid(structvar_19_tvalid),
-	.s_struct_axis_tready(structvar_19_tready),
+	.s_struct_axis_tdata({structvar_19_tdata}),
+	.s_struct_axis_tvalid({structvar_19_tvalid}),
+	.s_struct_axis_tready({structvar_19_tready}),
 	//input val
-	.s_assignv_axis_tdata(struct_accessed_INT_15_tdata),
-	.s_assignv_axis_tvalid(struct_accessed_INT_15_tvalid),
-	.s_assignv_axis_tready(struct_accessed_INT_15_tready),
+	.s_assignv_axis_tdata({struct_accessed_INT_18_tdata}),
+	.s_assignv_axis_tvalid({struct_accessed_INT_18_tvalid}),
+	.s_assignv_axis_tready({struct_accessed_INT_18_tready}),
 	//output struct
-	.m_struct_axis_tdata(structvar_21_tdata),
-	.m_struct_axis_tvalid(structvar_21_tvalid),
-	.m_struct_axis_tready(structvar_21_tready)
+	.m_struct_axis_tdata({structvar_21_tdata}),
+	.m_struct_axis_tvalid({structvar_21_tvalid}),
+	.m_struct_axis_tready({structvar_21_tready})
 );
 
 //Access Struct
@@ -248,17 +248,17 @@ struct_access#(
 	 .clk(clk), 
 	 .rst(rst) ,
 	//struct input
-	.s_struct_axis_tdata(structvar_21_tdata),
-	.s_struct_axis_tvalid(structvar_21_tvalid),
-	.s_struct_axis_tready(structvar_21_tready),
+	.s_struct_axis_tdata({structvar_21_tdata}),
+	.s_struct_axis_tvalid({structvar_21_tvalid}),
+	.s_struct_axis_tready({structvar_21_tready}),
 	//struct output
-	.m_struct_axis_tdata(structvar_24_tdata),
-	.m_struct_axis_tvalid(structvar_24_tvalid),
-	.m_struct_axis_tready(structvar_24_tready),
+	.m_struct_axis_tdata({structvar_24_tdata}),
+	.m_struct_axis_tvalid({structvar_24_tvalid}),
+	.m_struct_axis_tready({structvar_24_tready}),
 	//output val
-	.m_val_axis_tdata(struct_accessed_INT_23_tdata),
-	.m_val_axis_tvalid(struct_accessed_INT_23_tvalid),
-	.m_val_axis_tready(struct_accessed_INT_23_tready)
+	.m_val_axis_tdata({struct_accessed_INT_23_tdata}),
+	.m_val_axis_tvalid({struct_accessed_INT_23_tvalid}),
+	.m_val_axis_tready({struct_accessed_INT_23_tready})
 );
 
 //struct_assign_25 output struct
@@ -274,17 +274,17 @@ struct_assign#(
 	 .clk(clk), 
 	 .rst(rst) ,
 	//input struct
-	.s_struct_axis_tdata(structvar_24_tdata),
-	.s_struct_axis_tvalid(structvar_24_tvalid),
-	.s_struct_axis_tready(structvar_24_tready),
+	.s_struct_axis_tdata({structvar_24_tdata}),
+	.s_struct_axis_tvalid({structvar_24_tvalid}),
+	.s_struct_axis_tready({structvar_24_tready}),
 	//input val
-	.s_assignv_axis_tdata(struct_accessed_INT_12_tdata),
-	.s_assignv_axis_tvalid(struct_accessed_INT_12_tvalid),
-	.s_assignv_axis_tready(struct_accessed_INT_12_tready),
+	.s_assignv_axis_tdata({struct_accessed_INT_12_tdata}),
+	.s_assignv_axis_tvalid({struct_accessed_INT_12_tvalid}),
+	.s_assignv_axis_tready({struct_accessed_INT_12_tready}),
 	//output struct
-	.m_struct_axis_tdata(structvar_26_tdata),
-	.m_struct_axis_tvalid(structvar_26_tvalid),
-	.m_struct_axis_tready(structvar_26_tready)
+	.m_struct_axis_tdata({structvar_26_tdata}),
+	.m_struct_axis_tvalid({structvar_26_tvalid}),
+	.m_struct_axis_tready({structvar_26_tready})
 );
 
 //emit_module_27 output buf
@@ -303,21 +303,21 @@ emit#(
 	 .clk(clk), 
 	 .rst(rst) ,
 	//input buf
-	.s_inbuf_axis_tdata(inited_BUF_4_tdata),
-	.s_inbuf_axis_tkeep(inited_BUF_4_tkeep),
-	.s_inbuf_axis_tlast(inited_BUF_4_tlast),
-	.s_inbuf_axis_tvalid(inited_BUF_4_tvalid),
-	.s_inbuf_axis_tready(inited_BUF_4_tready),
+	.s_inbuf_axis_tdata({inited_BUF_4_tdata}),
+	.s_inbuf_axis_tkeep({inited_BUF_4_tkeep}),
+	.s_inbuf_axis_tlast({inited_BUF_4_tlast}),
+	.s_inbuf_axis_tvalid({inited_BUF_4_tvalid}),
+	.s_inbuf_axis_tready({inited_BUF_4_tready}),
 	//input struct/buf
-	.s_struct_axis_tdata(structvar_26_tdata),
-	.s_struct_axis_tvalid(structvar_26_tvalid),
-	.s_struct_axis_tready(structvar_26_tready),
+	.s_struct_axis_tdata({structvar_26_tdata}),
+	.s_struct_axis_tvalid({structvar_26_tvalid}),
+	.s_struct_axis_tready({structvar_26_tready}),
 	//output buf
-	.m_outbuf_axis_tdata(bufvar_28_tdata),
-	.m_outbuf_axis_tkeep(bufvar_28_tkeep),
-	.m_outbuf_axis_tlast(bufvar_28_tlast),
-	.m_outbuf_axis_tvalid(bufvar_28_tvalid),
-	.m_outbuf_axis_tready(bufvar_28_tready)
+	.m_outbuf_axis_tdata({bufvar_28_tdata}),
+	.m_outbuf_axis_tkeep({bufvar_28_tkeep}),
+	.m_outbuf_axis_tlast({bufvar_28_tlast}),
+	.m_outbuf_axis_tvalid({bufvar_28_tvalid}),
+	.m_outbuf_axis_tready({bufvar_28_tready})
 );
 
 //emit_module_29 output buf
@@ -336,21 +336,21 @@ emit#(
 	 .clk(clk), 
 	 .rst(rst) ,
 	//input buf
-	.s_inbuf_axis_tdata(bufvar_28_tdata),
-	.s_inbuf_axis_tkeep(bufvar_28_tkeep),
-	.s_inbuf_axis_tlast(bufvar_28_tlast),
-	.s_inbuf_axis_tvalid(bufvar_28_tvalid),
-	.s_inbuf_axis_tready(bufvar_28_tready),
+	.s_inbuf_axis_tdata({bufvar_28_tdata}),
+	.s_inbuf_axis_tkeep({bufvar_28_tkeep}),
+	.s_inbuf_axis_tlast({bufvar_28_tlast}),
+	.s_inbuf_axis_tvalid({bufvar_28_tvalid}),
+	.s_inbuf_axis_tready({bufvar_28_tready}),
 	//input struct/buf
-	.s_struct_axis_tdata(structvar_10_tdata),
-	.s_struct_axis_tvalid(structvar_10_tvalid),
-	.s_struct_axis_tready(structvar_10_tready),
+	.s_struct_axis_tdata({structvar_10_tdata}),
+	.s_struct_axis_tvalid({structvar_10_tvalid}),
+	.s_struct_axis_tready({structvar_10_tready}),
 	//output buf
-	.m_outbuf_axis_tdata(bufvar_30_tdata),
-	.m_outbuf_axis_tkeep(bufvar_30_tkeep),
-	.m_outbuf_axis_tlast(bufvar_30_tlast),
-	.m_outbuf_axis_tvalid(bufvar_30_tvalid),
-	.m_outbuf_axis_tready(bufvar_30_tready)
+	.m_outbuf_axis_tdata({bufvar_30_tdata}),
+	.m_outbuf_axis_tkeep({bufvar_30_tkeep}),
+	.m_outbuf_axis_tlast({bufvar_30_tlast}),
+	.m_outbuf_axis_tvalid({bufvar_30_tvalid}),
+	.m_outbuf_axis_tready({bufvar_30_tready})
 );
 
 //emit_module_31 output buf
@@ -369,23 +369,23 @@ emit#(
 	 .clk(clk), 
 	 .rst(rst) ,
 	//input buf
-	.s_inbuf_axis_tdata(bufvar_30_tdata),
-	.s_inbuf_axis_tkeep(bufvar_30_tkeep),
-	.s_inbuf_axis_tlast(bufvar_30_tlast),
-	.s_inbuf_axis_tvalid(bufvar_30_tvalid),
-	.s_inbuf_axis_tready(bufvar_30_tready),
+	.s_inbuf_axis_tdata({bufvar_30_tdata}),
+	.s_inbuf_axis_tkeep({bufvar_30_tkeep}),
+	.s_inbuf_axis_tlast({bufvar_30_tlast}),
+	.s_inbuf_axis_tvalid({bufvar_30_tvalid}),
+	.s_inbuf_axis_tready({bufvar_30_tready}),
 	//input struct/buf
-	.s_struct_axis_tdata(bufvar_9_tdata),
-	.s_struct_axis_tkeep(bufvar_9_tkeep),
-	.s_struct_axis_tlast(bufvar_9_tlast),
-	.s_struct_axis_tvalid(bufvar_9_tvalid),
-	.s_struct_axis_tready(bufvar_9_tready),
+	.s_struct_axis_tdata({bufvar_9_tdata}),
+	.s_struct_axis_tkeep({bufvar_9_tkeep}),
+	.s_struct_axis_tlast({bufvar_9_tlast}),
+	.s_struct_axis_tvalid({bufvar_9_tvalid}),
+	.s_struct_axis_tready({bufvar_9_tready}),
 	//output buf
-	.m_outbuf_axis_tdata(bufvar_32_tdata),
-	.m_outbuf_axis_tkeep(bufvar_32_tkeep),
-	.m_outbuf_axis_tlast(bufvar_32_tlast),
-	.m_outbuf_axis_tvalid(bufvar_32_tvalid),
-	.m_outbuf_axis_tready(bufvar_32_tready)
+	.m_outbuf_axis_tdata({bufvar_32_tdata}),
+	.m_outbuf_axis_tkeep({bufvar_32_tkeep}),
+	.m_outbuf_axis_tlast({bufvar_32_tlast}),
+	.m_outbuf_axis_tvalid({bufvar_32_tvalid}),
+	.m_outbuf_axis_tready({bufvar_32_tready})
 );
 
  assign outport_0_1_tdata = bufvar_32_tdata;

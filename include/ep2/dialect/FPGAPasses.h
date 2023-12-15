@@ -44,6 +44,7 @@ private:
   mlir::Operation *module;
   OpBuilder *builder;
   ContextAnalysis *contextAnalysis;
+  HandlerInOutAnalysis *handlerInOutAnalysis;
   FuncOp *cur_funcop;
 
   enum VAL_TYPE { CONTEXT, STRUCT, INT, BUF, ATOM, UNKNOWN };
@@ -72,6 +73,10 @@ private:
   std::string getValName(mlir::Value val);
   void UpdateValName(mlir::Value val, std::string name);
   VAL_TYPE GetValTypeAndSize(mlir::Type type, int *size);
+  unsigned getContextTotalSize(llvm::StringMap<ContextAnalysis::ContextField> &context);
+  unsigned getStructTotalSize(ep2::StructType in_struct);
+  unsigned getStructValOffset(ep2::StructType in_struct, int index);
+  unsigned getStructValSize(ep2::StructType in_struct, int index);
   void emitFuncHeader(std::ofstream &file, ep2::FuncOp funcop);
   void emitVariableInit(std::ofstream &file, ep2::InitOp initop);
   void emitExtract(std::ofstream &file, ep2::ExtractOp extractop);
@@ -81,6 +86,8 @@ private:
                         ep2::StructUpdateOp structupdateop);
   void emitEmit(std::ofstream &file, ep2::EmitOp emitop);
   void emitReturn(std::ofstream &file, ep2::ReturnOp returnop);
+  void emitHandler(ep2::FuncOp funcOp);
+  void emitController(ep2::FuncOp funcOp);
 };
 
 } // namespace ep2
