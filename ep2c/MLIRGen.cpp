@@ -67,6 +67,9 @@ public:
   /// Public API: convert the AST for a ep2 module (source file) to an MLIR
   /// Module operation.
   mlir::ModuleOp mlirGen(ModuleAST &moduleAST) {
+    // Create a global scope to hold global variables
+    SymbolTableScopeT globalScope(symbolTable);
+
     // We create an empty MLIR module and codegen functions one at a time and
     // add them to the module.
     theModule = mlir::ModuleOp::create(builder.getUnknownLoc());
@@ -85,8 +88,17 @@ public:
         if (failed(mlirGen(*str)))
           return nullptr;
       } else if (GlobalAST *globalAST = llvm::dyn_cast<GlobalAST>(record.get())) {
-        // TODO(zhiyuang): fill
+        auto &decl = globalAST->getDecl();
+
+        builder.setInsertionPointToEnd(theModule.getBody());
+        auto initOp = builder.create<InitOp>(
+            loc(decl.loc()), getVarType(decl.getType(), decl.loc()));
         // ok to just insert at top most level, as a global ref
+        if (declare(decl, initOp).failed()) {
+          emitError(loc(decl.loc())) << "error: global variable with name `"
+                                     << decl.getName() << "' already exists";
+          return nullptr;
+        }
       } else {
         llvm_unreachable("unknown record type");
       }

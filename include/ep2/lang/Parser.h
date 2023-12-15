@@ -79,6 +79,7 @@ public:
         auto decl = parseDeclaration(/*requiresInitializer=*/false);
         record = std::make_unique<GlobalAST>(decl->loc(), decl->getName(),
                                              std::move(decl));
+        lexer.consume(Token(';'));
         break;
       }
       default:
