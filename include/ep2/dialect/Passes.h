@@ -100,9 +100,15 @@ struct LowerToLLVMPass : public PassWrapper<LowerToLLVMPass, OperationPass<Modul
 // Handler dependency analysis pass
 struct HandlerDependencyAnalysis {
   enum EdgeType { MUST, MAY };
-  std::unordered_map<Operation*, std::vector<std::pair<EdgeType, Operation*>>> graph;
+  using GraphType = std::unordered_map<Operation*, std::vector<std::pair<EdgeType, Operation*>>>;
 
+  GraphType graph;
+  std::vector<GraphType> subGraphs;
+  std::vector<std::vector<Operation*>> subGraphsOrder;
+  
   HandlerDependencyAnalysis(Operation* op);
+ private:
+  void getConnectedComponents();
 };
 
 struct ContextRefTypeAssignPass : public PassWrapper<ContextRefTypeAssignPass, OperationPass<>> {

@@ -8,10 +8,78 @@
 #include "mlir/IR/Visitors.h"
 #include "llvm/ADT/StringMap.h"
 
+#include <queue>
+
 using namespace mlir;
 
 namespace mlir {
 namespace ep2 {
+
+void HandlerDependencyAnalysis::getConnectedComponents() {
+  // Transform this to an undirected graph, and get degree information
+  GraphType undirectedGraph(graph);
+  std::map<Operation*, int> inDegree;
+  for (auto &[handler, edges] : graph) {
+    for (auto &[edgeType, target] : edges) {
+      auto [it, _] = inDegree.try_emplace(target, 0);
+      it->second++;
+
+      auto &targetEdges = undirectedGraph[target];
+      if (!std::any_of(targetEdges.begin(), targetEdges.end(),
+                       [&](auto &edge) { return edge.second == handler; }))
+        targetEdges.emplace_back(edgeType, handler);
+    }
+  }
+
+  // find all connected components
+  std::map<Operation*, int> color;
+  std::vector<std::queue<Operation*>> initialHandlers;
+  for (auto &[handler, _]: graph)
+    color[handler] = 0;
+  int numColors = 1;
+  for (auto &[handler, _]: undirectedGraph) {
+    if (color[handler] == 0) {
+      int curColor = numColors++;
+      auto &subGraph = subGraphs.emplace_back();
+      auto &nodes = initialHandlers.emplace_back();
+
+      // BFS the graph
+      std::queue<Operation*> worklist;
+      worklist.push(handler);
+      while(!worklist.empty()) {
+        auto cur = worklist.front();
+        worklist.pop();
+        if (color[cur] == 0) {
+          // fill the subgraph at the same time
+          subGraph[cur] = graph[cur];
+          if (inDegree[cur] == 0)
+            nodes.push(cur);
+
+          color[cur] = curColor;
+          for (auto &[_, target]: undirectedGraph[cur])
+            worklist.push(target);
+        }
+      }
+    }
+  }
+
+  // sort the subgraphs by the topological order
+  for (auto i = 0; i < subGraphsOrder.size(); ++i) {
+    auto &subGraph = subGraphs[i];
+    auto &nodes = subGraphsOrder[i];
+    auto &worklist = initialHandlers[i];
+
+    while(!worklist.empty()) {
+      auto cur = worklist.front();
+      worklist.pop();
+      nodes.push_back(cur);
+      for (auto &[_, target]: graph[cur]) {
+        if (--inDegree[target] == 0)
+          worklist.push(target);
+      }
+    }
+  }
+}
 
 HandlerDependencyAnalysis::HandlerDependencyAnalysis(Operation* module) {
   llvm::StringMap<llvm::StringMap<Operation*>> event_handlers;
@@ -101,7 +169,10 @@ HandlerDependencyAnalysis::HandlerDependencyAnalysis(Operation* module) {
       });
     }
   });
+
+  // convert the graph to an undirected graph
+  getConnectedComponents();
 }
 
-}
-}
+} // end namespace ep2
+} // end namespace mlir
