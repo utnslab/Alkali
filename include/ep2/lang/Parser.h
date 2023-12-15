@@ -48,6 +48,7 @@ public:
 
     // clear after we emit a record
     std::map<std::string, std::string> attributes;
+    // TODO(zhiyuang): clean up modifer parsing
     while (true) {
       std::unique_ptr<RecordAST> record;
 
@@ -68,10 +69,32 @@ public:
         break;
       // modifiers or attritibutes
       case tok_extern:
-        attributes.insert_or_assign("extern", "true");
+        attributes.insert_or_assign("extern", std::string{});
         lexer.consume(tok_extern);
         continue;
-      // TODO: add general attributes
+      case tok_sbracket_open:
+        do {
+          if (lexer.getNextToken() != tok_identifier)
+            return parseError<ModuleAST>("identifier", "in attribute key");
+          std::string attrKey(lexer.getId()), attrValue{};
+
+          if (lexer.getNextToken() != ',') {
+            if (lexer.getNextToken() != '=')
+              return parseError<ModuleAST>("=", "in attribute");
+            lexer.consume(Token('='));
+            if (lexer.getNextToken() != tok_identifier)
+              return parseError<ModuleAST>("identifier", "in attribute value");
+            lexer.consume(tok_identifier);
+            attrValue = std::string(lexer.getId());
+          }
+
+          attributes.insert_or_assign(attrKey, attrValue);
+        } while (lexer.getCurToken() == ',');
+
+        if (lexer.getCurToken() != tok_sbracket_close)
+          return parseError<ModuleAST>("]", "to close attribute list");
+        lexer.consume(tok_sbracket_close);
+        continue;
       // Global variables
       case tok_global: {
         lexer.consume(tok_global);
