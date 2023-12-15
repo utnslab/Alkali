@@ -362,6 +362,7 @@ public:
     Record_Event,
     Record_Handler,
     Record_Controller,
+    Record_Scope,
     Record_Global,
   };
 
@@ -423,6 +424,28 @@ public:
   }
 
   bool isEvent() { return isEvent_; }
+};
+
+class ScopeAST : public RecordAST {
+  Location location;
+  std::string name;
+  std::vector<std::string> handlers;
+  std::string partitionKey;
+
+public:
+  ScopeAST(Location location, llvm::StringRef name,
+            std::vector<std::string> handlers, std::string partitionKey)
+      : RecordAST(Record_Scope), location(std::move(location)), name(name),
+        handlers(std::move(handlers)), partitionKey(partitionKey) {}
+  
+  llvm::StringRef getName() const { return name; }
+  llvm::ArrayRef<std::string> getHandlers() { return handlers; }
+  llvm::StringRef getPartitionKey() { return partitionKey; }
+
+  /// LLVM style RTTI
+  static bool classof(const RecordAST *r) {
+    return r->getKind() == Record_Scope;
+  }
 };
 
 class GlobalAST : public RecordAST {

@@ -14,6 +14,7 @@ add_mlir_dialect_library(MLIREP2
 
         DEPENDS
         MLIREP2OpsIncGen
+        EP2OpsAttrDefsIncGen
 
         LINK_LIBS PUBLIC
         MLIRIR

@@ -1,0 +1,15 @@
+scope scope_1 <MY_EVENT:my_handler_event>[flow_id];
+[sync=scope_1] global bits<32> global_var;
+
+event MY_EVENT {
+    atom at;
+    context ctx;
+}
+
+[sync=scope_1] controller MY_EVENT() {
+}
+
+[sync=scope_1] handler MY_EVENT:my_handler_event (context ctx) {
+    bits<32> result;
+    result = global_var + 4;
+}

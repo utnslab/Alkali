@@ -356,8 +356,11 @@ mlir::LogicalResult StructAccessOp::verify() {
 //===----------------------------------------------------------------------===//
 
 //===----------------------------------------------------------------------===//
-// TableGen'd op method definitions
+// TableGen'd attr and type definitions
 //===----------------------------------------------------------------------===//
+
+#define GET_ATTRDEF_CLASSES
+#include "ep2/dialect/EP2OpsAttrDefs.cpp.inc"
 
 #define GET_TYPEDEF_CLASSES
 #include "ep2/dialect/EP2OpsTypes.cpp.inc"
@@ -393,6 +396,10 @@ void EP2Dialect::initialize() {
 #define GET_OP_LIST
 #include "ep2/dialect/EP2Ops.cpp.inc"
       >();
+  addAttributes<
+#define GET_ATTRDEF_LIST
+#include "ep2/dialect/EP2OpsAttrDefs.cpp.inc"
+  >();
   addTypes<
 #define GET_TYPEDEF_LIST
 #include "ep2/dialect/EP2OpsTypes.cpp.inc"

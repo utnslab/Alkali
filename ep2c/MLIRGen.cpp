@@ -75,6 +75,8 @@ public:
     theModule = mlir::ModuleOp::create(builder.getUnknownLoc());
     this->modAST = &moduleAST;
 
+    std::map<std::string, ScopeAttr> scopes;
+
     for (auto &record : moduleAST) {
       mlir::Operation *op = nullptr;
       if (FunctionAST *funcAST = llvm::dyn_cast<FunctionAST>(record.get())) {
@@ -87,12 +89,19 @@ public:
       } else if (StructAST *str = llvm::dyn_cast<StructAST>(record.get())) {
         if (failed(mlirGen(*str)))
           return nullptr;
+
+      } else if (ScopeAST *scope = llvm::dyn_cast<ScopeAST>(record.get())) {
+        auto scopeAttr = builder.getAttr<ScopeAttr>(
+            scope->getHandlers(), scope->getPartitionKey().str());
+        scopes.insert_or_assign(scope->getName().str(), scopeAttr);
+
       } else if (GlobalAST *globalAST = llvm::dyn_cast<GlobalAST>(record.get())) {
         auto &decl = globalAST->getDecl();
 
         builder.setInsertionPointToEnd(theModule.getBody());
         auto initOp = builder.create<InitOp>(
             loc(decl.loc()), getVarType(decl.getType(), decl.loc()));
+        op = initOp;
         // ok to just insert at top most level, as a global ref
         if (declare(decl, initOp).failed()) {
           emitError(loc(decl.loc())) << "error: global variable with name `"
@@ -104,8 +113,20 @@ public:
       }
 
       if (op)
-        for (auto &[k, v]: record->getAttributes())
-          op->setAttr(k, builder.getStringAttr(v));
+        for (auto &[k, v]: record->getAttributes()) {
+          if (v.empty())
+            op->setAttr(k, builder.getBoolAttr(true));
+          else if (k == "sync") { // process scope attribute
+            auto scopeAttr = scopes.find(v);
+            if (scopeAttr == scopes.end()) {
+              emitError(op->getLoc()) << "error: scope with name `"
+                                            << v << "' does not exist";
+              return nullptr;
+            }
+            op->setAttr("scope", scopeAttr->second);
+          } else
+            op->setAttr(k, builder.getStringAttr(v));
+        }
     }
 
     // Verify the module after we have finished constructing it, this will check

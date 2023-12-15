@@ -56,17 +56,20 @@ public:
       switch (tok) {
       case tok_eof:
         break;
+
       // function types
       case tok_def:        // FALL THROUGH
       case tok_handler:    // FALL THROUGH
       case tok_controller:
         record = parseDefinition(tok);
         break;
+
       // Struct types
       case tok_struct:     // FALL THROUGH
       case tok_event:
         record = parseStruct(tok);
         break;
+
       // modifiers or attritibutes
       case tok_extern:
         attributes.insert_or_assign("extern", std::string{});
@@ -74,18 +77,19 @@ public:
         continue;
       case tok_sbracket_open:
         do {
+          // eat either '[' or ','
           if (lexer.getNextToken() != tok_identifier)
             return parseError<ModuleAST>("identifier", "in attribute key");
           std::string attrKey(lexer.getId()), attrValue{};
+          lexer.consume(tok_identifier);
 
-          if (lexer.getNextToken() != ',') {
-            if (lexer.getNextToken() != '=')
-              return parseError<ModuleAST>("=", "in attribute");
+          if (lexer.getCurToken() == '=') {
             lexer.consume(Token('='));
-            if (lexer.getNextToken() != tok_identifier)
+
+            if (lexer.getCurToken() != tok_identifier)
               return parseError<ModuleAST>("identifier", "in attribute value");
-            lexer.consume(tok_identifier);
             attrValue = std::string(lexer.getId());
+            lexer.consume(tok_identifier);
           }
 
           attributes.insert_or_assign(attrKey, attrValue);
@@ -95,7 +99,62 @@ public:
           return parseError<ModuleAST>("]", "to close attribute list");
         lexer.consume(tok_sbracket_close);
         continue;
-      // Global variables
+
+      // Global variables and scope
+      // scope := scope name < handler:atom , handler:atom .. > ;
+      case tok_scope: {
+        lexer.consume(tok_scope);
+
+        if (lexer.getCurToken() != tok_identifier)
+          return parseError<ModuleAST>("name identifier", "in scope declaration");
+        std::string name(lexer.getId());
+        lexer.consume(tok_identifier);
+
+        std::vector<std::string> handlers;
+        if (lexer.getCurToken() == tok_angle_bracket_open) {
+          do {
+            // eat either '<' or ','
+            if (lexer.getNextToken() != tok_identifier)
+              return parseError<ModuleAST>("handler name identifier", "in scope handler list");
+            std::string handler(lexer.getId());
+            lexer.consume(tok_identifier);
+
+            if (lexer.getCurToken() == ':') {
+              lexer.consume(tok_colon);
+
+              if (lexer.getCurToken() != tok_identifier)
+                return parseError<ModuleAST>("handler name atom", "in scope handler list");
+              std::string atom(lexer.getId());
+              lexer.consume(tok_identifier);
+
+              handler += ":" + atom;
+            }
+            handlers.push_back(std::move(handler));
+          } while (lexer.getCurToken() == ',');
+
+          if (lexer.getCurToken() != tok_angle_bracket_close)
+            return parseError<ModuleAST>(">", "to close scope handler list");
+          lexer.consume(tok_angle_bracket_close);
+        }
+
+        std::string partitionKey{};
+        if (lexer.getCurToken() == '[') {
+          lexer.consume(tok_sbracket_open);
+          if (lexer.getCurToken() != tok_identifier)
+            return parseError<ModuleAST>("identifier", "in scope partition key");
+          partitionKey = std::string(lexer.getId());
+          lexer.consume(tok_identifier);
+
+          if (lexer.getCurToken() != ']')
+            return parseError<ModuleAST>("]", "to close scope partition key");
+          lexer.consume(tok_sbracket_close);
+        }
+
+        record = std::make_unique<ScopeAST>(lexer.getLastLocation(), name,
+                                            std::move(handlers), partitionKey);
+        lexer.consume(Token(';'));
+        break;
+      }
       case tok_global: {
         lexer.consume(tok_global);
         // TODO(zhiyuang): add more constraints (attrs) here

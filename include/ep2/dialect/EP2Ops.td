@@ -19,6 +19,8 @@ include "mlir/IR/AttrTypeBase.td"
 include "mlir/Interfaces/CallInterfaces.td"
 include "mlir/Interfaces/CastInterfaces.td"
 include "mlir/Interfaces/SideEffectInterfaces.td"
+include "mlir/IR/BuiltinAttributeInterfaces.td"
+include "mlir/IR/OpAsmInterface.td"
 
 // Provide a definition of the 'toy' dialect in the ODS framework so that we
 // can define our operations.
@@ -33,6 +35,7 @@ def EP2_Dialect : Dialect {
   // We set this bit to generate the declarations for the dialect's type parsing
   // and printing hooks.
   let useDefaultTypePrinterParser = 1;
+  let useDefaultAttributePrinterParser = 1;
 
 }
 
@@ -44,6 +47,29 @@ def EP2_Dialect : Dialect {
 class EP2_Op<string mnemonic, list<Trait> traits = []> :
     Op<EP2_Dialect, mnemonic, traits>;
 
+//===----------------------------------------------------------------------===//
+// Attributes
+//===----------------------------------------------------------------------===//
+
+// It's common to define a base classes for attributes in the same dialect. This
+// removes the need to pass in the dialect for each attribute, and can also be used
+// to define a few fields ahead of time.
+class EP2_Attr<string name, string attrMnemonic, list<Trait> traits = []>
+    : AttrDef<EP2_Dialect, name, traits> {
+  let mnemonic = attrMnemonic;
+}
+
+// Here is a simple definition of an "integer" attribute, with a type and value parameter.
+def ScopeAttr : EP2_Attr<"Scope", "scope"> {
+  let summary = "An Attribute containing the scope of given operator";
+  let description = [{
+    Given the accessing handlers and the partition key
+  }];
+
+  let parameters = (ins ArrayRefParameter<"std::string">:$handlers, OptionalParameter<"std::string">:$partitionKey);
+
+  let assemblyFormat = "`<` $handlers `>` `[` $partitionKey `]`";
+}
 
 //===----------------------------------------------------------------------===//
 // Types
