@@ -14,65 +14,9 @@ using namespace mlir;
 
 namespace mlir {
 namespace ep2 {
-#define DEFAULT_AXIS_STREAM_SIZE 512
-enum INOUT { IN, OUT };
 
-enum IF_TYPE { AXIS };
-
-struct axis_config {
-  int if_keep;
-  int if_last;
-  int data_width;
-};
-
-struct inout_config {
-  INOUT direction;
-  IF_TYPE type;
-  std::string name;
-  std::string debuginfo;
-  union {
-    struct axis_config axis;
-  };
-};
-
-struct wire_config {
-  IF_TYPE type;
-  std::string name;
-  std::string debuginfo;
-  bool if_init_value;
-  bool if_use;
-  union {
-    struct axis_config axis;
-  };
-};
-
-struct wire_assign_config {
-  int src_wire_offset = -1;
-  int src_wire_size = -1;
-  int dst_wire_offset = -1;
-  int dst_wire_size = -1;
-
-  struct wire_config src_wire;
-  struct wire_config dst_wire;
-};
-
-struct module_param_config {
-  std::string paramname;
-  int paramval;
-};
-
-struct module_port_config {
-  IF_TYPE type;
-  std::vector<std::string> var_name;
-  std::string debuginfo;
-  std::string port_name;
-  union {
-    struct axis_config axis;
-  };
-};
-
-void emitModuleParameter(std::ofstream &file,
-                         std::list<struct inout_config> &wires) {
+void EmitFPGAPass::emitModuleParameter(std::ofstream &file,
+                                       std::list<struct inout_config> &wires) {
   file << "(\n"
        << "\t input  wire clk, \n"
        << "\t input  wire rst";
@@ -112,7 +56,7 @@ void emitModuleParameter(std::ofstream &file,
   file << "\n);\n";
 }
 
-void emitwire(std::ofstream &file, struct wire_config &wire) {
+void EmitFPGAPass::emitwire(std::ofstream &file, struct wire_config &wire) {
   if (wire.type == AXIS) {
     std::string inoutstr, reverse_inoutstr, tab;
 
@@ -147,7 +91,8 @@ void emitwire(std::ofstream &file, struct wire_config &wire) {
   file << "\n";
 }
 
-void emitwireassign(std::ofstream &file, struct wire_assign_config &assign) {
+void EmitFPGAPass::emitwireassign(std::ofstream &file,
+                                  struct wire_assign_config &assign) {
   assert(assign.src_wire.type == assign.dst_wire.type);
   if (assign.src_wire.type == AXIS) {
     std::string src_offset_str = "";
@@ -187,10 +132,10 @@ void emitwireassign(std::ofstream &file, struct wire_assign_config &assign) {
   file << "\n";
 }
 
-void emitModuleCall(std::ofstream &file, std::string module_type,
-                    std::string module_name,
-                    std::list<struct module_port_config> &ports,
-                    std::list<struct module_param_config> &params) {
+void EmitFPGAPass::emitModuleCall(
+    std::ofstream &file, std::string module_type, std::string module_name,
+    std::list<struct module_port_config> &ports,
+    std::list<struct module_param_config> &params) {
   file << module_type << "#(\n";
   int param_num = params.size();
   int i = 0;
@@ -209,14 +154,14 @@ void emitModuleCall(std::ofstream &file, std::string module_type,
   for (auto &port : ports) {
     std::string tdata_var_names = "{";
     std::string tkeep_var_names = "{";
-    std::string tlast_var_names= "{";
-    std::string tvalid_var_names= "{";
-    std::string tready_var_names= "{";
+    std::string tlast_var_names = "{";
+    std::string tvalid_var_names = "{";
+    std::string tready_var_names = "{";
 
     if (port.type == AXIS) {
       // if multiple input vars, cocact them
-      for(int i = 0; i < port.var_name.size(); i ++){
-        auto optional_comma = (i == port.var_name.size()-1) ? "}" : ",";
+      for (int i = 0; i < port.var_name.size(); i++) {
+        auto optional_comma = (i == port.var_name.size() - 1) ? "}" : ",";
         tdata_var_names += (port.var_name[i] + "_tdata" + optional_comma);
         tkeep_var_names += (port.var_name[i] + "_tkeep" + optional_comma);
         tlast_var_names += (port.var_name[i] + "_tlast" + optional_comma);
@@ -248,12 +193,11 @@ unsigned EmitFPGAPass::getStructTotalSize(ep2::StructType in_struct) {
   unsigned total_size = 0;
   auto elements = in_struct.getElementTypes();
   for (auto &e : elements) {
-    if (e.isIntOrFloat()) {
-      total_size += e.getIntOrFloatBitWidth();
-    } else if (isa<ep2::StructType>(e)) {
-      auto tmps = cast<ep2::StructType, Type>(e);
-      total_size += getStructTotalSize(tmps);
-    } else {
+    int t;
+    GetValTypeAndSize(e, &t);
+    total_size += t;
+
+    if (!e.isIntOrFloat() && !isa<ep2::StructType>(e)) {
       printf("Error: Cannot getStructTotalSize\n");
       e.dump();
       assert(false);
@@ -262,18 +206,16 @@ unsigned EmitFPGAPass::getStructTotalSize(ep2::StructType in_struct) {
   return total_size;
 }
 
-unsigned EmitFPGAPass::
-getContextTotalSize(llvm::StringMap<ContextAnalysis::ContextField> &context) {
+unsigned EmitFPGAPass::getContextTotalSize(
+    llvm::StringMap<ContextAnalysis::ContextField> &context) {
   unsigned total_size = 0;
-  printf("Check Context Size %d\n", context.size());
   for (auto &c : context) {
     auto e = c.second.ty;
-    if (e.isIntOrFloat()) {
-      total_size += e.getIntOrFloatBitWidth();
-    } else if (isa<ep2::StructType>(e)) {
-      auto tmps = cast<ep2::StructType, Type>(e);
-      total_size += getStructTotalSize(tmps);
-    } else {
+    int t;
+    GetValTypeAndSize(e, &t);
+    total_size += t;
+
+    if (!e.isIntOrFloat() && !isa<ep2::StructType>(e)) {
       printf("Error: Cannot getContextTotalSize\n");
       e.dump();
       assert(false);
@@ -282,7 +224,8 @@ getContextTotalSize(llvm::StringMap<ContextAnalysis::ContextField> &context) {
   return total_size;
 }
 
-unsigned EmitFPGAPass::getStructValOffset(ep2::StructType in_struct, int index) {
+unsigned EmitFPGAPass::getStructValOffset(ep2::StructType in_struct,
+                                          int index) {
   unsigned offset = 0;
   int cur_index = 0;
   auto elements = in_struct.getElementTypes();
@@ -290,12 +233,11 @@ unsigned EmitFPGAPass::getStructValOffset(ep2::StructType in_struct, int index) 
   for (auto &e : elements) {
     if (cur_index == index)
       break;
-    if (e.isIntOrFloat()) {
-      offset += e.getIntOrFloatBitWidth();
-    } else if (isa<ep2::StructType>(e)) {
-      auto tmps = cast<ep2::StructType, Type>(e);
-      offset += getStructTotalSize(tmps);
-    } else {
+
+    int t;
+    GetValTypeAndSize(e, &t);
+    offset += t;
+    if (!e.isIntOrFloat() && !isa<ep2::StructType>(e)) {
       printf("Error: Cannot getStructValOffset\n");
       e.dump();
       assert(false);
@@ -312,21 +254,13 @@ unsigned EmitFPGAPass::getStructValSize(ep2::StructType in_struct, int index) {
   assert(index < elements.size());
   auto e = elements[index];
 
-  if (e.isIntOrFloat()) {
-    size = e.getIntOrFloatBitWidth();
-  } else if (isa<ep2::StructType>(e)) {
-    auto tmps = cast<ep2::StructType, Type>(e);
-    size = getStructTotalSize(tmps);
-  } else {
-    printf("Error: Cannot getStructValSize\n");
-    e.dump();
-    assert(false);
-  }
+  int t;
+  GetValTypeAndSize(e, &t);
+  size = t;
   return size;
 }
 
-int global_var_index = 0;
-std::string assign_var_name(std::string prefix) {
+std::string EmitFPGAPass::assign_var_name(std::string prefix) {
   return prefix + "_" + std::to_string(global_var_index++);
 }
 
@@ -389,5 +323,5 @@ EmitFPGAPass::VAL_TYPE EmitFPGAPass::GetValTypeAndSize(mlir::Type type,
   return enum_type;
 }
 
-}
-}
+} // namespace ep2
+} // namespace mlir
