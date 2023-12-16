@@ -36,10 +36,21 @@ namespace {
   }
 
   struct LoadStoreTypeRewrite : public OpRewritePattern<ContextRefOp> {
+    AnalysisManager &am;
+    LoadStoreTypeRewrite(MLIRContext *context, AnalysisManager &am)
+        : OpRewritePattern<ContextRefOp>(context), am(am) {}
     using OpRewritePattern<ContextRefOp>::OpRewritePattern;
+
     LogicalResult matchAndRewrite(ContextRefOp refOp,
                                   PatternRewriter &rewriter) const final {
-      llvm::errs() << "Is refOp\n";
+      auto &contextAnalysis = am.getAnalysis<ContextBufferizationAnalysis>();
+      auto type = contextAnalysis.getContextType(refOp->getParentOfType<FuncOp>(),
+                                     refOp.getName());
+      llvm::errs() << "Query context type for" << refOp.getName() << "\n";
+      type.dump();
+      llvm::errs() << "\n";
+
+
       if (!refOp.getType().getValueType().isa<AnyType>())
         return failure();
 
@@ -73,9 +84,8 @@ void ContextTypeInferencePass::runOnOperation() {
     AnalysisManager am = getAnalysisManager();
 
     RewritePatternSet patterns(&getContext());
-    patterns.add<LoadStoreTypeRewrite>(&getContext());
+    patterns.add<LoadStoreTypeRewrite>(&getContext(), am);
     FrozenRewritePatternSet frozenPatterns(std::move(patterns));
-    llvm::errs() << "Running pattern\n";
 
     if (failed(applyPatternsAndFoldGreedily(module, frozenPatterns)))
       signalPassFailure();

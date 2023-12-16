@@ -3,14 +3,15 @@ add_mlir_dialect_library(MLIREP2
 
         # Analysis
         LowerStructAnalysis.cpp
+        HandlerDependencyAnalysis.cpp
+        ContextAnalysis.cpp
+        ContextBufferizationAnalysis.cpp
         
         # Passes
         NopEliminationPass.cpp
         LowerToLLVMPass.cpp
         FunctionRewritePass.cpp
         ContextRefTypeAssignPass.cpp
-        HandlerDependencyAnalysis.cpp
-        ContextAnalysis.cpp
         AtomAnalysis.cpp
         ContextTypeInferencePass.cpp
 

@@ -36,6 +36,7 @@ void HandlerDependencyAnalysis::getConnectedComponents() {
   std::vector<std::queue<Operation*>> initialHandlers;
   for (auto &[handler, _]: graph)
     color[handler] = 0;
+
   int numColors = 1;
   for (auto &[handler, _]: undirectedGraph) {
     if (color[handler] == 0) {
@@ -49,24 +50,22 @@ void HandlerDependencyAnalysis::getConnectedComponents() {
       while(!worklist.empty()) {
         auto cur = worklist.front();
         worklist.pop();
-        if (color[cur] == 0) {
-          // fill the subgraph at the same time
-          subGraph[cur] = graph[cur];
-          if (inDegree[cur] == 0)
-            nodes.push(cur);
 
-          color[cur] = curColor;
-          for (auto &[_, target]: undirectedGraph[cur])
+        subGraph[cur] = graph[cur];
+        if (inDegree[cur] == 0)
+          nodes.push(cur);
+
+        color[cur] = curColor;
+        for (auto &[_, target]: undirectedGraph[cur])
+          if (color[target] == 0)
             worklist.push(target);
-        }
       }
     }
   }
 
   // sort the subgraphs by the topological order
-  for (auto i = 0; i < subGraphsOrder.size(); ++i) {
-    auto &subGraph = subGraphs[i];
-    auto &nodes = subGraphsOrder[i];
+  for (size_t i = 0; i < initialHandlers.size(); ++i) {
+    auto &nodes = subGraphsOrder.emplace_back();
     auto &worklist = initialHandlers[i];
 
     while(!worklist.empty()) {
@@ -74,9 +73,24 @@ void HandlerDependencyAnalysis::getConnectedComponents() {
       worklist.pop();
       nodes.push_back(cur);
       for (auto &[_, target]: graph[cur]) {
+        llvm::outs() << "target inDegree: " << inDegree[target] << "\n";
         if (--inDegree[target] == 0)
           worklist.push(target);
       }
+    }
+  }
+
+  llvm::errs() << "Found " << numColors << " connected components\n";
+  for (size_t i = 0; i < subGraphs.size(); ++i) {
+    llvm::errs() << "Component " << i << " " << subGraphs[i].size() << " " << subGraphsOrder.size() << "\n";
+  }
+
+  for (auto &[handler, edges] : graph) {
+    auto funcOp = dyn_cast<FuncOp>(handler);
+    llvm::errs() << "Handler " << funcOp.getSymName().str() << " has " << edges.size() << " edges\n";
+    for (auto &[edgeType, target] : edges) {
+      auto funcOp = dyn_cast<FuncOp>(target);
+      llvm::errs() << "  " << funcOp.getSymName().str() << "\n";
     }
   }
 }

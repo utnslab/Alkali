@@ -107,6 +107,13 @@ struct HandlerDependencyAnalysis {
   std::vector<std::vector<Operation*>> subGraphsOrder;
   
   HandlerDependencyAnalysis(Operation* op);
+
+  size_t numComponents() { return subGraphs.size(); }
+  template<typename F>
+  void forEachComponent(F f) {
+    for (size_t i = 0; i < subGraphs.size(); ++i)
+      f(i, subGraphs[i], subGraphsOrder[i]);
+  }
  private:
   void getConnectedComponents();
 };
@@ -120,7 +127,20 @@ struct ContextRefTypeAssignPass : public PassWrapper<ContextRefTypeAssignPass, O
   }
   StringRef getArgument() const final { return "ep2-context_ref_type_assign";}
   StringRef getDescription() const final { return "Assign Type to EP2 Context Ref"; }
+  
 };
+
+struct ContextBufferizationAnalysis {
+  using TableT = llvm::StringMap<mlir::Type>;
+
+  std::vector<TableT> contextTables;
+  std::map<mlir::Operation*, TableT&> contextMap;
+
+  ContextBufferizationAnalysis(Operation* op, AnalysisManager& am);
+  mlir::Type getContextType(Operation *op, StringRef name);
+  void setContextType(Operation *op, StringRef name, mlir::Type type);
+};
+
 
 struct ContextAnalysis {
   struct ContextField {
