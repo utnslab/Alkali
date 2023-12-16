@@ -429,10 +429,9 @@ private:
     if (auto variable = symbolTable.lookup(expr.getName()).first)
       return variable;
 
-    // TODO: this error is also emitted on a valid struct reference. It doesn't result in incorrect compilation, but shouldn't be emitted.
-    emitError(loc(expr.loc()), "error: unknown variable '")
-        << expr.getName() << "'";
-    return nullptr;
+      emitError(loc(expr.loc()), "error: unknown variable '")
+          << expr.getName() << "'";
+      return nullptr;
   }
 
   /// Emit a return operation. This will return failure if any generation fails.
@@ -610,9 +609,9 @@ private:
     mlir::Value value = nullptr;
     for (int i = 0; i < end; i++) {
       auto &curVarExpr = path.getPath()[i];
-      auto newValue = mlirGen(*curVarExpr);
 
-      if (!value) {
+      if (!value) { // only the first call could be value
+        auto newValue = mlirGen(*curVarExpr);
         if (!newValue) return nullptr;
         value = newValue;
       } else {
@@ -624,6 +623,7 @@ private:
         }
         // else, c++ dot access
         // TODO(zhiyuang): multi-level struct access
+        // here we lookup only by local symbol table, need to also be on fields
         auto &varExpr = path.getPath()[i-1];
         auto structExpr = getStructForName(varExpr->getName());
         if (structExpr == nullptr) {
@@ -631,6 +631,7 @@ private:
           return nullptr;
         }
         auto index = getMemberIndex(structExpr, curVarExpr->getName());
+
         if (!index) {
           emitError(location) << "invalid access into struct expression";
           return nullptr;
