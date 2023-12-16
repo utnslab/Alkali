@@ -299,17 +299,11 @@ private:
     // Implicitly return void if no return statement was emitted.
     // FIXME: we may fix the parser instead to always return the last expression
     // (this would possibly help the REPL case later)
-    ReturnOp returnOp;
+    TerminateOp returnOp;
     if (!entryBlock.empty())
-      returnOp = dyn_cast<ReturnOp>(entryBlock.back());
+      returnOp = dyn_cast<TerminateOp>(entryBlock.back());
     if (!returnOp) {
-      builder.create<ReturnOp>(loc(funcAST.getProto()->loc()));
-    } else if (returnOp.hasOperand()) {
-      // Otherwise, if this return operation has an operand then add a result to
-      // the function.
-      function.setType(
-          builder.getFunctionType(function.getFunctionType().getInputs(),
-                                  *returnOp.operand_type_begin()));
+      builder.create<TerminateOp>(loc(funcAST.getProto()->loc()));
     }
 
     // If this function isn't main, then set the visibility to private.

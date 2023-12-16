@@ -301,6 +301,16 @@ def FuncOp : EP2_Op<"func", [
     ArrayRef<Type> getResultTypes() { return getFunctionType().getResults(); }
 
     Region *getCallableRegion() { return &getBody(); }
+
+    /// Returns if the function is a handler
+    bool isHandler() {
+      return getOperation()->getAttrOfType<StringAttr>("type").getValue() == "handler";
+    }
+
+    bool isExtern() {
+      auto boolAttr = getOperation()->getAttrOfType<BoolAttr>("extern");
+      return boolAttr ? boolAttr.getValue() : false;
+    }
   }];
   let hasCustomAssemblyFormat = 1;
   let skipDefaultBuilders = 1;
@@ -529,8 +539,14 @@ def MulOp : EP2_Op<"mul",
 // ReturnOp
 //===----------------------------------------------------------------------===//
 
-def ReturnOp : EP2_Op<"return", [Pure, HasParent<"FuncOp">,
-                                 Terminator]> {
+def TerminateOp : EP2_Op<"terminate", [Pure, HasParent<"FuncOp">, Terminator]> {
+  let summary = "End the current function execution";
+  let description = [{
+    Note that this function will not return value
+  }];
+}
+
+def ReturnOp : EP2_Op<"return", [HasParent<"FuncOp">]> {
   let summary = "return operation";
   let description = [{
     The "return" operation represents a return operation within a function.

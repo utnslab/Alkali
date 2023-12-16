@@ -118,18 +118,13 @@ int main(int argc, char **argv) {
   case Action::DumpAST:
     dump(*moduleAST);
     return 0;
-  case Action::DumpMLIR:{
-    mlir::PassManager pm(&context);
-    pm.addPass(mlir::createSCCPPass());
-    pm.addPass(std::make_unique<mlir::ep2::ContextRefTypeAssignPass>());
-    pm.run(*module);
+  case Action::DumpMLIR:
     module->dump();
-    return 0;}
+    return 0;
   default: {
     mlir::PassManager pm(&context);
     pm.addPass(mlir::createSCCPPass());
     pm.addPass(std::make_unique<mlir::ep2::NopEliminationPass>());
-    pm.addPass(std::make_unique<mlir::ep2::ContextRefTypeAssignPass>());
     
     pm.run(*module);
   }
