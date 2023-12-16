@@ -554,18 +554,12 @@ private:
       builder.create<EmitOp>(location, caller, target);
       return builder.create<NopOp>(location);
     } else if(callee == "lookup"){
-      if (!caller || operands.size() != 1) {
+      if (!caller || !isa<TableType>(caller.getType()) || operands.size() != 1) {
         emitError(location) << "callop: invalid lookup";
         return nullptr;
       }
-      // TODO: update variable or add assignment
-      auto &target = operands[0];
-      auto table_type = dyn_cast<TableType>(caller.getType());
-      auto lookupOp =builder.create<LookupOp>(location, table_type.getValueType(), caller, target);
-      auto &targetAst = *call.getArgs()[0];
-      // // single layer 
-      update(targetAst, lookupOp);
-      return lookupOp;
+      auto table = dyn_cast<TableType>(caller.getType());
+      return builder.create<LookupOp>(location, table.getValueType(), caller, operands[0]);
     } else if(callee == "update"){
       if (!caller || operands.size() != 2) {
         emitError(location) << "callop: invalid update";
