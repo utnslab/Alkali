@@ -50,17 +50,23 @@ private:
   OpBuilder *builder;
   ContextAnalysis *contextAnalysis;
   HandlerInOutAnalysis *handlerInOutAnalysis;
+  TableAnalysis *tableAnalysis;
   FuncOp *cur_funcop;
 
   enum VAL_TYPE { CONTEXT, STRUCT, INT, BUF, ATOM, UNKNOWN };
 
   enum INOUT { IN, OUT };
 
-  enum IF_TYPE { AXIS };
+  enum IF_TYPE { AXIS, TABLE_LOOKUP, TABLE_UPDATE};
 
   struct axis_config {
     int if_keep;
     int if_last;
+    int data_width;
+  };
+
+  struct table_if_config {
+    int index_width;
     int data_width;
   };
 
@@ -71,6 +77,7 @@ private:
     std::string debuginfo;
     union {
       struct axis_config axis;
+      struct table_if_config table_if;
     };
   };
 
@@ -79,9 +86,11 @@ private:
     std::string name;
     std::string debuginfo;
     bool if_init_value;
+    int init_value;
     bool if_use;
     union {
       struct axis_config axis;
+      struct table_if_config table_if;
     };
   };
 
@@ -107,6 +116,7 @@ private:
     std::string port_name;
     union {
       struct axis_config axis;
+      struct table_if_config table_if;
     };
   };
 
@@ -133,6 +143,10 @@ private:
   mlir::DenseMap<Value, std::string> arg_names;
   int global_var_index = 0;
 
+  // For each lookupop/updateop -> table lookup/update port name
+  mlir::DenseMap<mlir::Operation*, struct wire_config> tableops_to_portwire;
+
+  bool has_use(mlir::Value val) { return !val.getUses().empty(); }
   std::string getValName(mlir::Value val);
   void UpdateValName(mlir::Value val, std::string name);
   VAL_TYPE GetValTypeAndSize(mlir::Type type, int *size);
@@ -157,6 +171,9 @@ private:
 
   void emitFuncHeader(std::ofstream &file, ep2::FuncOp funcop);
   void emitVariableInit(std::ofstream &file, ep2::InitOp initop);
+  void emitTableInit(std::ofstream &file, ep2::InitOp initop);
+  void emitLookup(std::ofstream &file, ep2::LookupOp lookupop);
+  void emitUpdate(std::ofstream &file, ep2::UpdateOp updateop);
   void emitExtract(std::ofstream &file, ep2::ExtractOp extractop);
   void emitStructAccess(std::ofstream &file,
                         ep2::StructAccessOp structaccessop);
@@ -164,6 +181,7 @@ private:
                         ep2::StructUpdateOp structupdateop);
   void emitEmit(std::ofstream &file, ep2::EmitOp emitop);
   void emitReturn(std::ofstream &file, ep2::ReturnOp returnop);
+  void emitConst(std::ofstream &file, ep2::ConstantOp constop);
   void emitHandler(ep2::FuncOp funcOp);
   void emitController(ep2::FuncOp funcOp);
 };

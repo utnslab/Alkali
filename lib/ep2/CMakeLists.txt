@@ -12,6 +12,7 @@ add_mlir_dialect_library(MLIREP2
         EmitFPGAHelper.cpp
         EmitFPGA.cpp
         HandlerInOutAnalysis.cpp
+        TableAnalysis.cpp
         AtomAnalysis.cpp
         ContextTypeInferencePass.cpp
         LowerEmitcPass.cpp

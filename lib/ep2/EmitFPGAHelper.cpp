@@ -69,7 +69,7 @@ void EmitFPGAPass::emitwire(std::ofstream &file, struct wire_config &wire) {
     std::string readyvalue = "";
     if (wire.if_init_value) {
       initvalue = "=1";
-      initdatavalue = "=0";
+      initdatavalue = "=" + std::to_string(wire.init_value);
     }
     if (!wire.if_use)
       readyvalue = "=1";
@@ -87,14 +87,44 @@ void EmitFPGAPass::emitwire(std::ofstream &file, struct wire_config &wire) {
     if (wire.axis.if_last)
       file << " wire "
            << " " << wire.name << "_tlast" << initvalue << ";\n";
+  } else if(wire.type == TABLE_LOOKUP){
+    std::string datawidthstr =
+        "[" + std::to_string(wire.table_if.data_width) + "-1:0]";
+    std::string indexwidthstr =
+        "[" + std::to_string(wire.table_if.index_width) + "-1:0]";
+    
+    file << "//" << wire.debuginfo << "\n";
+    file << " wire " << indexwidthstr << " " << wire.name << "_req_index"
+         << ";\n";
+    file << " wire " << " " << wire.name << "_req_valid"  << ";\n";
+    file << " wire " << " " << wire.name << "_req_ready" << ";\n";
+    file << " wire " << " " << wire.name << "_value_valid"  << ";\n";
+    file << " wire " << " " << wire.name << "_value_ready"  << ";\n";
+    file << " wire " << datawidthstr << " " << wire.name << "_value_data"
+        << ";\n";
+  } else if(wire.type == TABLE_UPDATE){
+    std::string datawidthstr =
+        "[" + std::to_string(wire.table_if.data_width) + "-1:0]";
+    std::string indexwidthstr =
+        "[" + std::to_string(wire.table_if.index_width) + "-1:0]";
+    
+    file << "//" << wire.debuginfo << "\n";
+    file << " wire " << indexwidthstr << " " << wire.name << "_req_index"
+         << ";\n";
+    file << " wire " << " " << wire.name << "_req_index_valid"  << ";\n";
+    file << " wire " << " " << wire.name << "_req_index_ready" << ";\n";
+    
+    file << " wire " << datawidthstr << " " << wire.name << "_req_data"
+        << ";\n";
+    file << " wire " << " " << wire.name << "_req_data_valid"  << ";\n";
+    file << " wire " << " " << wire.name << "_req_data_ready" << ";\n";
   }
   file << "\n";
 }
 
 void EmitFPGAPass::emitwireassign(std::ofstream &file,
                                   struct wire_assign_config &assign) {
-  assert(assign.src_wire.type == assign.dst_wire.type);
-  if (assign.src_wire.type == AXIS) {
+  if (assign.src_wire.type == AXIS && assign.dst_wire.type == AXIS) {
     std::string src_offset_str = "";
     std::string dst_offset_str = "";
     if (assign.src_wire_offset != -1)
@@ -128,7 +158,49 @@ void EmitFPGAPass::emitwireassign(std::ofstream &file,
       file << " assign " << assign.dst_wire.name << "_tlast"
            << " = " << assign.src_wire.name << "_tlast"
            << ";\n";
-  }
+  } else if(assign.src_wire.type == AXIS && assign.dst_wire.type == TABLE_LOOKUP){
+     file << " assign " << assign.dst_wire.name << "_req_index" 
+         << " = " << assign.src_wire.name << "_tdata"
+         << ";\n";
+    file << " assign " << assign.dst_wire.name << "_req_valid"
+         << " = " << assign.src_wire.name << "_tvalid"
+         << ";\n";
+    file << " assign " << assign.src_wire.name << "_tready"
+         << " = " << assign.dst_wire.name << "_req_ready"
+         << ";\n";
+  } else if (assign.src_wire.type == TABLE_LOOKUP  && assign.dst_wire.type == AXIS){
+     file << " assign " << assign.dst_wire.name << "_tdata" 
+         << " = " << assign.src_wire.name << "_value_data"
+         << ";\n";
+    file << " assign " << assign.dst_wire.name << "_tvalid"
+         << " = " << assign.src_wire.name << "_value_valid"
+         << ";\n";
+    file << " assign " << assign.src_wire.name << "_value_ready"
+         << " = " << assign.dst_wire.name << " _tready"
+         << ";\n";
+   } else if(assign.src_wire.type == AXIS && assign.dst_wire.type == TABLE_UPDATE){
+    // UPDATE key
+     file << " assign " << assign.dst_wire.name << "_req_index" 
+         << " = " << assign.src_wire.name << "_tdata"
+         << ";\n";
+    file << " assign " << assign.dst_wire.name << "_req_index_valid"
+         << " = " << assign.src_wire.name << "_tvalid"
+         << ";\n";
+    file << " assign " << assign.src_wire.name << "_tready"
+         << " = " << assign.dst_wire.name << "_req_index_ready"
+         << ";\n";
+  } else if (assign.src_wire.type == TABLE_UPDATE  && assign.dst_wire.type == AXIS){
+    // UPDATE value
+     file << " assign " << assign.dst_wire.name << "_req_data" 
+         << " = " << assign.src_wire.name << "_tdata"
+         << ";\n";
+    file << " assign " << assign.dst_wire.name << "_req_data_valid"
+         << " = " << assign.src_wire.name << "_tvalid"
+         << ";\n";
+    file << " assign " << assign.src_wire.name << "_tready"
+         << " = " << assign.dst_wire.name << "_req_data_ready"
+         << ";\n";
+   }
   file << "\n";
 }
 
@@ -139,6 +211,7 @@ void EmitFPGAPass::emitModuleCall(
   file << module_type << "#(\n";
   int param_num = params.size();
   int i = 0;
+  std::string tab = "\t";
   for (auto &param : params) {
     i++;
     file << "." << param.paramname << "(" << std::to_string(param.paramval)
@@ -152,13 +225,12 @@ void EmitFPGAPass::emitModuleCall(
        << "\t .clk(clk), \n"
        << "\t .rst(rst) ";
   for (auto &port : ports) {
-    std::string tdata_var_names = "{";
-    std::string tkeep_var_names = "{";
-    std::string tlast_var_names = "{";
-    std::string tvalid_var_names = "{";
-    std::string tready_var_names = "{";
-
     if (port.type == AXIS) {
+      std::string tdata_var_names = "{";
+      std::string tkeep_var_names = "{";
+      std::string tlast_var_names = "{";
+      std::string tvalid_var_names = "{";
+      std::string tready_var_names = "{";
       // if multiple input vars, cocact them
       for (int i = 0; i < port.var_name.size(); i++) {
         auto optional_comma = (i == port.var_name.size() - 1) ? "}" : ",";
@@ -169,7 +241,6 @@ void EmitFPGAPass::emitModuleCall(
         tready_var_names += (port.var_name[i] + "_tready" + optional_comma);
       }
       file << ",\n";
-      std::string tab = "\t";
 
       file << tab << "//" << port.debuginfo << "\n";
       file << tab << "." << port.port_name << "_tdata(" << tdata_var_names
@@ -184,6 +255,39 @@ void EmitFPGAPass::emitModuleCall(
            << "),\n";
       file << tab << "." << port.port_name << "_tready(" << tready_var_names
            << ")";
+    } else if (port.type == TABLE_LOOKUP) {
+      assert(port.var_name.size() == 1);
+      file << ",\n";
+      file << tab << "//" << port.debuginfo << "\n";
+      file << tab << "." << port.port_name << "_req_index(" << port.var_name[0]
+           << "_req_index),\n";
+      file << tab << "." << port.port_name << "_req_valid(" << port.var_name[0]
+           << "_req_valid),\n";
+      file << tab << "." << port.port_name << "_req_ready(" << port.var_name[0]
+           << "_req_ready),\n";
+
+      file << tab << "." << port.port_name << "_value_valid("
+           << port.var_name[0] << "_value_valid),\n";
+      file << tab << "." << port.port_name << "_value_data(" << port.var_name[0]
+           << "_value_data),\n";
+      file << tab << "." << port.port_name << "_value_ready("
+           << port.var_name[0] << "_value_ready)";
+    } else if (port.type == TABLE_UPDATE) {
+      assert(port.var_name.size() == 1);
+      file << ",\n";
+      file << tab << "//" << port.debuginfo << "\n";
+      file << tab << "." << port.port_name << "_req_index(" << port.var_name[0]
+           << "_req_index),\n";
+      file << tab << "." << port.port_name << "_req_index_valid(" << port.var_name[0]
+           << "_req_index_valid),\n";
+      file << tab << "." << port.port_name << "_req_index_ready(" << port.var_name[0]
+           << "_req_index_ready),\n";
+      file << tab << "." << port.port_name << "_req_data(" << port.var_name[0]
+           << "_req_data),\n";
+      file << tab << "." << port.port_name << "_req_data_valid(" << port.var_name[0]
+           << "_req_data_valid),\n";
+      file << tab << "." << port.port_name << "_req_data_ready(" << port.var_name[0]
+           << "_req_data_ready)";
     }
   }
   file << "\n);\n\n";

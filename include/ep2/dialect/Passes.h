@@ -201,6 +201,20 @@ struct ContextRefTypeAssignPass : public PassWrapper<ContextRefTypeAssignPass, O
   
 };
 
+// Handler dependency analysis pass
+struct TableAnalysis {
+  // Table Lookup Information
+  mlir::DenseMap<mlir::Value, mlir::SmallVector<ep2::UpdateOp>> table_update_uses;
+
+  // Table Update Information
+  mlir::DenseMap<mlir::Value, mlir::SmallVector<ep2::LookupOp>> table_lookup_uses;
+
+  // lookupop/updateop -> # of index in lookup/update
+  mlir::DenseMap<mlir::Operation *, int> access_index;
+
+  TableAnalysis(Operation* op);
+};
+
 /// Analysis for context
 struct ContextBufferizationAnalysis {
   using TableT = llvm::StringMap<std::pair<int, mlir::Type>>;

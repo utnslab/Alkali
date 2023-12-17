@@ -119,13 +119,12 @@ int main(int argc, char **argv) {
   case Action::DumpAST:
     dump(*moduleAST);
     return 0;
-  case Action::DumpMLIR:
+  case Action::DumpMLIR:{
     module->dump();
     return 0;
+  }
   default: {
     mlir::PassManager pm(&context);
-    pm.addPass(mlir::createSCCPPass());
-    pm.addPass(std::make_unique<mlir::ep2::NopEliminationPass>());
     pm.addPass(std::make_unique<mlir::ep2::EmitFPGAPass>());
     
     pm.run(*module);
