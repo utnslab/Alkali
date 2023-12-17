@@ -1,0 +1,102 @@
+struct dma_write_cmd_t {
+    bits<32> addr;
+    bits<32> size;
+}
+
+extern event NET_RECV {context ctx; buf packet;}
+extern event NET_SEND{context ctx; buf packet;}
+
+extern event DMA_WRITE{context ctx; buf data; dma_write_cmd_t desc;}
+
+extern handler NET_SEND (context ctx, buf packet) {
+}
+
+extern handler DMA_WRITE (context ctx, buf data, dma_write_cmd_t desc) {
+}
+
+############## main program ###########
+
+
+
+struct eth_header_t {
+    bits<48> dst_mac;
+    bits<48> src_mac;
+    bits<16> ether_type;
+}
+
+# Totoal 24 bytes
+struct ip_header_t {
+    # Version (4),  IHL (4), DSCP (6), ECN(2)
+    bits<8> misc;
+    bits<16> length;
+    bits<16> identification;
+    # Flags (3), Fragment Offset (13)
+    bits<16> fragment_offset;
+   
+    # TTL (8), Transport Protocol (8)
+    bits<16> TTL_transport;
+    bits<16> checksum;
+    bits<32> source_ip;
+    bits<32> dst_ip;
+    bits<32> options;
+}
+
+struct tcp_header_t {
+    bits<16> sport;                   # /** Source port */
+    bits<16> dport;                   # /** Destination port */
+
+    bits<32> seq;                     # /** Sequence number */
+
+    bits<32> ack;                     # /** Acknowledgement number */
+
+    bits<8>  off;                   # /** Data offset */
+    bits<8>  flags;                   # /** Flags */
+    bits<16> win;                     # /** Window */
+
+    bits<16> sum;                     # /** Checksum */
+    bits<16> urp;                     # /** Urgent pointer */
+}
+
+struct flow_state_t
+{
+    bits<32> tx_next_seq;             # /*> Sequence number of next byte to be sent */
+    bits<16> flags;                   # /*> RX/TX Flags */
+    bits<16> dupack_cnt;              # /*> Duplicate ACK count */
+    bits<32> rx_len;                  # /*> Length of receive buffer */
+    bits<32> rx_avail;                # /*> Available RX buffer space */
+    bits<32> rx_next_seq;             # /*> Next sequence number expected */
+    bits<32> rx_next_pos;             # /*> Offset of next byte in RX buffer */
+    bits<32> rx_ooo_len;              # /*> Length of Out-of-Order bytes */
+    bits<32> rx_ooo_start;            # /*> Start position of Out-of-Order bytes */
+}
+
+struct pkt_info_t
+{
+    bits<32> flow_id;
+    bits<32> pk_len;                  # /*> Length of receive buffer */
+    bits<32> pk_seq;                  # /*> Next sequence number expected */
+}
+
+struct ack_info_t
+{
+    bits<32> seq;
+    bits<32> ack;
+    bits<32> win;
+}
+event OoO_DETECT {context ctx; pkt_info_t pkt_info;}
+event ACK_GEN {context ctx; ack_info_t ack;}
+
+
+
+handler OoO_DETECT:OoO_detection (context ctx, pkt_info_t pkt_info) {
+    # possible optimizations, table concacting
+    table <bits<16>, flow_state_t, 16> flow_table;
+   
+    flow_state_t flow_state;
+    flow_state = flow_table.lookup(pkt_info.flow_id);
+
+    bits<32> trim_start;
+    bits<32> x;
+    x = pkt_info.pk_seq;
+    trim_start = flow_state.rx_next_seq - x;
+}

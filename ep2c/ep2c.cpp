@@ -60,12 +60,17 @@ enum Action {
 } // namespace
 static cl::opt<enum Action> emitAction(
     "emit", cl::desc("Select the kind of output desired"),
+    cl::init(DumpMLIR),
     cl::values(clEnumValN(DumpAST, "ast", "output the AST dump")),
     cl::values(clEnumValN(DumpMLIR, "mlir", "output the MLIR dump")),
     cl::values(clEnumValN(DumpMLIRLLVM, "mlir-llvm",
                           "output the MLIR dump after llvm lowering")),
     cl::values(clEnumValN(DumpLLVMIR, "llvm", "output the LLVM IR dump"))
 );
+
+static cl::opt<std::string> outputFilename("o", cl::desc("Output filename"),
+                                           cl::value_desc("<filename>"),
+                                           cl::init("-"));
 
 /// Returns a Toy AST resulting from parsing the file or a nullptr on error.
 std::unique_ptr<ep2::ModuleAST> parseInputFile(llvm::StringRef filename) {
@@ -102,7 +107,6 @@ int main(int argc, char **argv) {
   context.getOrLoadDialect<mlir::ep2::EP2Dialect>();
 
   mlir::registerAllPasses();
-  // mlir::registerCSEPass();
 
   // Load MLIR
   mlir::OwningOpRef<mlir::ModuleOp> module;
@@ -113,6 +117,9 @@ int main(int argc, char **argv) {
       return 1;
     }
   }
+
+  if (outputFilename != "-")
+    freopen(outputFilename.c_str(), "w", stderr);
 
   switch (emitAction) {
   case Action::DumpAST:
