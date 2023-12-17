@@ -189,11 +189,10 @@ private:
       if (targetAst.getKind() == ExprAST::Expr_Path) {
         auto &path = cast<PathExprAST>(targetAst);
 
-        // if (path.getPathLength() == 1) {
+        // could be a variable or a struct access
         auto varName = path.getPath()[0]->getName();
         auto [_, decl] = symbolTable.lookup(varName);
         symbolTable.insert(varName, {value, decl});
-        // }
       } else if (targetAst.getKind() == ExprAST::Expr_Var) {
         auto &var = cast<VariableExprAST>(targetAst);
         auto varName = var.getName();
@@ -342,12 +341,31 @@ private:
 
   mlir::Value toRValue(mlir::Value value,
                        std::optional<mlir::Type> ltype = std::nullopt) {
-    if (value.getDefiningOp() != nullptr && isa<mlir::ep2::ContextRefOp>(value.getDefiningOp())) {
-      auto resultType = ltype.value_or(cast<mlir::ep2::ContextRefType>(value.getDefiningOp()->getResultTypes()[0]).getValueType());
-      return builder.create<LoadOp>(value.getDefiningOp()->getLoc(),
-                                    resultType, value);
+    auto op = value.getDefiningOp();
+    if (op == nullptr)
+      return value;
+
+    if (auto contextRefOp = dyn_cast<ContextRefOp>(op)) {
+      // convert contextRef to Load
+      auto resultType = ltype.value_or(contextRefOp.getType().getValueType());
+      return builder.create<LoadOp>(contextRefOp->getLoc(), resultType, value);
     }
+
     return value;
+  }
+
+  void setConstantType(mlir::Value value, mlir::Type type) {
+    auto op = value.getDefiningOp();
+    if (op == nullptr)
+      return;
+
+    if (auto constOp = dyn_cast<ConstantOp>(op)) {
+      // assign to a constant
+      if (isa<mlir::IntegerType>(constOp.getType())) {
+        assert(isa<mlir::IntegerType>(type) && "Assign a integer constant to a non-integer");
+        value.setType(type);
+      }
+    }
   }
 
   /// Emit a binary operation
@@ -391,22 +409,29 @@ private:
     case '=':
       // TODO(zhiyuang): Here we do not bring type info into IR, need to do type
       // check here
-      if (isa<mlir::ep2::ContextRefOp>(lhs.getDefiningOp())) {
+
+      if (auto refOp = dyn_cast<mlir::ep2::ContextRefOp>(lhs.getDefiningOp())) {
         builder.create<StoreOp>(location, lhs, rhs);
+
+        setConstantType(rhs, refOp.getType().getValueType());
         return builder.create<NopOp>(location, builder.getNoneType());
-      } else if (isa<StructAccessOp>(lhs.getDefiningOp())) {
-        auto op = cast<StructAccessOp>(lhs.getDefiningOp());
+      } else if (auto accessOp = dyn_cast<StructAccessOp>(lhs.getDefiningOp())) {
+        auto structType = accessOp.getInput().getType();
         auto value = builder.create<StructUpdateOp>(location,
-         op.getInput().getType(), op.getInput(), op.getIndexAttr(), rhs);
+          structType, accessOp.getInput(), accessOp.getIndexAttr(), rhs);
+
+        auto leftType = structType.getElementTypes()[accessOp.getIndex()];
+        setConstantType(rhs, leftType);
         update(*binop.getLHS(), value);
         return value;
-      } else {
-        // TODO(zhiyuang): check this. Is there any other lvalue type?
+      } else if (auto initOp = dyn_cast<InitOp>(lhs.getDefiningOp())) {
         // assign to a variable, update ssa value
+        setConstantType(rhs, initOp.getType());
         update(*binop.getLHS(), rhs);
         return rhs;
       }
 
+      // TODO(zhiyuang): check this. Is there any other lvalue type?
       emitError(location, "Assignment: unknown lvalue type");
       lhs.getDefiningOp()->dump();
       return nullptr;

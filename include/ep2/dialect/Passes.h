@@ -99,21 +99,47 @@ struct LowerToLLVMPass : public PassWrapper<LowerToLLVMPass, OperationPass<Modul
 
 // Handler dependency analysis pass
 struct HandlerDependencyAnalysis {
-  enum EdgeType { MUST, MAY };
-  using GraphType = std::unordered_map<Operation*, std::vector<std::pair<EdgeType, Operation*>>>;
+  // enum EdgeType { MUST, MAY };
+  // using GraphType = std::unordered_map<Operation*, std::vector<std::pair<EdgeType, Operation*>>>;
+  using KeyTy = FuncOp;
+  using EdgeTy = FuncOp;
+  using GraphType = std::map<KeyTy, std::vector<EdgeTy>>;
+  using OrderType = std::vector<FuncOp>;
 
   GraphType graph;
   std::vector<GraphType> subGraphs;
-  std::vector<std::vector<Operation*>> subGraphsOrder;
+  std::vector<std::vector<FuncOp>> subGraphsOrder;
   
   HandlerDependencyAnalysis(Operation* op);
 
   size_t numComponents() { return subGraphs.size(); }
+
   template<typename F>
   void forEachComponent(F f) {
     for (size_t i = 0; i < subGraphs.size(); ++i)
       f(i, subGraphs[i], subGraphsOrder[i]);
   }
+
+  void dump() {
+    llvm::errs() << "Found " << subGraphs.size() << " connected components\n";
+    for (size_t i = 0; i < subGraphs.size(); ++i) {
+      llvm::errs() << "Component " << i << " " << subGraphs[i].size() << " "
+                   << subGraphsOrder.size() << "\n";
+    }
+
+    for (auto &[handler, edges] : graph) {
+      Operation *op = handler;
+      auto funcOp = dyn_cast<FuncOp>(op);
+      llvm::errs() << "Handler " << funcOp.getSymName().str() << " has "
+                   << edges.size() << " edges\n";
+      for (auto &target : edges) {
+        Operation *op = target;
+        auto funcOp = dyn_cast<FuncOp>(op);
+        llvm::errs() << "  " << funcOp.getSymName().str() << "\n";
+      }
+    }
+  }
+
  private:
   void getConnectedComponents();
 };
@@ -130,15 +156,34 @@ struct ContextRefTypeAssignPass : public PassWrapper<ContextRefTypeAssignPass, O
   
 };
 
+/// Analysis for context
 struct ContextBufferizationAnalysis {
   using TableT = llvm::StringMap<mlir::Type>;
 
   std::vector<TableT> contextTables;
   std::map<mlir::Operation*, TableT&> contextMap;
+  AnalysisManager& am;
 
   ContextBufferizationAnalysis(Operation* op, AnalysisManager& am);
-  mlir::Type getContextType(Operation *op, StringRef name);
+  mlir::Type getContextType(FuncOp funcOp, StringRef name);
   void setContextType(Operation *op, StringRef name, mlir::Type type);
+
+  void invalidate() {
+    AnalysisManager::PreservedAnalyses preserved;
+    preserved.preserve<HandlerDependencyAnalysis>();
+    am.invalidate(preserved);
+  }
+  void dump() {
+    for (auto &[op, table] : contextMap) {
+      auto funcOp = dyn_cast<FuncOp>(op);
+      llvm::errs() << "Context table for " << funcOp.getSymName() << "\n";
+      for (auto &[name, type] : table) {
+        llvm::errs() << "  " << name << " : ";
+        type.dump();
+      }
+    }
+    llvm::errs() << "\n";
+  }
 };
 
 

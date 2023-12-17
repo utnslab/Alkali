@@ -35,26 +35,29 @@ namespace {
     return std::nullopt;
   }
 
-  struct LoadStoreTypeRewrite : public OpRewritePattern<ContextRefOp> {
+  struct ContextRefTypeRewrite : public OpRewritePattern<ContextRefOp> {
     AnalysisManager &am;
-    LoadStoreTypeRewrite(MLIRContext *context, AnalysisManager &am)
+    ContextRefTypeRewrite(MLIRContext *context, AnalysisManager &am)
         : OpRewritePattern<ContextRefOp>(context), am(am) {}
-    using OpRewritePattern<ContextRefOp>::OpRewritePattern;
 
     LogicalResult matchAndRewrite(ContextRefOp refOp,
                                   PatternRewriter &rewriter) const final {
-      auto &contextAnalysis = am.getAnalysis<ContextBufferizationAnalysis>();
-      auto type = contextAnalysis.getContextType(refOp->getParentOfType<FuncOp>(),
-                                     refOp.getName());
-      llvm::errs() << "Query context type for" << refOp.getName() << "\n";
-      type.dump();
-      llvm::errs() << "\n";
-
 
       if (!refOp.getType().getValueType().isa<AnyType>())
         return failure();
 
-      // we get a undecided reference
+      // First, we try to see if type is infered from other handler
+      auto &contextAnalysis = am.getAnalysis<ContextBufferizationAnalysis>();
+      auto type = contextAnalysis.getContextType(refOp->getParentOfType<FuncOp>(),
+                                     refOp.getName());
+
+      if (type && !type.isa<AnyType>()) {
+        auto newRefType = rewriter.getType<ContextRefType>(type);
+        rewriter.replaceOpWithNewOp<ContextRefOp>(refOp, newRefType, refOp.getName(), refOp.getContext());
+        return success();
+      }
+
+      // we try to infer from load and store ops
       std::vector<mlir::Type> types;
       for (auto user : refOp->getUsers()) {
         if (LoadOp loadOp = dyn_cast<LoadOp>(user))
@@ -72,10 +75,31 @@ namespace {
         return failure();
       auto newRefType = rewriter.getType<ContextRefType>(*newType);
       rewriter.replaceOpWithNewOp<ContextRefOp>(refOp, newRefType, refOp.getName(), refOp.getContext());
+
+      contextAnalysis.invalidate();
+      return success();
+
+    }
+
+  };
+
+  struct LoadTypeRewrite : public OpRewritePattern<LoadOp> {
+    using OpRewritePattern<LoadOp>::OpRewritePattern;
+    LogicalResult matchAndRewrite(LoadOp loadOp,
+                                  PatternRewriter &rewriter) const final {
+      auto inType = loadOp.getRef().getType().getValueType();
+      auto outType = loadOp.getType();
+      if (inType.isa<AnyType>() || !outType.isa<AnyType>())
+        return failure();
+
+      rewriter.replaceOpWithNewOp<LoadOp>(loadOp, inType, loadOp.getRef());
       return success();
     }
   };
+
 } // namespace Patterns
+
+
 
 // Conversion Pass
 void ContextTypeInferencePass::runOnOperation() {
@@ -84,7 +108,8 @@ void ContextTypeInferencePass::runOnOperation() {
     AnalysisManager am = getAnalysisManager();
 
     RewritePatternSet patterns(&getContext());
-    patterns.add<LoadStoreTypeRewrite>(&getContext(), am);
+    patterns.add<ContextRefTypeRewrite>(&getContext(), am);
+    patterns.add<LoadTypeRewrite>(&getContext());
     FrozenRewritePatternSet frozenPatterns(std::move(patterns));
 
     if (failed(applyPatternsAndFoldGreedily(module, frozenPatterns)))

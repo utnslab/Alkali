@@ -19,7 +19,7 @@ ContextAnalysis::ContextAnalysis(Operation* module, AnalysisManager& am) {
   EquivalenceClasses<Operation*> ec;
   for (const auto& n_next : h.graph) {
     for (const auto& edge : n_next.second) {
-      ec.unionSets(n_next.first, edge.second);
+      ec.unionSets(n_next.first, edge);
     }
   }
 
