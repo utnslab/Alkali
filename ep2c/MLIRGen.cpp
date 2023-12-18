@@ -15,6 +15,8 @@
 #include "ep2/lang/AST.h"
 #include "ep2/dialect/Dialect.h"
 
+#include "mlir/Dialect/SCF/IR/SCF.h"
+
 #include "mlir/IR/Attributes.h"
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/BuiltinOps.h"
@@ -159,6 +161,10 @@ private:
       llvm::ScopedHashTableScope<StringRef,
                                  std::pair<mlir::Value, VarDeclExprAST *>>;
 
+  /// TODO(zhiyuang): nested if else?
+  using UpdateTableT = std::map<StringRef, mlir::Value>;
+  std::unique_ptr<UpdateTableT> updateTable = nullptr;
+
   /// A mapping for the functions that have been code generated to MLIR.
   ModuleAST* modAST;
 
@@ -193,11 +199,15 @@ private:
         auto varName = path.getPath()[0]->getName();
         auto [_, decl] = symbolTable.lookup(varName);
         symbolTable.insert(varName, {value, decl});
+        if (updateTable)
+          updateTable->insert_or_assign(varName, value);
       } else if (targetAst.getKind() == ExprAST::Expr_Var) {
         auto &var = cast<VariableExprAST>(targetAst);
         auto varName = var.getName();
         auto [_, decl] = symbolTable.lookup(varName);
         symbolTable.insert(varName, {value, decl});
+        if (updateTable)
+          updateTable->insert_or_assign(varName, value);
       }
   }
 
@@ -355,6 +365,9 @@ private:
   }
 
   void setConstantType(mlir::Value value, mlir::Type type) {
+    if (isa<AnyType>(type))
+      return;
+
     auto op = value.getDefiningOp();
     if (op == nullptr)
       return;
@@ -424,9 +437,9 @@ private:
         setConstantType(rhs, leftType);
         update(*binop.getLHS(), value);
         return value;
-      } else if (auto initOp = dyn_cast<InitOp>(lhs.getDefiningOp())) {
+      } else {
         // assign to a variable, update ssa value
-        setConstantType(rhs, initOp.getType());
+        setConstantType(rhs, lhs.getType());
         update(*binop.getLHS(), rhs);
         return rhs;
       }
@@ -755,20 +768,101 @@ private:
     return builder.create<ConstantOp>(loc(atom.loc()), atom.getAtom());
   }
 
+  mlir::LogicalResult mlirGen(IfElseExprAST &ifelse, bool rootScope) {
+    auto cond = mlirGen(*ifelse.getCond());
+    if (!cond)
+      return mlir::failure();
+
+    mlir::Region thenRegion, elseRegion;
+    auto ip = builder.saveInsertionPoint();
+    builder.setInsertionPointToStart(&thenRegion.emplaceBlock());
+    // build if block
+    updateTable = std::make_unique<UpdateTableT>();
+    if (mlirGen(*ifelse.getThenExprs(), /* newScope= */ false).failed())
+      return mlir::failure();
+    auto thenTable = std::move(updateTable);
+
+    // build else block
+    builder.setInsertionPointToStart(&elseRegion.emplaceBlock());
+    updateTable = std::make_unique<UpdateTableT>();
+    if (ifelse.hasElse()) {
+      if (mlirGen(*ifelse.getElseExprs(), /* newScope= */ false).failed())
+        return mlir::failure();
+    }
+    auto elseTable = std::move(updateTable);
+
+    // both table exists here
+    auto merge = [&, this](UpdateTableT *from, UpdateTableT *to) {
+      for (auto &[k, v] : *from) {
+        if (!to->count(k)) {
+          auto value = symbolTable.lookup(k).first;
+          to->insert({k, value});
+        }
+      }
+    };
+    merge(thenTable.get(), elseTable.get());
+    merge(elseTable.get(), thenTable.get());
+    auto keys = llvm::map_to_vector(*thenTable, [](auto &pair) { return pair.first; });
+
+    // create a new if op
+    bool hasElse = ifelse.hasElse() || keys.size() != 0;
+    auto types = llvm::map_to_vector(
+        keys, [&](auto &key) { return symbolTable.lookup(key).first.getType(); });
+
+    builder.restoreInsertionPoint(ip);
+    auto newIfOp = builder.create<mlir::scf::IfOp>(loc(ifelse.loc()), types, cond, hasElse);
+    newIfOp.getThenRegion().takeBody(thenRegion);
+    if (ifelse.hasElse())
+      newIfOp.getElseRegion().takeBody(elseRegion);
+
+    // TODO(zhiyuang): empty else block?
+    builder.setInsertionPointToEnd(newIfOp.thenBlock());
+    auto thenYields = llvm::map_to_vector(
+        keys, [&](auto &key) { return thenTable->at(key); });
+    builder.create<mlir::scf::YieldOp>(loc(ifelse.loc()), thenYields);
+    if (hasElse) {
+      builder.setInsertionPointToEnd(newIfOp.elseBlock());
+      auto elseYields = llvm::map_to_vector(
+          keys, [&](auto &key) { return elseTable->at(key); });
+      builder.create<mlir::scf::YieldOp>(loc(ifelse.loc()), elseYields);
+    }
+
+    // update the values
+    // TODO(zhiyuang): check if its at top level
+    for (size_t i = 0; i < keys.size(); i++) {
+      auto [_, decl] = symbolTable.lookup(keys[i]);
+      symbolTable.insert(keys[i], {newIfOp.getResult(i), decl});
+    }
+    builder.setInsertionPointAfter(newIfOp);
+
+    return mlir::success();
+  }
+
   /// Codegen a list of expression, return failure if one of them hit an error.
-  mlir::LogicalResult mlirGen(ExprASTList &blockAST) {
+  mlir::LogicalResult mlirGen(ExprASTList &blockAST, bool newScope = true) {
+    // construct this any way; new scope just prevent variable declaration
     SymbolTableScopeT varScope(symbolTable);
+
     for (auto &expr : blockAST) {
       // Specific handling for variable declarations, return statement, and
       // print. These can only appear in block list and not in nested
       // expressions.
       if (auto *vardecl = dyn_cast<VarDeclExprAST>(expr.get())) {
+        if (!newScope) {
+          emitError(loc(vardecl->loc()))
+              << "error: variable declaration not allowed in this context";
+          return mlir::failure();
+        }
         if (!mlirGen(*vardecl))
           return mlir::failure();
         continue;
-      }
-      if (auto *ret = dyn_cast<ReturnExprAST>(expr.get()))
+      } else if (auto *ret = dyn_cast<ReturnExprAST>(expr.get()))
         return mlirGen(*ret);
+      else if (auto *ifelse = dyn_cast<IfElseExprAST>(expr.get())) {
+        if (mlirGen(*ifelse, newScope).failed())
+          return mlir::failure();
+        continue;
+      }
 
       // Generic expression dispatch codegen.
       if (!mlirGen(*expr))

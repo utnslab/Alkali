@@ -14,6 +14,7 @@
 #define EP2_LEXER_H
 
 #include "llvm/ADT/StringRef.h"
+#include "llvm/Support/raw_ostream.h"
 
 #include <memory>
 #include <string>
@@ -57,6 +58,9 @@ enum Token : int {
   tok_global = -11,
   tok_scope = -12,
 
+  tok_if = -13,
+  tok_else = -14,
+
   // primary
   tok_identifier = -56,
   tok_number = -57,
@@ -87,6 +91,14 @@ public:
 
   /// Move to the next token in the stream, asserting on the current token
   /// matching the expectation.
+  inline void checkConsume(Token token) {
+    if (getCurToken() != token)
+      llvm::errs() << "Parse error (" << getLastLocation().line << ", "
+                   << getLastLocation().col << "): expected '" << token
+                   << "' but has Token " << getCurToken() << "\n";
+    consume(token);
+  }
+
   inline void consume(Token tok) {
     assert(tok == curTok && "consume Token mismatch expectation");
     getNextToken();
@@ -200,6 +212,10 @@ private:
         return tok_global;
       if (identifierStr == "scope")
         return tok_scope;
+      if (identifierStr == "if")
+        return tok_if;
+      if (identifierStr == "else")
+        return tok_else;
       return tok_identifier;
     }
 

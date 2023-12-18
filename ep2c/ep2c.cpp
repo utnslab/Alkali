@@ -102,8 +102,8 @@ int main(int argc, char **argv) {
   mlir::MLIRContext context(registry);
   // Load our Dialect in this MLIR Context.
 
-  registerAllDialects(registry); 
   registry.insert<mlir::ep2::EP2Dialect>();
+  registerAllDialects(registry); 
   context.getOrLoadDialect<mlir::ep2::EP2Dialect>();
 
   mlir::registerAllPasses();
@@ -128,14 +128,10 @@ int main(int argc, char **argv) {
   case Action::DumpMLIR:
     module->dump();
     return 0;
-  default: {
-    mlir::PassManager pm(&context);
-    pm.addPass(mlir::createSCCPPass());
-    pm.addPass(std::make_unique<mlir::ep2::NopEliminationPass>());
-    
-    pm.run(*module);
-  }
+  default:
+    break;
   }
 
+  llvm::errs() << "Unknow action. Use --help to see available actions. exit.\n";
   return 0;
 }

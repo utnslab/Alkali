@@ -92,7 +92,8 @@ public:
     Expr_Path, // Var connected by dots
     Expr_BinOp,
     Expr_Call,
-    Expr_Init
+    Expr_Init,
+    Expr_IfElse
   };
 
   ExprAST(ExprASTKind kind, Location location)
@@ -309,6 +310,27 @@ public:
 
   /// LLVM style RTTI
   static bool classof(const ExprAST *c) { return c->getKind() == Expr_Call; }
+};
+
+/// Expression class for if/then/else.
+class IfElseExprAST : public ExprAST {
+  std::unique_ptr<ExprAST> cond;
+  std::unique_ptr<ExprASTList> thenExprs;
+  std::unique_ptr<ExprASTList> elseExprs;
+ public:
+  IfElseExprAST(Location loc, std::unique_ptr<ExprAST> cond,
+                std::unique_ptr<ExprASTList> thenExprs,
+                std::unique_ptr<ExprASTList> elseExprs)
+      : ExprAST(Expr_IfElse, std::move(loc)), cond(std::move(cond)),
+        thenExprs(std::move(thenExprs)), elseExprs(std::move(elseExprs)) {}
+  
+  ExprAST *getCond() { return cond.get(); }
+  ExprASTList *getThenExprs() { return thenExprs.get(); }
+  ExprASTList *getElseExprs() { return elseExprs.get(); }
+  bool hasElse() { return elseExprs != nullptr;}
+
+  /// LLVM style RTTI
+  static bool classof(const ExprAST *c) { return c->getKind() == Expr_IfElse; }
 };
 
 /// This class represents the "prototype" for a function, which captures its

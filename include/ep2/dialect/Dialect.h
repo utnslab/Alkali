@@ -24,6 +24,8 @@
 #include "mlir/Interfaces/SideEffectInterfaces.h"
 #include "llvm/ADT/TypeSwitch.h"
 
+#include "mlir/Dialect/SCF/IR/SCF.h"
+
 namespace mlir {
 namespace ep2 {
 namespace detail {

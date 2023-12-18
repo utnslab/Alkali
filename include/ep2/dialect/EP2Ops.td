@@ -36,7 +36,9 @@ def EP2_Dialect : Dialect {
   // and printing hooks.
   let useDefaultTypePrinterParser = 1;
   let useDefaultAttributePrinterParser = 1;
-
+  let dependentDialects = [
+    "::mlir::scf::SCFDialect",
+  ];
 }
 
 // Base class for toy dialect operations. This operation inherits from the base

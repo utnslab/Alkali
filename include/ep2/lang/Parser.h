@@ -17,6 +17,8 @@
 #include "ep2/lang/AST.h"
 #include "ep2/lang/Lexer.h"
 
+#include "mlir/Dialect/SCF/IR/SCF.h"
+
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/StringExtras.h"
 #include "llvm/Support/raw_ostream.h"
@@ -619,6 +621,7 @@ private:
       lexer.consume(Token(';'));
 
     while (lexer.getCurToken() != '}' && lexer.getCurToken() != tok_eof) {
+      bool isBlock = false;
       if (lexer.getCurToken() == tok_var) {
         // Variable declaration
         auto varDecl = parseDeclaration(/*requiresInitializer=*/true);
@@ -640,6 +643,29 @@ private:
         if (!decl)
           return nullptr;
         exprList->push_back(std::move(decl));
+      } else if (lexer.getCurToken() == tok_if) {
+        // ifElseExpr = if ( condExpr ) blockExpr else blockExpr
+        isBlock = true;
+        lexer.consume(tok_if);
+
+        lexer.checkConsume(Token('('));
+        auto cond = parseExpression();
+        if (!cond)
+          return nullptr;
+        lexer.checkConsume(Token(')'));
+
+        auto thenBlock = parseBlock();
+        decltype(thenBlock) elseBlock = nullptr;
+        if (lexer.getCurToken() == tok_else) {
+          lexer.consume(tok_else);
+          elseBlock = parseBlock();
+          if (elseBlock == nullptr)
+            return nullptr;
+        }
+
+        exprList->push_back(std::make_unique<IfElseExprAST>(
+          lexer.getLastLocation(), std::move(cond), std::move(thenBlock), std::move(elseBlock)));
+
       } else {
         // General expression
         auto expr = parseExpression();
@@ -648,7 +674,7 @@ private:
         exprList->push_back(std::move(expr));
       }
       // Ensure that elements are separated by a semicolon.
-      if (lexer.getCurToken() != ';')
+      if (!isBlock && lexer.getCurToken() != ';')
         return parseError<ExprASTList>(";", "after expression");
 
       // Ignore empty expressions: swallow sequences of semicolons.
