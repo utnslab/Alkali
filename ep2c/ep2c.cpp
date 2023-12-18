@@ -33,6 +33,7 @@
 #include "mlir/Target/LLVMIR/Export.h"
 #include "mlir/Transforms/Passes.h"
 #include "mlir/Tools/mlir-opt/MlirOptMain.h"
+#include "mlir/Support/FileUtilities.h"
 #include "mlir/InitAllPasses.h"
 
 #include "llvm/ADT/StringRef.h"
@@ -40,15 +41,14 @@
 #include "llvm/Support/ErrorOr.h"
 #include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/raw_ostream.h"
+#include "llvm/Support/ToolOutputFile.h"
+
+#include <memory>
+#include "ep2/dialect/Passes.h"
 
 using namespace ep2;
 namespace cl = llvm::cl;
 
-static cl::opt<std::string> inputFilename(cl::Positional,
-                                          cl::desc("<input toy file>"),
-                                          cl::init("-"),
-                                          cl::value_desc("filename"));
-                                  
 namespace {
 enum Action {
   None,
@@ -60,17 +60,12 @@ enum Action {
 } // namespace
 static cl::opt<enum Action> emitAction(
     "emit", cl::desc("Select the kind of output desired"),
-    cl::init(DumpMLIR),
     cl::values(clEnumValN(DumpAST, "ast", "output the AST dump")),
     cl::values(clEnumValN(DumpMLIR, "mlir", "output the MLIR dump")),
     cl::values(clEnumValN(DumpMLIRLLVM, "mlir-llvm",
                           "output the MLIR dump after llvm lowering")),
     cl::values(clEnumValN(DumpLLVMIR, "llvm", "output the LLVM IR dump"))
 );
-
-static cl::opt<std::string> outputFilename("o", cl::desc("Output filename"),
-                                           cl::value_desc("<filename>"),
-                                           cl::init("-"));
 
 /// Returns a Toy AST resulting from parsing the file or a nullptr on error.
 std::unique_ptr<ep2::ModuleAST> parseInputFile(llvm::StringRef filename) {
@@ -87,18 +82,34 @@ std::unique_ptr<ep2::ModuleAST> parseInputFile(llvm::StringRef filename) {
 }
 
 int main(int argc, char **argv) {
-  // mlir::registerAsmPrinterCLOptions();
-  // mlir::registerMLIRContextCLOptions();
-  // mlir::registerPassManagerCLOptions();
+  //mlir::registerAsmPrinterCLOptions();
+  //mlir::registerMLIRContextCLOptions();
+  //mlir::registerPassManagerCLOptions();
+
+  mlir::DialectRegistry registry;
+
+  static cl::opt<std::string> inputFilename(
+      cl::Positional, cl::desc("<input file>"), cl::init("-"));
+
+  static cl::opt<std::string> outputDirectory("o", cl::desc("Output directory"),
+                                             cl::value_desc("directory"),
+                                             cl::init("-"));
 
   cl::ParseCommandLineOptions(argc, argv, "ep2 compiler\n");
+
+  std::string errorMessage;
+  std::string outputDir = outputDirectory;
+  auto output = mlir::openOutputFile(outputDir + "/c.mlir", &errorMessage);
+  if (!output) {
+    llvm::errs() << errorMessage << "\n";
+    return -1;
+  }
 
   auto moduleAST = parseInputFile(inputFilename);
   if (!moduleAST)
     return 1;
 
   // Register MLIR dialects and names
-  mlir::DialectRegistry registry;
   mlir::MLIRContext context(registry);
   // Load our Dialect in this MLIR Context.
 
@@ -118,9 +129,6 @@ int main(int argc, char **argv) {
     }
   }
 
-  if (outputFilename != "-")
-    freopen(outputFilename.c_str(), "w", stderr);
-
   switch (emitAction) {
   case Action::DumpAST:
     dump(*moduleAST);
@@ -128,10 +136,21 @@ int main(int argc, char **argv) {
   case Action::DumpMLIR:
     module->dump();
     return 0;
-  default:
-    break;
-  }
+  default: {
+    auto headerInfo = std::make_shared<mlir::ep2::HeaderInfo>();
+    headerInfo->basePath = outputDir;
 
+    mlir::PassManager pm(&context);
+    pm.addPass(mlir::createCanonicalizerPass());
+    pm.addPass(std::make_unique<mlir::ep2::ContextTypeInferencePass>());
+    pm.addPass(std::make_unique<mlir::ep2::NopEliminationPass>());
+    pm.addPass(std::make_unique<mlir::ep2::CollectHeaderPass>(headerInfo));
+    pm.addPass(std::make_unique<mlir::ep2::LowerEmitcPass>());
+    pm.addPass(std::make_unique<mlir::ep2::LowerIntrinsicsPass>());
+    pm.addPass(std::make_unique<mlir::ep2::EmitFilesPass>(headerInfo));
+    pm.run(*module);
+    return 0;
+  }
+  }
   llvm::errs() << "Unknow action. Use --help to see available actions. exit.\n";
-  return 0;
 }

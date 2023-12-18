@@ -4,16 +4,20 @@ add_mlir_dialect_library(MLIREP2
         # Analysis
         LowerStructAnalysis.cpp
         HandlerDependencyAnalysis.cpp
-        ContextAnalysis.cpp
         ContextBufferizationAnalysis.cpp
         
         # Passes
         NopEliminationPass.cpp
-        LowerToLLVMPass.cpp
-        FunctionRewritePass.cpp
         ContextRefTypeAssignPass.cpp
         AtomAnalysis.cpp
         ContextTypeInferencePass.cpp
+        LowerEmitcPass.cpp
+        HandlerDependencyAnalysis.cpp
+        CollectHeaderPass.cpp
+        EmitFilesPass.cpp
+        LowerIntrinsicsPass.cpp
+        AtomAnalysis.cpp
+        LocalAllocAnalysis.cpp
 
         DEPENDS
         MLIREP2OpsIncGen
@@ -21,5 +25,8 @@ add_mlir_dialect_library(MLIREP2
 
         LINK_LIBS PUBLIC
         MLIRIR
+        MLIRTranslateLib
+        MLIREmitCDialect
+        MLIRTargetCpp
         MLIRFuncDialect
         )

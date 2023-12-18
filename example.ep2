@@ -1,6 +1,16 @@
-struct Desc_Hdr {
-    long    data_addr;
-    int     size;
+
+struct context {
+    int     flow_id;
+    int     bump_seq;
+    int     flags;
+    int     flow_grp;
+}
+
+struct recv_desc_t {
+    int     flow_id;
+    int     bump_seq;
+    int     flags;
+    int     flow_grp;
 }
 
 event USER_EVENT1 {
@@ -37,10 +47,8 @@ handler DMA_RECV_CMPL:receive_desc (context ctx, buf data) {
     generate USER_EVENT1:process_desc {ctx, 100}; 
 }
 
-handler DMA_READ_REQ:receive_payload_1 (context ctx, long addr, int size) {
-    bits<16> narrow;
-    narrow = 32;
-    ctx.desc_addr = ctx.desc_addr + addr;
+handler USER_EVENT1:process_desc (context ctx, int param) {
+    ctx.flow_grp = param;
 }
 
 

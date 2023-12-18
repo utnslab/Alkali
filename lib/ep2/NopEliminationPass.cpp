@@ -12,7 +12,6 @@ namespace ep2 {
 
 void NopEliminationPass::runOnOperation() {
     auto module = getOperation();
-    // Fill
 
     module->walk([&](NopOp op) {
       if (op->getUsers().empty()) {

@@ -31,3 +31,4 @@ After `ep2c` is built, run example with
 ./bin/ep2c --emit=mlir ../example.ep2.txt
 ```
 
+To run netronome backend, do ./run.sh XXX.ep2, and output files will be generated in tests/ folder.

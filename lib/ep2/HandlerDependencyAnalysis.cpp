@@ -142,6 +142,8 @@ HandlerDependencyAnalysis::HandlerDependencyAnalysis(Operation *module) {
     } else { // this is a full handler
       std::vector<FuncOp> targets;
       for (auto &target : to) {
+        eventDeps.emplace(from.event.str(), target.event.str());
+
         auto it = handlersMap.find(target);
         if (it != handlersMap.end()) {
           targets.push_back(it->second);

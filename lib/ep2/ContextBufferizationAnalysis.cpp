@@ -22,36 +22,43 @@ ContextBufferizationAnalysis::ContextBufferizationAnalysis(Operation *op,
                 HandlerDependencyAnalysis::OrderType &order) {
         // create a context table for all connected nodes
         auto &table = contextTables.emplace_back();
+        int ctr = 0;
         for (auto funcOp : order) {
-          contextMap.try_emplace(funcOp, table);
+          contextMap.try_emplace(funcOp.getSymName().str(), table);
           funcOp->walk([&](ContextRefOp refOp) {
             llvm::StringRef field = refOp.getName();
             auto type = refOp.getType().getValueType();
 
-            auto [it, isNew] = table.try_emplace(field, type);
+            const std::pair<int, mlir::Type> pr = {ctr, type};
+            auto [it, isNew] = table.try_emplace(field, pr);
             if (!isNew) {
-              if (it->second.isa<AnyType>())
-                it->second = type;
-              else if (it->second != type && !type.isa<AnyType>())
+              if (it->second.second.isa<AnyType>())
+                it->second.second = type;
+              else if (it->second.second != type && !type.isa<AnyType>())
                 refOp->emitError("Context field type mismatch");
+            } else {
+              ctr += 1;
             }
           });
         }
       });
 }
 
-mlir::Type ContextBufferizationAnalysis::getContextType(FuncOp funcOp,
+std::pair<int, mlir::Type> ContextBufferizationAnalysis::getContextType(FunctionOpInterface funcOp,
                                                         StringRef name) {
-  auto opIt = contextMap.find(funcOp);
+  std::string funcName = funcOp.getName().str().find("__event_") == std::string::npos ?
+    funcOp.getName().str() : funcOp.getName().str().substr(8);
+
+  auto opIt = contextMap.find(funcName);
   if (opIt == contextMap.end()) {
     funcOp->emitError("Operation not found");
-    return AnyType::get(funcOp->getContext());
+    return {0, mlir::Type{}};
   }
 
   auto it = opIt->second.find(name);
   if (it == opIt->second.end()) {
     funcOp->emitError("Context field not found");
-    return AnyType::get(funcOp->getContext());
+    return {0, mlir::Type{}};
   }
   return it->second;
 }

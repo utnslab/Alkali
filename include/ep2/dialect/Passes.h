@@ -25,6 +25,7 @@
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Dialect/EmitC/IR/EmitC.h"
+#include "mlir/Interfaces/FunctionInterfaces.h"
 
 #include "ep2/dialect/Dialect.h"
 
@@ -61,20 +62,15 @@ struct NopEliminationPass : public PassWrapper<NopEliminationPass, OperationPass
   StringRef getDescription() const final { return "Eliminate EP2 Nop"; }
 };
 
-// inline void registerAllocationAnnotationPass() {
-inline void registerNopEliminationPass() {
-  PassRegistration<NopEliminationPass>();
-}
-
-// Function Rewrite Pass
-struct FunctionRewritePass :
-        public PassWrapper<FunctionRewritePass, OperationPass<ModuleOp>> {
+// Lower to Emitc pass
+struct LowerEmitcPass :
+        public PassWrapper<LowerEmitcPass, OperationPass<ModuleOp>> {
     void runOnOperation() final;
     void getDependentDialects(DialectRegistry &registry) const override {
         registry.insert<EP2Dialect, func::FuncDialect, LLVM::LLVMDialect, emitc::EmitCDialect>();
     }
-    StringRef getArgument() const final { return "ep2-function-rewrite"; }
-    StringRef getDescription() const final { return "Rewrite EP2 Function to generate to functions"; }
+    StringRef getArgument() const final { return "ep2-lower-emitc"; }
+    StringRef getDescription() const final { return "Rewrite to generate emitc"; }
 };
 
 struct ContextTypeInferencePass : PassWrapper<ContextTypeInferencePass, OperationPass<ModuleOp>> {
@@ -87,15 +83,63 @@ struct ContextTypeInferencePass : PassWrapper<ContextTypeInferencePass, Operatio
     StringRef getDescription() const final { return "Infer context types across different handlers"; }
 };
 
-// Lower to LLVM Pass
-struct LowerToLLVMPass : public PassWrapper<LowerToLLVMPass, OperationPass<ModuleOp>> {
+enum class MemType {
+  LMEM,
+  CLS,
+  CTM,
+  IMEM,
+  EMEM,
+};
+
+struct HeaderInfo {
+  std::string basePath;
+  std::vector<std::pair<std::string, mlir::LLVM::LLVMStructType>> structDefs;
+  std::unordered_map<std::string, std::pair<MemType, int>> eventQueues;
+  std::unordered_map<std::string, std::string> eventDeps;
+  std::unordered_map<std::string, std::vector<std::pair<std::string, std::string>>> eventAllocs;
+};
+
+// Collect defs for header.
+struct CollectHeaderPass :
+        public PassWrapper<CollectHeaderPass, OperationPass<ModuleOp>> {
+    CollectHeaderPass(std::shared_ptr<HeaderInfo> info) : info(info) {}
     void runOnOperation() final;
     void getDependentDialects(DialectRegistry &registry) const override {
-        registry.insert<EP2Dialect, LLVM::LLVMDialect>();
+        registry.insert<EP2Dialect, func::FuncDialect, LLVM::LLVMDialect, emitc::EmitCDialect>();
     }
-    StringRef getArgument() const final { return "ep2-lower-to-llvm"; }
-    StringRef getDescription() const final { return "Lower EP2 to LLVM"; }
+    StringRef getArgument() const final { return "ep2-collect-header"; }
+    StringRef getDescription() const final { return "Collect header file"; }
+
+// fields
+    std::shared_ptr<HeaderInfo> info;
 };
+
+
+// Lower intrinsics in emitc.
+struct LowerIntrinsicsPass :
+        public PassWrapper<LowerIntrinsicsPass, OperationPass<ModuleOp>> {
+    void runOnOperation() final;
+    void getDependentDialects(DialectRegistry &registry) const override {
+        registry.insert<EP2Dialect, func::FuncDialect, LLVM::LLVMDialect, emitc::EmitCDialect>();
+    }
+    StringRef getArgument() const final { return "ep2-lower-intrinsics"; }
+    StringRef getDescription() const final { return "Lower intrinsics file"; }
+};
+
+struct EmitFilesPass :
+        public PassWrapper<EmitFilesPass, OperationPass<ModuleOp>> {
+    EmitFilesPass(std::shared_ptr<HeaderInfo> info) : info(info) {}
+    void runOnOperation() final;
+    void getDependentDialects(DialectRegistry &registry) const override {
+        registry.insert<EP2Dialect, func::FuncDialect, LLVM::LLVMDialect, emitc::EmitCDialect>();
+    }
+    StringRef getArgument() const final { return "ep2-emit-files"; }
+    StringRef getDescription() const final { return "Emit files"; }
+
+// fields
+    std::shared_ptr<HeaderInfo> info;
+};
+  
 
 // Handler dependency analysis pass
 struct HandlerDependencyAnalysis {
@@ -109,7 +153,8 @@ struct HandlerDependencyAnalysis {
   GraphType graph;
   std::vector<GraphType> subGraphs;
   std::vector<std::vector<FuncOp>> subGraphsOrder;
-  
+  std::unordered_map<std::string, std::string> eventDeps;
+
   HandlerDependencyAnalysis(Operation* op);
 
   size_t numComponents() { return subGraphs.size(); }
@@ -158,15 +203,14 @@ struct ContextRefTypeAssignPass : public PassWrapper<ContextRefTypeAssignPass, O
 
 /// Analysis for context
 struct ContextBufferizationAnalysis {
-  using TableT = llvm::StringMap<mlir::Type>;
+  using TableT = llvm::StringMap<std::pair<int, mlir::Type>>;
 
   std::vector<TableT> contextTables;
-  std::map<mlir::Operation*, TableT&> contextMap;
+  std::map<std::string, TableT&> contextMap;
   AnalysisManager& am;
 
   ContextBufferizationAnalysis(Operation* op, AnalysisManager& am);
-  mlir::Type getContextType(FuncOp funcOp, StringRef name);
-  void setContextType(Operation *op, StringRef name, mlir::Type type);
+  std::pair<int, mlir::Type> getContextType(FunctionOpInterface funcOp, StringRef name);
 
   void invalidate() {
     AnalysisManager::PreservedAnalyses preserved;
@@ -174,39 +218,27 @@ struct ContextBufferizationAnalysis {
     am.invalidate(preserved);
   }
   void dump() {
-    for (auto &[op, table] : contextMap) {
-      auto funcOp = dyn_cast<FuncOp>(op);
-      llvm::errs() << "Context table for " << funcOp.getSymName() << "\n";
-      for (auto &[name, type] : table) {
+    for (auto &[opName, table] : contextMap) {
+      llvm::errs() << "Context table for " << opName << "\n";
+      for (auto &[name, pr] : table) {
         llvm::errs() << "  " << name << " : ";
-        type.dump();
+        pr.second.dump();
       }
     }
     llvm::errs() << "\n";
   }
 };
 
-
-struct ContextAnalysis {
-  struct ContextField {
-    size_t pos;
-    size_t offs;
-    mlir::Type ty;
-
-    ContextField() {}
-    ContextField(size_t p, size_t o, mlir::Type t) : pos(p), offs(o), ty(t) {}
-  };
-
-  std::unordered_map<mlir::Operation*, mlir::Operation*> disj_groups;
-  std::unordered_map<mlir::Operation*, llvm::StringMap<ContextField>> disj_contexts;
-
-  ContextAnalysis(Operation* op, AnalysisManager& am);
-};
-
 struct AtomAnalysis {
   llvm::StringMap<size_t> atomToNum;
 
   AtomAnalysis(Operation* op, AnalysisManager& am);
+};
+
+struct LocalAllocAnalysis {
+  std::unordered_map<mlir::Operation*, std::string> localAllocs;
+
+  LocalAllocAnalysis(Operation* op, AnalysisManager& am);
 };
 
 } // namespace ep2

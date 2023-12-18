@@ -49,7 +49,7 @@ namespace {
       // First, we try to see if type is infered from other handler
       auto &contextAnalysis = am.getAnalysis<ContextBufferizationAnalysis>();
       auto type = contextAnalysis.getContextType(refOp->getParentOfType<FuncOp>(),
-                                     refOp.getName());
+                                     refOp.getName()).second;
 
       if (type && !type.isa<AnyType>()) {
         auto newRefType = rewriter.getType<ContextRefType>(type);
