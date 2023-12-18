@@ -802,6 +802,7 @@ private:
     };
     merge(thenTable.get(), elseTable.get());
     merge(elseTable.get(), thenTable.get());
+
     auto keys = llvm::map_to_vector(*thenTable, [](auto &pair) { return pair.first; });
 
     // create a new if op
