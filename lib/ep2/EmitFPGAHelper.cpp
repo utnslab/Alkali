@@ -176,7 +176,7 @@ void EmitFPGAPass::emitwireassign(std::ofstream &file,
          << " = " << assign.src_wire.name << "_value_valid"
          << ";\n";
     file << " assign " << assign.src_wire.name << "_value_ready"
-         << " = " << assign.dst_wire.name << " _tready"
+         << " = " << assign.dst_wire.name << "_tready"
          << ";\n";
    } else if(assign.src_wire.type == AXIS && assign.dst_wire.type == TABLE_UPDATE){
     // UPDATE key
@@ -191,14 +191,14 @@ void EmitFPGAPass::emitwireassign(std::ofstream &file,
          << ";\n";
   } else if (assign.src_wire.type == TABLE_UPDATE  && assign.dst_wire.type == AXIS){
     // UPDATE value
-     file << " assign " << assign.dst_wire.name << "_req_data" 
-         << " = " << assign.src_wire.name << "_tdata"
+     file << " assign " << assign.src_wire.name << "_req_data" 
+         << " = " << assign.dst_wire.name << "_tdata"
          << ";\n";
-    file << " assign " << assign.dst_wire.name << "_req_data_valid"
-         << " = " << assign.src_wire.name << "_tvalid"
+    file << " assign " << assign.src_wire.name << "_req_data_valid"
+         << " = " << assign.dst_wire.name << "_tvalid"
          << ";\n";
-    file << " assign " << assign.src_wire.name << "_tready"
-         << " = " << assign.dst_wire.name << "_req_data_ready"
+    file << " assign " << assign.dst_wire.name << "_tready"
+         << " = " << assign.src_wire.name << "_req_data_ready"
          << ";\n";
    }
   file << "\n";
@@ -256,38 +256,68 @@ void EmitFPGAPass::emitModuleCall(
       file << tab << "." << port.port_name << "_tready(" << tready_var_names
            << ")";
     } else if (port.type == TABLE_LOOKUP) {
-      assert(port.var_name.size() == 1);
+      std::string req_index_var_names = port.var_name.size() == 0 ? "": "{";
+      std::string req_valid_var_names = port.var_name.size() == 0 ? "": "{";
+      std::string req_ready_var_names = port.var_name.size() == 0 ? "": "{";
+      std::string value_valid_var_names = port.var_name.size() == 0 ? "": "{";
+      std::string value_data_var_names = port.var_name.size() == 0 ? "": "{";
+      std::string value_ready_var_names = port.var_name.size() == 0 ? "": "{";
+      // if multiple input vars, cocact them
+      for (int i = 0; i < port.var_name.size(); i++) {
+        auto optional_comma = (i == port.var_name.size() - 1) ? "}" : ",";
+        req_index_var_names += (port.var_name[i] + "_req_index" + optional_comma);
+        req_valid_var_names += (port.var_name[i] + "_req_valid" + optional_comma);
+        req_ready_var_names += (port.var_name[i] + "_req_ready" + optional_comma);
+        value_valid_var_names += (port.var_name[i] + "_value_valid" + optional_comma);
+        value_data_var_names += (port.var_name[i] + "_value_data" + optional_comma);
+        value_ready_var_names += (port.var_name[i] + "_value_ready" + optional_comma);
+      }
       file << ",\n";
       file << tab << "//" << port.debuginfo << "\n";
-      file << tab << "." << port.port_name << "_req_index(" << port.var_name[0]
-           << "_req_index),\n";
-      file << tab << "." << port.port_name << "_req_valid(" << port.var_name[0]
-           << "_req_valid),\n";
-      file << tab << "." << port.port_name << "_req_ready(" << port.var_name[0]
-           << "_req_ready),\n";
+      file << tab << "." << port.port_name << "_req_index(" << req_index_var_names
+           << "),\n";
+      file << tab << "." << port.port_name << "_req_valid(" << req_valid_var_names
+           << "),\n";
+      file << tab << "." << port.port_name << "_req_ready(" << req_ready_var_names
+           << "),\n";
 
       file << tab << "." << port.port_name << "_value_valid("
-           << port.var_name[0] << "_value_valid),\n";
-      file << tab << "." << port.port_name << "_value_data(" << port.var_name[0]
-           << "_value_data),\n";
+           << value_valid_var_names << "),\n";
+      file << tab << "." << port.port_name << "_value_data(" << value_data_var_names
+           << "),\n";
       file << tab << "." << port.port_name << "_value_ready("
-           << port.var_name[0] << "_value_ready)";
+           << value_ready_var_names << ")";
     } else if (port.type == TABLE_UPDATE) {
-      assert(port.var_name.size() == 1);
+      std::string req_index_var_names = port.var_name.size() == 0 ? "": "{";
+      std::string req_valid_var_names = port.var_name.size() == 0 ? "": "{";
+      std::string req_ready_var_names = port.var_name.size() == 0 ? "": "{";
+      std::string req_data_var_names = port.var_name.size() == 0 ? "": "{";
+      std::string req_data_valid_var_names = port.var_name.size() == 0 ? "": "{";
+      std::string req_data_ready_var_names = port.var_name.size() == 0 ? "": "{";
+      // if multiple input vars, cocact them
+      for (int i = 0; i < port.var_name.size(); i++) {
+        auto optional_comma = (i == port.var_name.size() - 1) ? "}" : ",";
+        req_index_var_names += (port.var_name[i] + "_req_index" + optional_comma);
+        req_valid_var_names += (port.var_name[i] + "_req_index_valid" + optional_comma);
+        req_ready_var_names += (port.var_name[i] + "_req_index_ready" + optional_comma);
+        req_data_var_names += (port.var_name[i] + "_req_data" + optional_comma);
+        req_data_valid_var_names += (port.var_name[i] + "_req_data_valid" + optional_comma);
+        req_data_ready_var_names += (port.var_name[i] + "_req_data_ready" + optional_comma);
+      }
       file << ",\n";
       file << tab << "//" << port.debuginfo << "\n";
-      file << tab << "." << port.port_name << "_req_index(" << port.var_name[0]
-           << "_req_index),\n";
-      file << tab << "." << port.port_name << "_req_index_valid(" << port.var_name[0]
-           << "_req_index_valid),\n";
-      file << tab << "." << port.port_name << "_req_index_ready(" << port.var_name[0]
-           << "_req_index_ready),\n";
-      file << tab << "." << port.port_name << "_req_data(" << port.var_name[0]
-           << "_req_data),\n";
-      file << tab << "." << port.port_name << "_req_data_valid(" << port.var_name[0]
-           << "_req_data_valid),\n";
-      file << tab << "." << port.port_name << "_req_data_ready(" << port.var_name[0]
-           << "_req_data_ready)";
+      file << tab << "." << port.port_name << "_req_index(" << req_index_var_names
+           << "),\n";
+      file << tab << "." << port.port_name << "_req_index_valid(" << req_valid_var_names
+           << "),\n";
+      file << tab << "." << port.port_name << "_req_index_ready(" << req_ready_var_names
+           << "),\n";
+      file << tab << "." << port.port_name << "_req_data(" << req_data_var_names
+           << "),\n";
+      file << tab << "." << port.port_name << "_req_data_valid(" << req_data_valid_var_names
+           << "),\n";
+      file << tab << "." << port.port_name << "_req_data_ready(" << req_data_ready_var_names
+           << ")";
     }
   }
   file << "\n);\n\n";

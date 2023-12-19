@@ -149,36 +149,44 @@ void EmitFPGAPass::emitTableInit(std::ofstream &file, ep2::InitOp initop) {
 
   struct table_if_config table_if = {key_size, value_size};
   std::list<struct module_port_config> ports;
+  std::vector<std::string> lookup_port_wire_names;
+  std::vector<std::string> update_port_wire_names;
   for(int i =0; i < lookups.size(); i ++){
     auto i_str = std::to_string(i);
     auto port_wire_name = "lookup_p_" +i_str;
-    struct module_port_config lport = {TABLE_LOOKUP, {port_wire_name}, "lookup port " + i_str, "lookup_p_" + i_str, .table_if = table_if};
-    ports.push_back(lport);
-
+    lookup_port_wire_names.push_back(port_wire_name);
     // emit wires def for port
     struct wire_config port_wires = {TABLE_LOOKUP, port_wire_name, "Table lookup port wire def ", false, -1, true, .table_if=table_if};
     emitwire(file, port_wires);
     tableops_to_portwire[lookups[i]] = port_wires;
   }
+  
   for(int i =0; i < updates.size(); i ++){
     auto i_str = std::to_string(i);
     auto port_wire_name = "update_p_" +i_str;
-    struct module_port_config lport = {TABLE_UPDATE, {port_wire_name}, "update port " + i_str, "update_p_" + i_str, .table_if = table_if};
-    ports.push_back(lport);
-
+    update_port_wire_names.push_back(port_wire_name);
     // emit wires def for port
     struct wire_config port_wires = {TABLE_UPDATE, port_wire_name, "Table update port wire def ", false, -1, true, .table_if=table_if};
     emitwire(file, port_wires);
     tableops_to_portwire[updates[i]] = port_wires;
   }
+
+  struct module_port_config lport = {TABLE_LOOKUP, {lookup_port_wire_names}, "lookup port ", "s_lookup", .table_if = table_if};
+  ports.push_back(lport);
+  struct module_port_config uport = {TABLE_UPDATE, {update_port_wire_names}, "update port ", "s_update", .table_if = table_if};
+  ports.push_back(uport);
+
+  int min_lports = lookups.size() > 0 ? lookups.size() : 1;
+  int min_uports = updates.size() > 0 ? updates.size() : 1;
+
   std::list<struct module_param_config> params;
   params.push_back({"TABLE_SIZE", table_size});
   params.push_back({"KEY_SIZE", key_size});
   params.push_back({"VALUE_SIZE", value_size});
-  params.push_back({"LOOKUP_PORTS", (int)(lookups.size())});
-  params.push_back({"UPDATE_PORTS", (int)(updates.size())});
+  params.push_back({"LOOKUP_PORTS", min_lports});
+  params.push_back({"UPDATE_PORTS", min_uports});
 
-  emitModuleCall(file, "table_cam", tabel_name, ports, params);
+  emitModuleCall(file, "cam_arbiter", tabel_name, ports, params);
 }
 
 void EmitFPGAPass::emitLookup(std::ofstream &file, ep2::LookupOp lookupop) {
