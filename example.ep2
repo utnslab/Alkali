@@ -1,11 +1,4 @@
 
-struct context {
-    int     flow_id;
-    int     bump_seq;
-    int     flags;
-    int     flow_grp;
-}
-
 struct recv_desc_t {
     int     flow_id;
     int     bump_seq;

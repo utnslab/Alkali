@@ -3,7 +3,7 @@
 extern event NET_RECV {context ctx; buf packet;}
 extern event NET_SEND{context ctx; buf packet;}
 
-extern handler NET_SEND (context ctx, buf packet) {
+extern handler NET_SEND:main_send (context ctx, buf packet) {
 }
 
 ############## main program ###########
@@ -31,7 +31,7 @@ struct ip_header_t {
     bits<32> options;
 }
 
-handler NET_RECV (context ctx, buf packet) {
+handler NET_RECV:main_recv (context ctx, buf packet) {
     eth_header_t eth_header;
     bits<48> tmp_mac;
     buf packet_out;
@@ -46,5 +46,5 @@ handler NET_RECV (context ctx, buf packet) {
     packet_out.emit(eth_header);
     packet_out.emit(packet);
 
-    generate NET_SEND{ctx, packet_out};
+    generate NET_SEND:main_send{ctx, packet_out};
 }

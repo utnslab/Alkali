@@ -67,6 +67,10 @@ CollectInfoAnalysis::CollectInfoAnalysis(Operation* module, AnalysisManager& am)
   std::vector<mlir::LLVM::LLVMStructType> emittedStructs;
 
   module->walk([&](ep2::FuncOp funcOp){
+    if (funcOp.isExtern()) {
+      return;
+    }
+
     ArrayRef<LLVM::LLVMStructType> wrapperTypes = lowerStructAnalysis.getWrapperTypes(funcOp);
     std::string eventName = funcOp->getAttr("event").cast<StringAttr>().getValue().str();
 
@@ -107,6 +111,9 @@ CollectInfoAnalysis::CollectInfoAnalysis(Operation* module, AnalysisManager& am)
     return cast<ep2::ConstantOp>(opd.getDefiningOp()).getValue().cast<IntegerAttr>().getValue().getSExtValue();
   };
   module->walk([&](ep2::FuncOp funcOp) {
+    if (funcOp.isExtern()) {
+      return;
+    }
     if (funcOp->getAttr("type").cast<StringAttr>().getValue() == "controller") {
       funcOp->walk([&](ep2::CallOp op){
         assert(op.getInputs().size() == 3);
