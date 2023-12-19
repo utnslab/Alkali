@@ -6,25 +6,28 @@
 #include "mlir/Pass/Pass.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/Builders.h"
+#include "mlir/IR/Visitors.h"
+#include "llvm/ADT/StringMap.h"
 #include "mlir/Conversion/LLVMCommon/TypeConverter.h"
+
+#include <cassert>
 
 using namespace mlir;
 
 namespace mlir {
 namespace ep2 {
 
-void CollectHeaderPass::runOnOperation() {
-  auto module = getOperation();
-  auto builder = OpBuilder(getOperation());
+CollectInfoAnalysis::CollectInfoAnalysis(Operation* module, AnalysisManager& am) {
+  auto builder = OpBuilder(module);
 
-  auto &contextAnalysis = getAnalysis<ContextBufferizationAnalysis>();
-  mlir::LLVMTypeConverter llvmConv(&getContext());
+  auto &contextAnalysis = am.getAnalysis<ContextBufferizationAnalysis>();
+  mlir::LLVMTypeConverter llvmConv(module->getContext());
   std::string context_prefix = "context_chain_";
   std::string context_suffix = "_t";
   unsigned ctx_id = 1;
   for (const auto& ctx : contextAnalysis.contextTables) {
     std::string name = context_prefix + std::to_string(ctx_id) + context_suffix;
-    auto contextTy = mlir::LLVM::LLVMStructType::getIdentified(&getContext(), name);
+    auto contextTy = mlir::LLVM::LLVMStructType::getIdentified(module->getContext(), name);
     llvm::SmallVector<mlir::Type> contextTypes(ctx.size());
     for (const auto& field : ctx) {
       mlir::Type ty = field.second.second;
@@ -32,7 +35,7 @@ void CollectHeaderPass::runOnOperation() {
       contextTypes[field.second.first] = llvmConv.convertType(ty);
     }
     contextTy.setBody(contextTypes, true);
-    info->structDefs.emplace_back(name, contextTy);
+    this->structDefs.emplace_back(name, contextTy);
     ctx_id += 1;
   }
 
@@ -51,16 +54,16 @@ void CollectHeaderPass::runOnOperation() {
   });
 
   for (ep2::StructType ty : realStructTypes) {
-    auto lty = mlir::LLVM::LLVMStructType::getIdentified(&getContext(), ty.getName());
+    auto lty = mlir::LLVM::LLVMStructType::getIdentified(module->getContext(), ty.getName());
     llvm::SmallVector<mlir::Type> types;
     for (int i = 0; i<ty.getNumElementTypes(); ++i) {
       types.push_back(llvmConv.convertType(ty.getElementTypes()[i]));
     }
     lty.setBody(types, true);
-    info->structDefs.emplace_back(ty.getName().str(), lty);
+    this->structDefs.emplace_back(ty.getName().str(), lty);
   }
 
-  auto lowerStructAnalysis = getAnalysis<LowerStructAnalysis>();
+  auto lowerStructAnalysis = am.getAnalysis<LowerStructAnalysis>();
   std::vector<mlir::LLVM::LLVMStructType> emittedStructs;
 
   module->walk([&](ep2::FuncOp funcOp){
@@ -82,7 +85,7 @@ void CollectHeaderPass::runOnOperation() {
         std::string name = "event_param_" + wrapType.getName().str();
 
         llvm::SmallVector<mlir::Type> types;
-        auto sty = mlir::LLVM::LLVMStructType::getIdentified(&getContext(), name);
+        auto sty = mlir::LLVM::LLVMStructType::getIdentified(module->getContext(), name);
         unsigned ctr = 0;
         for (mlir::Type ty : wrapType.getBody()) {
           if (isa<ep2::BufferType>(ty)) {
@@ -93,7 +96,7 @@ void CollectHeaderPass::runOnOperation() {
         }
         auto res = sty.setBody(types, true);
         assert(res.succeeded());
-        info->structDefs.emplace_back(name, sty);
+        this->structDefs.emplace_back(name, sty);
         emittedStructs.push_back(wrapType);
       }
     }
@@ -112,19 +115,19 @@ void CollectHeaderPass::runOnOperation() {
 
         std::string eventName = funcOp->getAttr("event").cast<mlir::StringAttr>().getValue().str();
         std::pair<MemType, int> pr = {MemType::CLS, getOpd(op.getOperand(0))};
-        info->eventQueues.emplace(eventName, pr); 
+        this->eventQueues.emplace(eventName, pr); 
       });
     } else {
       std::string eventName = funcOp->getAttr("event").cast<StringAttr>().getValue().str();
       std::string stageName = funcOp->hasAttr("atom") ? funcOp->getAttr("atom").cast<StringAttr>().getValue().str() : funcOp->getAttr("event").cast<StringAttr>().getValue().str();
-      info->eventAllocs[eventName + "_a_" + stageName] = {};
+      this->eventAllocs[eventName + "_a_" + stageName] = {};
     }
   });
 
-  HandlerDependencyAnalysis& hda = getAnalysis<HandlerDependencyAnalysis>();
-  info->eventDeps = hda.eventDeps;
+  HandlerDependencyAnalysis& hda = am.getAnalysis<HandlerDependencyAnalysis>();
+  this->eventDeps = hda.eventDeps;
 
-  LocalAllocAnalysis& laa = getAnalysis<LocalAllocAnalysis>();
+  LocalAllocAnalysis& laa = am.getAnalysis<LocalAllocAnalysis>();
   for (const auto& pr : laa.localAllocs) {
     mlir::Operation* funcOp = pr.first->getParentOp();
     std::string eventName = funcOp->getAttr("event").cast<StringAttr>().getValue().str();
@@ -133,8 +136,13 @@ void CollectHeaderPass::runOnOperation() {
     std::pair<std::string, std::string> prOut;
     prOut.first = cast<ep2::StructType>(cast<ep2::ExtractOp>(pr.first).getOutput().getType()).getName().str();
     prOut.second = pr.second;
-    info->eventAllocs[eventName + "_a_" + stageName].push_back(prOut);
+    this->eventAllocs[eventName + "_a_" + stageName].push_back(prOut);
   }
+}
+
+void CollectHeaderPass::runOnOperation() {
+  getAnalysis<CollectInfoAnalysis>();
+  markAnalysesPreserved<CollectInfoAnalysis>();
 }
 
 }

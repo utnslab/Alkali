@@ -99,7 +99,7 @@ int main(int argc, char **argv) {
 
   std::string errorMessage;
   std::string outputDir = outputDirectory;
-  auto output = mlir::openOutputFile(outputDir + "/c.mlir", &errorMessage);
+  auto output = mlir::openOutputFile(outputDir + "/" + inputFilename.substr(0, inputFilename.find('.')) + ".mlir", &errorMessage);
   if (!output) {
     llvm::errs() << errorMessage << "\n";
     return -1;
@@ -122,7 +122,9 @@ int main(int argc, char **argv) {
   // Load MLIR
   mlir::OwningOpRef<mlir::ModuleOp> module;
   if (emitAction != Action::DumpAST) {
+    mlir::Builder b(&context);
     module = ep2::mlirGen(context, *moduleAST);
+    module.get()->setAttr("ep2.basePath", b.getStringAttr(outputDir));
     if (!module) {
       llvm::errs() << "Could not generate MLIR module from source\n";
       return 1;
@@ -134,23 +136,12 @@ int main(int argc, char **argv) {
     dump(*moduleAST);
     return 0;
   case Action::DumpMLIR:
-    module->dump();
+    module->print(output->os());
+    output->keep();
     return 0;
   default: {
-    auto headerInfo = std::make_shared<mlir::ep2::HeaderInfo>();
-    headerInfo->basePath = outputDir;
-
-    mlir::PassManager pm(&context);
-    pm.addPass(mlir::createCanonicalizerPass());
-    pm.addPass(std::make_unique<mlir::ep2::ContextTypeInferencePass>());
-    pm.addPass(std::make_unique<mlir::ep2::NopEliminationPass>());
-    pm.addPass(std::make_unique<mlir::ep2::CollectHeaderPass>(headerInfo));
-    pm.addPass(std::make_unique<mlir::ep2::LowerEmitcPass>());
-    pm.addPass(std::make_unique<mlir::ep2::LowerIntrinsicsPass>());
-    pm.addPass(std::make_unique<mlir::ep2::EmitFilesPass>(headerInfo));
-    pm.run(*module);
-    return 0;
+    llvm::errs() << "Unknow action. Use --help to see available actions. exit.\n";
+    return 1;
   }
   }
-  llvm::errs() << "Unknow action. Use --help to see available actions. exit.\n";
 }

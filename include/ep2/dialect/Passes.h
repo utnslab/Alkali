@@ -91,29 +91,30 @@ enum class MemType {
   EMEM,
 };
 
-struct HeaderInfo {
+struct CollectInfoAnalysis {
   std::string basePath;
   std::vector<std::pair<std::string, mlir::LLVM::LLVMStructType>> structDefs;
   std::unordered_map<std::string, std::pair<MemType, int>> eventQueues;
   std::unordered_map<std::string, std::string> eventDeps;
   std::unordered_map<std::string, std::vector<std::pair<std::string, std::string>>> eventAllocs;
+
+  CollectInfoAnalysis(Operation* op, AnalysisManager& am);
+
+  bool isInvalidated(const AnalysisManager::PreservedAnalyses &pa) {
+    return false;
+  }
 };
 
 // Collect defs for header.
 struct CollectHeaderPass :
         public PassWrapper<CollectHeaderPass, OperationPass<ModuleOp>> {
-    CollectHeaderPass(std::shared_ptr<HeaderInfo> info) : info(info) {}
     void runOnOperation() final;
     void getDependentDialects(DialectRegistry &registry) const override {
         registry.insert<EP2Dialect, func::FuncDialect, LLVM::LLVMDialect, emitc::EmitCDialect>();
     }
     StringRef getArgument() const final { return "ep2-collect-header"; }
     StringRef getDescription() const final { return "Collect header file"; }
-
-// fields
-    std::shared_ptr<HeaderInfo> info;
 };
-
 
 // Lower intrinsics in emitc.
 struct LowerIntrinsicsPass :
@@ -128,18 +129,13 @@ struct LowerIntrinsicsPass :
 
 struct EmitFilesPass :
         public PassWrapper<EmitFilesPass, OperationPass<ModuleOp>> {
-    EmitFilesPass(std::shared_ptr<HeaderInfo> info) : info(info) {}
     void runOnOperation() final;
     void getDependentDialects(DialectRegistry &registry) const override {
         registry.insert<EP2Dialect, func::FuncDialect, LLVM::LLVMDialect, emitc::EmitCDialect>();
     }
     StringRef getArgument() const final { return "ep2-emit-files"; }
     StringRef getDescription() const final { return "Emit files"; }
-
-// fields
-    std::shared_ptr<HeaderInfo> info;
 };
-  
 
 // Handler dependency analysis pass
 struct HandlerDependencyAnalysis {

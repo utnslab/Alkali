@@ -36,8 +36,11 @@ const char* toString(MemType ty) {
 void EmitFilesPass::runOnOperation() {
   auto module = getOperation();
 
+  std::string basePath = module->getAttr("ep2.basePath").cast<StringAttr>().getValue().str();
+  const CollectInfoAnalysis& info = getCachedAnalysis<CollectInfoAnalysis>().value();
+
   {
-    std::ofstream fout_prog_hdr(info->basePath + "/prog_hdr.h");
+    std::ofstream fout_prog_hdr(basePath + "/prog_hdr.h");
     fout_prog_hdr << "#ifndef _PROG_HDR_H_\n";
     fout_prog_hdr << "#define _PROG_HDR_H_\n\n";
     fout_prog_hdr << "#include \"nfplib.h\"\n";
@@ -48,7 +51,7 @@ void EmitFilesPass::runOnOperation() {
     fout_prog_hdr << "};\n\n";
     
     // emit structs
-    for (const auto& pr : info->structDefs) {
+    for (const auto& pr : info.structDefs) {
       fout_prog_hdr << (pr.second.isPacked() ? "__packed " : "") << "struct " << pr.first << " {\n";
       for (int i = 0; i<pr.second.getBody().size(); ++i) {
         mlir::Type ty = pr.second.getBody()[i];
@@ -70,7 +73,7 @@ void EmitFilesPass::runOnOperation() {
 
     // emit work queues
     int workq_id_incr = 10;
-    for (const auto& q : info->eventQueues) {
+    for (const auto& q : info.eventQueues) {
       std::string eventName = q.first;
 
       fout_prog_hdr << "#define WORKQ_SIZE_" << eventName << " " << q.second.second << '\n';
@@ -115,12 +118,12 @@ void EmitFilesPass::runOnOperation() {
     });
 
     // each event is a stage in the pipeline.
-    for (const auto& pr : info->eventAllocs) {
+    for (const auto& pr : info.eventAllocs) {
       std::string eventName = pr.first.substr(0, pr.first.find("_a_"));
       std::string atomName = pr.first.substr(pr.first.find("_a_") + 3);
       std::string funcName = "__event___handler_" + eventName + "_" + atomName;
 
-      std::ofstream fout_stage(info->basePath + "/" + atomName + ".c");
+      std::ofstream fout_stage(basePath + "/" + atomName + ".c");
       fout_stage << "#include \"nfplib.h\"\n";
       fout_stage << "#include \"prog_hdr.h\"\n\n";
 
@@ -132,10 +135,10 @@ void EmitFilesPass::runOnOperation() {
       fout_stage << "__xrw struct event_param_" << eventName << " work_ref;\n";
       fout_stage << "struct __wrapper_arg_t wrap_in;\n";
 
-      bool isLastStage = info->eventDeps.find(eventName) == info->eventDeps.end();
+      bool isLastStage = info.eventDeps.find(eventName) == info.eventDeps.end();
 
       if (!isLastStage) {
-        std::string nextEventName = info->eventDeps[eventName];
+        std::string nextEventName = info.eventDeps.find(eventName)->second;
         fout_stage << "struct event_param_" << nextEventName << " next_work;\n";
         fout_stage << "__xrw struct event_param_" << nextEventName << " next_work_ref;\n";
         fout_stage << "struct __wrapper_arg_t wrap_out;\n\n";
@@ -150,7 +153,7 @@ void EmitFilesPass::runOnOperation() {
       fout_stage << "\nint main(void) {\n";
 
       bool isFirstStage = true;
-      for (const auto& pr : info->eventDeps) {
+      for (const auto& pr : info.eventDeps) {
         if (pr.second == eventName) {
           isFirstStage = false;
         }
@@ -178,7 +181,7 @@ void EmitFilesPass::runOnOperation() {
 
       // rely on invariant one event type can only EVER flow to one other (many atom types possibly).
       if (!isLastStage) {
-        std::string nextEventName = info->eventDeps[eventName];
+        std::string nextEventName = info.eventDeps.find(eventName)->second;
         fout_stage << "\t\tnext_work_ref = next_work;\n";
         fout_stage << "\t\tcls_workq_add_work(WORKQ_ID_" << nextEventName << ", &next_work_ref, sizeof(next_work_ref));\n";
       }

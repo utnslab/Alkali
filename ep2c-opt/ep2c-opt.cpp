@@ -34,9 +34,12 @@ int main(int argc, char **argv) {
   mlir::registerAllDialects(registry);
   registry.insert<mlir::ep2::EP2Dialect>();
 
-  mlir::PassRegistration<mlir::ep2::NopEliminationPass>();
   mlir::PassRegistration<mlir::ep2::ContextTypeInferencePass>();
+  mlir::PassRegistration<mlir::ep2::NopEliminationPass>();
+  mlir::PassRegistration<mlir::ep2::CollectHeaderPass>();
   mlir::PassRegistration<mlir::ep2::LowerEmitcPass>();
+  mlir::PassRegistration<mlir::ep2::LowerIntrinsicsPass>();
+  mlir::PassRegistration<mlir::ep2::EmitFilesPass>();
   mlir::registerAllPasses();
  
   return mlir::asMainReturnCode(
