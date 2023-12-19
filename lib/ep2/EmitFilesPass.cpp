@@ -46,7 +46,7 @@ void EmitFilesPass::runOnOperation() {
     fout_prog_hdr << "#include \"nfplib.h\"\n";
     fout_prog_hdr << "#include <nfp/mem_ring.h>\n\n";
     fout_prog_hdr << "__packed struct __wrapper_arg_t {\n";
-    fout_prog_hdr << "\tuint32_t f0;\n"; // atom
+    fout_prog_hdr << "\tint32_t f0;\n"; // atom
     fout_prog_hdr << "\tchar* f1;\n"; // ptr to event
     fout_prog_hdr << "};\n\n";
     
@@ -59,11 +59,11 @@ void EmitFilesPass::runOnOperation() {
           // TODO assume buffer is the only ptr for now.
           fout_prog_hdr << "\tchar*" << " f" << i << ";\n";
         } else if (isa<mlir::IntegerType>(ty)) {
-          fout_prog_hdr << "\tuint" << cast<mlir::IntegerType>(ty).getWidth() << "_t f" << i << ";\n";
+          fout_prog_hdr << "\tint" << cast<mlir::IntegerType>(ty).getWidth() << "_t f" << i << ";\n";
         }
       }
       if (pr.first.find("context_chain") != std::string::npos) {
-        fout_prog_hdr << "\tuint32_t ctx_id;\n";
+        fout_prog_hdr << "\tint32_t ctx_id;\n";
       } else if (pr.first.find("event_param") != std::string::npos) {
         fout_prog_hdr << "\tstruct context_chain_1_t* ctx;\n";
       }

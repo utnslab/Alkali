@@ -5,18 +5,18 @@
 #include <nfp/mem_ring.h>
 
 __packed struct __wrapper_arg_t {
-	uint32_t f0;
+	int32_t f0;
 	char* f1;
 };
 
 __packed struct context_chain_1_t {
-	uint32_t ctx_id;
+	int32_t ctx_id;
 };
 
 __packed struct eth_header_t {
-	uint48_t f0;
-	uint48_t f1;
-	uint16_t f2;
+	int48_t f0;
+	int48_t f1;
+	int16_t f2;
 };
 
 __packed struct event_param_NET_RECV {

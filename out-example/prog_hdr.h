@@ -5,23 +5,23 @@
 #include <nfp/mem_ring.h>
 
 __packed struct __wrapper_arg_t {
-	uint32_t f0;
+	int32_t f0;
 	char* f1;
 };
 
 __packed struct context_chain_1_t {
-	uint32_t f0;
-	uint32_t f1;
-	uint32_t f2;
-	uint32_t f3;
-	uint32_t ctx_id;
+	int32_t f0;
+	int32_t f1;
+	int32_t f2;
+	int32_t f3;
+	int32_t ctx_id;
 };
 
 __packed struct recv_desc_t {
-	uint32_t f0;
-	uint32_t f1;
-	uint32_t f2;
-	uint32_t f3;
+	int32_t f0;
+	int32_t f1;
+	int32_t f2;
+	int32_t f3;
 };
 
 __packed struct event_param_DMA_RECV_CMPL {
@@ -30,7 +30,7 @@ __packed struct event_param_DMA_RECV_CMPL {
 };
 
 __packed struct event_param_USER_EVENT1 {
-	uint32_t f0;
+	int32_t f0;
 	struct context_chain_1_t* ctx;
 };
 
