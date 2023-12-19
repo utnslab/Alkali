@@ -92,7 +92,6 @@ enum class MemType {
 };
 
 struct CollectInfoAnalysis {
-  std::string basePath;
   std::vector<std::pair<std::string, mlir::LLVM::LLVMStructType>> structDefs;
   std::unordered_map<std::string, std::pair<MemType, int>> eventQueues;
   std::unordered_map<std::string, std::string> eventDeps;
@@ -129,12 +128,19 @@ struct LowerIntrinsicsPass :
 
 struct EmitFilesPass :
         public PassWrapper<EmitFilesPass, OperationPass<ModuleOp>> {
-    void runOnOperation() final;
-    void getDependentDialects(DialectRegistry &registry) const override {
-        registry.insert<EP2Dialect, func::FuncDialect, LLVM::LLVMDialect, emitc::EmitCDialect>();
-    }
-    StringRef getArgument() const final { return "ep2-emit-files"; }
-    StringRef getDescription() const final { return "Emit files"; }
+  // TODO(zhiyuang): copy construction?
+  EmitFilesPass() = default;
+  EmitFilesPass(const EmitFilesPass &pass) {}
+  void runOnOperation() final;
+  void getDependentDialects(DialectRegistry &registry) const override {
+    registry.insert<EP2Dialect, func::FuncDialect, LLVM::LLVMDialect,
+                    emitc::EmitCDialect>();
+  }
+  StringRef getArgument() const final { return "ep2-emit-files"; }
+  StringRef getDescription() const final { return "Emit files"; }
+
+  Option<std::string> basePathOpt{
+      *this, "basePath", llvm::cl::desc("Base path for generated files")};
 };
 
 // Handler dependency analysis pass

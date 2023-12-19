@@ -43,9 +43,6 @@
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/Support/ToolOutputFile.h"
 
-#include <memory>
-#include "ep2/dialect/Passes.h"
-
 using namespace ep2;
 namespace cl = llvm::cl;
 
@@ -59,13 +56,16 @@ enum Action {
 };
 } // namespace
 static cl::opt<enum Action> emitAction(
-    "emit", cl::desc("Select the kind of output desired"),
+    "emit", cl::desc("Select the kind of output desired"), cl::init(DumpMLIR),
     cl::values(clEnumValN(DumpAST, "ast", "output the AST dump")),
     cl::values(clEnumValN(DumpMLIR, "mlir", "output the MLIR dump")),
     cl::values(clEnumValN(DumpMLIRLLVM, "mlir-llvm",
                           "output the MLIR dump after llvm lowering")),
-    cl::values(clEnumValN(DumpLLVMIR, "llvm", "output the LLVM IR dump"))
-);
+    cl::values(clEnumValN(DumpLLVMIR, "llvm", "output the LLVM IR dump")));
+
+static cl::opt<std::string> outputFilename("o", cl::desc("Output directory"),
+                                            cl::value_desc("directory"),
+                                            cl::init("-"));
 
 /// Returns a Toy AST resulting from parsing the file or a nullptr on error.
 std::unique_ptr<ep2::ModuleAST> parseInputFile(llvm::StringRef filename) {
@@ -91,15 +91,10 @@ int main(int argc, char **argv) {
   static cl::opt<std::string> inputFilename(
       cl::Positional, cl::desc("<input file>"), cl::init("-"));
 
-  static cl::opt<std::string> outputDirectory("o", cl::desc("Output directory"),
-                                             cl::value_desc("directory"),
-                                             cl::init("-"));
-
   cl::ParseCommandLineOptions(argc, argv, "ep2 compiler\n");
 
   std::string errorMessage;
-  std::string outputDir = outputDirectory;
-  auto output = mlir::openOutputFile(outputDir + "/" + inputFilename.substr(0, inputFilename.find('.')) + ".mlir", &errorMessage);
+  auto output = mlir::openOutputFile(outputFilename, &errorMessage);
   if (!output) {
     llvm::errs() << errorMessage << "\n";
     return -1;
@@ -122,9 +117,7 @@ int main(int argc, char **argv) {
   // Load MLIR
   mlir::OwningOpRef<mlir::ModuleOp> module;
   if (emitAction != Action::DumpAST) {
-    mlir::Builder b(&context);
     module = ep2::mlirGen(context, *moduleAST);
-    module.get()->setAttr("ep2.basePath", b.getStringAttr(outputDir));
     if (!module) {
       llvm::errs() << "Could not generate MLIR module from source\n";
       return 1;
@@ -139,9 +132,9 @@ int main(int argc, char **argv) {
     module->print(output->os());
     output->keep();
     return 0;
-  default: {
-    llvm::errs() << "Unknow action. Use --help to see available actions. exit.\n";
-    return 1;
+  default:
+    break;
   }
-  }
+  llvm::errs() << "Unknow action. Use --help to see available actions. exit.\n";
+  return 0;
 }

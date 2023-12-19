@@ -36,7 +36,13 @@ const char* toString(MemType ty) {
 void EmitFilesPass::runOnOperation() {
   auto module = getOperation();
 
-  std::string basePath = module->getAttr("ep2.basePath").cast<StringAttr>().getValue().str();
+  if (basePathOpt.empty()) {
+    emitError(module.getLoc(), "basePath not specified");
+    signalPassFailure();
+    return;
+  }
+
+  std::string basePath = basePathOpt.getValue();
   const CollectInfoAnalysis& info = getCachedAnalysis<CollectInfoAnalysis>().value();
 
   {
