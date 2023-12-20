@@ -340,18 +340,18 @@ unsigned EmitFPGAPass::getStructTotalSize(ep2::StructType in_struct) {
   return total_size;
 }
 
-unsigned EmitFPGAPass::getContextTotalSize(
-    llvm::StringMap<ContextAnalysis::ContextField> &context) {
+unsigned EmitFPGAPass::getContextTotalSize() {
   unsigned total_size = 0;
-  for (auto &c : context) {
-    auto e = c.second.ty;
+  auto &table = contextbufferAnalysis->getContextTable(*cur_funcop);
+  for (auto &[_, p] : table) {
+    auto type = p.second;
     int t;
-    GetValTypeAndSize(e, &t);
+    GetValTypeAndSize(type, &t);
     total_size += t;
 
-    if (!e.isIntOrFloat() && !isa<ep2::StructType>(e)) {
+    if (!type.isIntOrFloat() && !isa<ep2::StructType>(type)) {
       printf("Error: Cannot getContextTotalSize\n");
-      e.dump();
+      type.dump();
       assert(false);
     }
   }
@@ -434,9 +434,7 @@ EmitFPGAPass::VAL_TYPE EmitFPGAPass::GetValTypeAndSize(mlir::Type type,
   if (isa<ep2::ContextType>(type)) {
     // push context wire
     assert(cur_funcop != NULL);
-    auto group = contextAnalysis->disj_func_groups[*cur_funcop];
-    auto fileds = contextAnalysis->disj_contexts[group];
-    size = getContextTotalSize(fileds);
+    size = getContextTotalSize();
     enum_type = CONTEXT;
   } else if (isa<ep2::BufferType>(type)) {
     size = DEFAULT_AXIS_STREAM_SIZE;

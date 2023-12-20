@@ -7,7 +7,6 @@ add_mlir_dialect_library(MLIREP2
         ContextBufferizationAnalysis.cpp
         
         # Passes
-        NopEliminationPass.cpp
         ContextRefTypeAssignPass.cpp
         EmitFPGAHelper.cpp
         EmitFPGA.cpp

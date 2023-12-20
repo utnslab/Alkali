@@ -42,13 +42,13 @@ struct EmitFPGAPass : public PassWrapper<EmitFPGAPass, OperationPass<>> {
     registry.insert<EP2Dialect>();
   }
 
-  StringRef getArgument() const final { return "ep2-emit-FPGA"; }
+  StringRef getArgument() const final { return "ep2-emit-fpga"; }
   StringRef getDescription() const final { return "Emit FPGA Code"; }
 
 private:
   mlir::Operation *module;
   OpBuilder *builder;
-  ContextAnalysis *contextAnalysis;
+  ContextBufferizationAnalysis *contextbufferAnalysis;
   HandlerInOutAnalysis *handlerInOutAnalysis;
   TableAnalysis *tableAnalysis;
   FuncOp *cur_funcop;
@@ -161,8 +161,7 @@ private:
                       std::list<struct module_port_config> &ports,
                       std::list<struct module_param_config> &params);
 
-  unsigned
-  getContextTotalSize(llvm::StringMap<ContextAnalysis::ContextField> &context);
+  unsigned getContextTotalSize();
   unsigned getStructTotalSize(ep2::StructType in_struct);
   unsigned getStructValOffset(ep2::StructType in_struct, int index);
   unsigned getStructValSize(ep2::StructType in_struct, int index);

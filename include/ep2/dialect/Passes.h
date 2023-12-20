@@ -23,6 +23,8 @@
 #include "mlir/IR/BuiltinOps.h"
 
 #include "mlir/Dialect/EmitC/IR/EmitC.h"
+#include "mlir/Dialect/LLVMIR/LLVMDialect.h"
+#include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Interfaces/FunctionInterfaces.h"
 
 #include "ep2/dialect/Dialect.h"
@@ -50,15 +52,6 @@ struct LowerStructAnalysis {
 ///////////////////
 // Passes
 ///////////////////
-// Nop Elimination Pass
-struct NopEliminationPass : public PassWrapper<NopEliminationPass, OperationPass<>> {
-  void runOnOperation() final;
-  void getDependentDialects(DialectRegistry &registry) const override {
-      registry.insert<EP2Dialect>();
-  }
-  StringRef getArgument() const final { return "ep2-nop-elim"; }
-  StringRef getDescription() const final { return "Eliminate EP2 Nop"; }
-};
 
 // Lower to Emitc pass
 struct LowerEmitcPass :
@@ -202,6 +195,18 @@ struct ContextRefTypeAssignPass : public PassWrapper<ContextRefTypeAssignPass, O
 };
 
 // Handler dependency analysis pass
+struct HandlerInOutAnalysis {
+  // From funcop -> blockarg
+  mlir::DenseMap<mlir::ep2::FuncOp, mlir::Region::BlockArgListType> handler_in_arg_list;
+
+  // From funcop -> returnedValues (Each value is a struct (event) sending to a dest handler)
+  mlir::DenseMap<mlir::ep2::FuncOp, mlir::SmallVector<mlir::Value>> handler_returnop_list;
+
+  HandlerInOutAnalysis(Operation* op);
+};
+
+
+// Handler dependency analysis pass
 struct TableAnalysis {
   // Table Lookup Information
   mlir::DenseMap<mlir::Value, mlir::SmallVector<ep2::UpdateOp>> table_update_uses;
@@ -225,6 +230,7 @@ struct ContextBufferizationAnalysis {
 
   ContextBufferizationAnalysis(Operation* op, AnalysisManager& am);
   std::pair<int, mlir::Type> getContextType(FunctionOpInterface funcOp, StringRef name);
+  TableT &getContextTable(FunctionOpInterface funcOp);
 
   void invalidate() {
     AnalysisManager::PreservedAnalyses preserved;
@@ -247,6 +253,12 @@ struct AtomAnalysis {
   llvm::StringMap<size_t> atomToNum;
 
   AtomAnalysis(Operation* op, AnalysisManager& am);
+};
+
+struct LocalAllocAnalysis {
+  std::unordered_map<mlir::Operation*, std::string> localAllocs;
+
+  LocalAllocAnalysis(Operation* op, AnalysisManager& am);
 };
 
 } // namespace ep2

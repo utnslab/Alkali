@@ -44,10 +44,24 @@ ContextBufferizationAnalysis::ContextBufferizationAnalysis(Operation *op,
       });
 }
 
+static std::string getFuncName(FunctionOpInterface funcOp) {
+  return funcOp.getName().str().find("__event_") == std::string::npos ?
+    funcOp.getName().str() : funcOp.getName().str().substr(8);
+}
+
+ContextBufferizationAnalysis::TableT & ContextBufferizationAnalysis::getContextTable(FunctionOpInterface funcOp) {
+  std::string funcName = getFuncName(funcOp);
+  auto opIt = contextMap.find(funcName);
+  if (opIt == contextMap.end()) {
+    funcOp->emitError("Operation not found");
+    return contextTables[0];
+  }
+  return opIt->second;
+}
+
 std::pair<int, mlir::Type> ContextBufferizationAnalysis::getContextType(FunctionOpInterface funcOp,
                                                         StringRef name) {
-  std::string funcName = funcOp.getName().str().find("__event_") == std::string::npos ?
-    funcOp.getName().str() : funcOp.getName().str().substr(8);
+  std::string funcName = getFuncName(funcOp);
 
   auto opIt = contextMap.find(funcName);
   if (opIt == contextMap.end()) {

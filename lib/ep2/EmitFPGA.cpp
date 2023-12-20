@@ -925,7 +925,7 @@ void EmitFPGAPass::runOnOperation() {
   OpBuilder builder_tmp(module->getContext());
   builder = &builder_tmp;
 
-  contextAnalysis = &(getAnalysis<ContextAnalysis>());
+  contextbufferAnalysis = &(getAnalysis<ContextBufferizationAnalysis>());
   handlerInOutAnalysis = &(getAnalysis<HandlerInOutAnalysis>());
   tableAnalysis = &(getAnalysis<TableAnalysis>());
   module->walk([&](ep2::FuncOp funcOp) {

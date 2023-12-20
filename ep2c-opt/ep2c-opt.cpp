@@ -4,6 +4,8 @@
 #include "ep2/dialect/MLIRGen.h"
 #include "ep2/dialect/Passes.h"
 
+#include "ep2/dialect/FPGAPasses.h"
+
 #include "mlir/Dialect/Affine/Passes.h"
 #include "mlir/Dialect/LLVMIR/Transforms/Passes.h"
 #include "mlir/ExecutionEngine/ExecutionEngine.h"
@@ -35,11 +37,12 @@ int main(int argc, char **argv) {
   registry.insert<mlir::ep2::EP2Dialect>();
 
   mlir::PassRegistration<mlir::ep2::ContextTypeInferencePass>();
-  mlir::PassRegistration<mlir::ep2::NopEliminationPass>();
   mlir::PassRegistration<mlir::ep2::CollectHeaderPass>();
   mlir::PassRegistration<mlir::ep2::LowerEmitcPass>();
   mlir::PassRegistration<mlir::ep2::LowerIntrinsicsPass>();
   mlir::PassRegistration<mlir::ep2::EmitFilesPass>();
+  mlir::PassRegistration<mlir::ep2::EmitFPGAPass>();
+
   mlir::registerAllPasses();
  
   return mlir::asMainReturnCode(
