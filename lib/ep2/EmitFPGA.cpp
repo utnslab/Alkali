@@ -543,6 +543,100 @@ void EmitFPGAPass::emitStructUpdate(std::ofstream &file,
   emitModuleCall(file, "struct_assign", module_name, ports, params);
 }
 
+void EmitFPGAPass::emitArithmetic(std::ofstream &file,
+                                     mlir::Operation *op) {
+  mlir::Value result_val;
+  mlir::Value lval, rval;
+  int op_id;
+  std::string op_name;
+  if (isa<ep2::SubOp>(op)){
+      auto subop = cast<ep2::SubOp, mlir::Operation *>(op);
+      result_val = subop.getResult();
+      lval = subop.getLhs();
+      rval = subop.getRhs();
+      op_id = 0;
+      op_name = "SUB";
+    }
+  else if(isa<ep2::AddOp>(op)){
+      auto addop = cast<ep2::SubOp, mlir::Operation *>(op);
+      result_val = addop.getResult();
+      lval = addop.getLhs();
+      rval = addop.getRhs();
+      op_id = 1;
+      op_name = "ADD";
+  }
+
+  auto module_name = assign_var_name(op_name);
+  struct module_port_config lval_port, rval_port, result_val_port;
+  struct axis_config lval_axis, rval_axis, result_val_axis;
+  struct wire_config lval_wire, rval_wire, result_val_wire;
+  int size;
+
+  auto result_val_type = GetValTypeAndSize(result_val.getType(), &size);
+  if (!(result_val_type == INT || result_val_type == STRUCT)) {
+    printf("Error: Cannot emitArithmetic's output val\n");
+    result_val.dump();
+    assert(false);
+  }
+
+  assert(!result_val.getDefiningOp()->hasAttr("var_name"));
+  auto name = assign_var_name(module_name + "_out_" + val_type_str(result_val_type));
+  // outval.getDefiningOp()->setAttr("var_name", builder->getStringAttr(name));
+  UpdateValName(result_val, name);
+  result_val_axis = {0, 0, size};
+  result_val_wire = {AXIS,   name, "Arithmetic OP Out", false, -1, has_use(result_val),
+                 result_val_axis};
+  result_val_port = {AXIS, {name}, "output val", "m_val_axis", result_val_axis};
+
+  int lval_size, rval_size;
+
+  auto lval_type = GetValTypeAndSize(lval.getType(), &lval_size);
+  auto rval_type = GetValTypeAndSize(rval.getType(), &rval_size);
+  if (!(lval_type == INT || lval_type == STRUCT)) {
+    printf("Error: Cannot emitArithmetic's lval val\n");
+    lval.dump();
+    assert(false);
+  }
+  if (!(rval_type == INT || rval_type == STRUCT)) {
+    printf("Error: Cannot emitArithmetic's rval val\n");
+    rval.dump();
+    assert(false);
+  }
+  lval_axis = {0, 0, lval_size};
+  lval_wire = {AXIS,  getValName(lval), "Arithmetic OP lval",
+                     false, -1, false,           lval_axis};
+  lval_port = {AXIS,
+                     {getValName(lval)},
+                     "lval input",
+                     "s_lval_axis",
+                     lval_axis};
+  rval_axis = {0, 0, rval_size};
+  rval_wire = {AXIS,  getValName(rval), "Arithmetic OP rval",
+                     false, -1, false,           rval_axis};
+  rval_port = {AXIS,
+                     {getValName(rval)},
+                     "rval input",
+                     "s_rval_axis",
+                     rval_axis};
+
+  std::list<struct module_port_config> ports;
+  ports.push_back(lval_port);
+  ports.push_back(rval_port);
+  ports.push_back(result_val_port);
+
+  emitwire(file, result_val_wire);
+
+  std::list<struct module_param_config> params;
+  params.push_back({"LVAL_SIZE", lval_size});
+  params.push_back({"RVAL_SIZE", rval_size});
+  params.push_back({"RESULT_SIZE", size});
+  params.push_back({"OPID", op_id});
+
+  emitModuleCall(file, "ALU", module_name, ports, params);
+  // wire_assignment = {src_offset, src_size, -1, -1, src_struct_wire,
+  // outval_wire}; emitwireassign(file, wire_assignment);
+}
+
 void EmitFPGAPass::emitReturn(std::ofstream &file, ep2::ReturnOp returnop) {
   if (returnop.getNumOperands() == 0)
     return;
@@ -686,6 +780,8 @@ void EmitFPGAPass::emitHandler(ep2::FuncOp funcOp) {
     } else if (isa<ep2::UpdateOp>(op)){
       auto updateop = cast<ep2::UpdateOp, mlir::Operation *>(op);
       emitUpdate(fout_stage, updateop);
+    } else if(isa<ep2::SubOp>(op) || isa<ep2::AddOp>(op)){
+      emitArithmetic(fout_stage, op);
     }
     // TODO: Add OP Constant
     // TODO: Change STURCT ACCESS IR to generate new stream for each accessed

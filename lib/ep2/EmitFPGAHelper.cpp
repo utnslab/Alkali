@@ -405,7 +405,10 @@ std::string EmitFPGAPass::getValName(mlir::Value val) {
     assert(arg_names.find(val) != arg_names.end());
     name = arg_names[val];
   } else {
-    assert(val.getDefiningOp()->hasAttr("var_name"));
+    if(!val.getDefiningOp()->hasAttr("var_name")){
+      val.dump();
+      assert(false);
+    }
     name = val.getDefiningOp()
                ->getAttr("var_name")
                .cast<StringAttr>()
