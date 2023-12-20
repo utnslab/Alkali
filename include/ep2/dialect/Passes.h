@@ -136,8 +136,21 @@ struct EmitFilesPass :
 
 // Handler dependency analysis pass
 struct HandlerDependencyAnalysis {
-  // enum EdgeType { MUST, MAY };
-  // using GraphType = std::unordered_map<Operation*, std::vector<std::pair<EdgeType, Operation*>>>;
+
+  // Struct for fullname
+  struct HandlerFullName {
+    llvm::StringRef event;
+    llvm::StringRef atom = "";
+
+    friend bool operator<(const HandlerFullName &l, const HandlerFullName &r) {
+      return std::tie(l.event, l.atom) < std::tie(r.event, r.atom);
+    }
+
+    HandlerFullName(std::string event, std::string atom = "") : event(event), atom(atom) {}
+    HandlerFullName(FuncOp funcOp);
+    HandlerFullName(ReturnOp returnOp);
+  };
+
   using KeyTy = FuncOp;
   using EdgeTy = FuncOp;
   using GraphType = std::map<KeyTy, std::vector<EdgeTy>>;
@@ -148,11 +161,19 @@ struct HandlerDependencyAnalysis {
   std::vector<std::vector<FuncOp>> subGraphsOrder;
   std::unordered_map<std::string, std::string> eventDeps;
 
-  HandlerDependencyAnalysis(Operation* op);
+  std::map<HandlerFullName, FuncOp> handlersMap;
+  bool isExternEvent(std::string eventName) {
+    auto it = std::find_if(handlersMap.begin(), handlersMap.end(), [&](auto &pr) {
+      return pr.first.event == eventName;
+    });
+    return it == handlersMap.end() || it->second.isExtern();
+  }
+
+  HandlerDependencyAnalysis(Operation *op);
 
   size_t numComponents() { return subGraphs.size(); }
 
-  template<typename F>
+  template <typename F>
   void forEachComponent(F f) {
     for (size_t i = 0; i < subGraphs.size(); ++i)
       f(i, subGraphs[i], subGraphsOrder[i]);
@@ -178,7 +199,7 @@ struct HandlerDependencyAnalysis {
     }
   }
 
- private:
+private:
   void getConnectedComponents();
 };
 

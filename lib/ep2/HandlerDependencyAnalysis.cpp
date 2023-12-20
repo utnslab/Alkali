@@ -81,46 +81,38 @@ void HandlerDependencyAnalysis::getConnectedComponents() {
 
 }
 
-struct HandlerFullName {
-  llvm::StringRef event;
-  llvm::StringRef atom = "";
+// Implement handler dependency
+HandlerDependencyAnalysis::HandlerFullName::HandlerFullName(FuncOp funcOp) {
+  assert(funcOp->hasAttrOfType<StringAttr>("event") &&
+         "Handler must have an event attribute");
+  event = funcOp->getAttr("event").cast<StringAttr>().getValue();
 
-  friend bool operator<(const HandlerFullName &l, const HandlerFullName &r) {
-    return std::tie(l.event, l.atom) < std::tie(r.event, r.atom);
-  }
+  if (funcOp->hasAttrOfType<StringAttr>("atom"))
+    atom = funcOp->getAttrOfType<StringAttr>("atom").getValue();
+}
 
-  HandlerFullName(FuncOp funcOp) {
-    assert(funcOp->hasAttrOfType<StringAttr>("event") && "Handler must have an event attribute");
-    event = funcOp->getAttr("event").cast<StringAttr>().getValue();
+HandlerDependencyAnalysis::HandlerFullName::HandlerFullName(ReturnOp returnOp) {
+  auto eventType = cast<StructType>(returnOp->getOperand(0).getType());
+  // TODO(zhiyuang): move this to an verifier
+  assert(eventType && eventType.getIsEvent() && "Return type must be an event");
 
-    if (funcOp->hasAttrOfType<StringAttr>("atom"))
-      atom = funcOp->getAttrOfType<StringAttr>("atom").getValue();
-  }
+  event = eventType.getName();
+  // TODO(zhiyuang): verifier. require all atom type to be at 0
+  auto inputOp = returnOp.getInput()[0].getDefiningOp();
+  assert(inputOp && isa<InitOp>(inputOp) &&
+         "Requires an init op to build return value");
 
-  HandlerFullName(ReturnOp returnOp) {
-    auto eventType = cast<StructType>(returnOp->getOperand(0).getType());
-    // TODO(zhiyuang): move this to an verifier
-    assert(eventType && eventType.getIsEvent() && "Return type must be an event");
-
-    event = eventType.getName();
-    // TODO(zhiyuang): verifier. require all atom type to be at 0
-    auto inputOp = returnOp.getInput()[0].getDefiningOp();
-    assert(inputOp && isa<InitOp>(inputOp) &&
-            "Requires an init op to build return value");
-
-    if (inputOp->getOperand(0).getDefiningOp())
-      if (auto constantOp =
-              dyn_cast<ConstantOp>(inputOp->getOperand(0).getDefiningOp()))
-        atom = constantOp.getValue().cast<StringAttr>().getValue();
-  }
-};
+  if (inputOp->getOperand(0).getDefiningOp())
+    if (auto constantOp =
+            dyn_cast<ConstantOp>(inputOp->getOperand(0).getDefiningOp()))
+      atom = constantOp.getValue().cast<StringAttr>().getValue();
+}
 
 HandlerDependencyAnalysis::HandlerDependencyAnalysis(Operation *module) {
   auto moduleOp = dyn_cast<ModuleOp>(module);
   
   std::map<StringRef, std::vector<HandlerFullName>> externForwards;
 
-  std::map<HandlerFullName, FuncOp> handlersMap;
   for (auto funcOp : moduleOp.getOps<FuncOp>())
     handlersMap.emplace(funcOp, funcOp);
 

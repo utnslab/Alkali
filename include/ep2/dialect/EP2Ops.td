@@ -382,7 +382,7 @@ def ContextRefOp : EP2_Op<"context_ref", [Pure]> {
 // ExtractOp
 //===----------------------------------------------------------------------===//
 
-def ExtractOp : EP2_Op<"extract", [Pure]> {
+def ExtractOp : EP2_Op<"extract"> {
   let summary = "extract from buffer to variable";
   let description = [{
     Extract from buffer to a variable or struct. The buffer will be modified;
