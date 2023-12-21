@@ -167,6 +167,23 @@ def EP2_Integer : AnyTypeOf<[AnyInteger, EP2_AnyType]>;
 //===----------------------------------------------------------------------===//
 
 //===----------------------------------------------------------------------===//
+// BitCast Op
+//===----------------------------------------------------------------------===//
+
+def BitCastOp : EP2_Op<"bitcast", [Pure, DeclareOpInterfaceMethods<CastOpInterface>]> {
+  let summary = "bitcast operation";
+  let description = [{
+    The "bitcast" operation converts a value from one type to another.
+  }];
+
+  // The bitcast operation takes a single input and returns a single result.
+  let arguments = (ins EP2_Type:$input);
+  let results = (outs EP2_Type:$output);
+
+  let hasFolder = 1;
+}
+
+//===----------------------------------------------------------------------===//
 // ConstantOp
 //===----------------------------------------------------------------------===//
 
@@ -175,7 +192,7 @@ def EP2_Integer : AnyTypeOf<[AnyInteger, EP2_AnyType]>;
 // constant operation is marked as 'Pure' as it is a pure operation
 // and may be removed if dead.
 def ConstantOp : EP2_Op<"constant",
-    [Pure]> {
+    [ConstantLike, Pure]> {
   // Provide a summary and description for this operation. This can be used to
   // auto-generate documentation of the operations within our dialect.
   let summary = "constant";
@@ -189,7 +206,7 @@ def ConstantOp : EP2_Op<"constant",
   }];
 
   // The constant operation takes an attribute as the only input.
-  let arguments = (ins AnyAttrOf<[I64Attr,StrAttr]>:$value);
+  let arguments = (ins AnyAttrOf<[APIntAttr,StrAttr]>:$value);
 
   // The constant operation returns a single value of TensorType.
   let results = (outs AnyTypeOf<[AnyInteger,EP2_AtomType]>:$output);
@@ -219,7 +236,7 @@ def ConstantOp : EP2_Op<"constant",
   // let hasVerifier = 1;
 
   // Set the folder bit so that we can implement constant folders.
-  // let hasFolder = 1;
+  let hasFolder = 1;
 }
 
 //===----------------------------------------------------------------------===//
@@ -422,6 +439,8 @@ def LookupOp : EP2_Op<"lookup", [Pure]> {
 
   let arguments = (ins EP2_TableType:$table, EP2_Type:$key);
   let results = (outs EP2_Type:$value);
+
+  let hasCanonicalizer = 1;
 }
 
 //===----------------------------------------------------------------------===//
@@ -435,6 +454,7 @@ def UpdateOp : EP2_Op<"update"> {
   }];
 
   let arguments = (ins EP2_TableType:$table, EP2_Type:$key, EP2_Type:$value);
+  let hasCanonicalizer = 1;
 }
 
 //===----------------------------------------------------------------------===//
@@ -442,10 +462,10 @@ def UpdateOp : EP2_Op<"update"> {
 // LoadOp & StoreOp & Nop
 //===----------------------------------------------------------------------===//
 
-def LoadOp : EP2_Op<"load"> {
+def LoadOp : EP2_Op<"load", [Pure]> {
   let summary = "Store variable to Ref";
   let description = [{
-    Store an variable to a Ref. The variable could be a struct or a buffer.
+    Load an variable to a Ref. The variable could be a struct or a buffer.
   }];
 
   let arguments = (ins EP2_ContextRefType:$ref);
@@ -494,23 +514,6 @@ def InitOp : EP2_Op<"init", [Pure]> {
     [{ build($_builder, $_state, type, {}); }]>
   ];
   // let hasVerifier = 1;
-}
-
-def RefInitOp : EP2_Op<"ref_init"> {
-  let summary = "Default Initialize an EP2 Reference to a value Type";
-  let description = [{
-    Perform a default initialization of an EP2 Value Type.
-    For Value Types, it will perform zero-initilaization.
-  }];
-
-  let arguments = (ins Variadic<EP2_Type>:$args);
-  let results = (outs EP2_ContextRefType:$value);
-
-  // TODO(zhiyuang): set the type
-  let builders = [
-    OpBuilder<(ins "Type":$type),
-    [{ build($_builder, $_state, type, {}); }]>
-  ];
 }
 
 //===----------------------------------------------------------------------===//
@@ -615,10 +618,7 @@ def StructUpdateOp : EP2_Op<"struct_update", [Pure]> {
   let arguments = (ins EP2_StructType:$input, I64Attr:$index, EP2_Type:$newValue);
   let results = (outs EP2_StructType:$output);
 
-  // Indicate that additional verification for this operation is necessary.
-  // let hasVerifier = 1;
-  // Set the folder bit so that we can fold constant accesses.
-  // let hasFolder = 1;
+  let hasCanonicalizer = 1;
 }
 
 //===----------------------------------------------------------------------===//

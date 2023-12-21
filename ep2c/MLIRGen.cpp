@@ -155,11 +155,11 @@ private:
   /// Entering a function creates a new scope, and the function arguments are
   /// added to the mapping. When the processing of a function is terminated, the
   /// scope is destroyed and the mappings created in this scope are dropped.
-  llvm::ScopedHashTable<StringRef, std::pair<mlir::Value, VarDeclExprAST *>>
+  llvm::ScopedHashTable<StringRef, std::tuple<mlir::Value, mlir::Type, VarDeclExprAST *>>
       symbolTable;
   using SymbolTableScopeT =
       llvm::ScopedHashTableScope<StringRef,
-                                 std::pair<mlir::Value, VarDeclExprAST *>>;
+                                 std::tuple<mlir::Value, mlir::Type, VarDeclExprAST *>>;
 
   /// TODO(zhiyuang): nested if else?
   using UpdateTableT = std::map<StringRef, mlir::Value>;
@@ -186,8 +186,18 @@ private:
   mlir::LogicalResult declare(VarDeclExprAST &var, mlir::Value value) {
     if (symbolTable.count(var.getName()))
       return mlir::failure();
-    symbolTable.insert(var.getName(), {value, &var});
+    symbolTable.insert(var.getName(), {value, value.getType(), &var});
     return mlir::success();
+  }
+
+  mlir::Value tryCast(mlir::Value value, mlir::Type type) {
+    // TODO: assert for bad cast
+    if (!isa<mlir::IntegerType>(value.getType()) || !isa<mlir::IntegerType>(type))
+      return value;
+    if (value.getType().getIntOrFloatBitWidth() == type.getIntOrFloatBitWidth())
+      return value;
+    // TODO(zhiyaung): no defining op?
+    return builder.create<BitCastOp>(value.getDefiningOp()->getLoc(), type, value);
   }
 
   // Update the symbol table with the new value
@@ -197,18 +207,23 @@ private:
 
         // could be a variable or a struct access
         auto varName = path.getPath()[0]->getName();
-        auto [_, decl] = symbolTable.lookup(varName);
-        symbolTable.insert(varName, {value, decl});
-        if (updateTable)
-          updateTable->insert_or_assign(varName, value);
-      } else if (targetAst.getKind() == ExprAST::Expr_Var) {
-        auto &var = cast<VariableExprAST>(targetAst);
-        auto varName = var.getName();
-        auto [_, decl] = symbolTable.lookup(varName);
-        symbolTable.insert(varName, {value, decl});
+        auto [_, type, decl] = symbolTable.lookup(varName);
+        // try update the value
+
+        auto newValue = tryCast(value, type);
+        symbolTable.insert(varName, {newValue, type, decl});
+        // for if/else accesses
         if (updateTable)
           updateTable->insert_or_assign(varName, value);
       }
+      // else if (targetAst.getKind() == ExprAST::Expr_Var) {
+      //   auto &var = cast<VariableExprAST>(targetAst);
+      //   auto varName = var.getName();
+      //   auto [_, type, decl] = symbolTable.lookup(varName);
+      //   symbolTable.insert(varName, {value, type, decl});
+      //   if (updateTable)
+      //     updateTable->insert_or_assign(varName, value);
+      // }
   }
 
   /// ===========
@@ -325,9 +340,9 @@ private:
   StructAST *getStructForName(StringRef name) {
     llvm::StringRef structName;
     auto varIt = symbolTable.lookup(name);
-    if (!varIt.first)
+    if (!std::get<0>(varIt))
       return nullptr;
-    structName = varIt.second->getType().name;
+    structName = std::get<2>(varIt)->getType().name;
     if (structName.empty())
       return nullptr;
 
@@ -362,23 +377,6 @@ private:
     }
 
     return value;
-  }
-
-  void setConstantType(mlir::Value value, mlir::Type type) {
-    if (isa<AnyType>(type))
-      return;
-
-    auto op = value.getDefiningOp();
-    if (op == nullptr)
-      return;
-
-    if (auto constOp = dyn_cast<ConstantOp>(op)) {
-      // assign to a constant
-      if (isa<mlir::IntegerType>(constOp.getType())) {
-        assert(isa<mlir::IntegerType>(type) && "Assign a integer constant to a non-integer");
-        value.setType(type);
-      }
-    }
   }
 
   /// Emit a binary operation
@@ -426,20 +424,16 @@ private:
       if (auto refOp = dyn_cast<mlir::ep2::ContextRefOp>(lhs.getDefiningOp())) {
         builder.create<StoreOp>(location, lhs, rhs);
 
-        setConstantType(rhs, refOp.getType().getValueType());
         return builder.create<NopOp>(location, builder.getNoneType());
       } else if (auto accessOp = dyn_cast<StructAccessOp>(lhs.getDefiningOp())) {
         auto structType = accessOp.getInput().getType();
         auto value = builder.create<StructUpdateOp>(location,
           structType, accessOp.getInput(), accessOp.getIndexAttr(), rhs);
 
-        auto leftType = structType.getElementTypes()[accessOp.getIndex()];
-        setConstantType(rhs, leftType);
         update(*binop.getLHS(), value);
         return value;
       } else {
         // assign to a variable, update ssa value
-        setConstantType(rhs, lhs.getType());
         update(*binop.getLHS(), rhs);
         return rhs;
       }
@@ -458,7 +452,7 @@ private:
   /// expected to have been declared and so should have a value in the symbol
   /// table, otherwise emit an error and return nullptr.
   mlir::Value mlirGen(VariableExprAST &expr) {
-    if (auto variable = symbolTable.lookup(expr.getName()).first)
+    if (auto variable = std::get<mlir::Value>(symbolTable.lookup(expr.getName())))
       return variable;
 
       emitError(loc(expr.loc()), "error: unknown variable '")
@@ -795,7 +789,7 @@ private:
     auto merge = [&, this](UpdateTableT *from, UpdateTableT *to) {
       for (auto &[k, v] : *from) {
         if (!to->count(k)) {
-          auto value = symbolTable.lookup(k).first;
+          auto value = std::get<mlir::Value>(symbolTable.lookup(k));
           to->insert({k, value});
         }
       }
@@ -808,7 +802,7 @@ private:
     // create a new if op
     bool hasElse = ifelse.hasElse() || keys.size() != 0;
     auto types = llvm::map_to_vector(
-        keys, [&](auto &key) { return symbolTable.lookup(key).first.getType(); });
+        keys, [&](auto &key) { return std::get<mlir::Type>(symbolTable.lookup(key)); });
 
     builder.restoreInsertionPoint(ip);
     auto newIfOp = builder.create<mlir::scf::IfOp>(loc(ifelse.loc()), types, cond, hasElse);
@@ -831,8 +825,8 @@ private:
     // update the values
     // TODO(zhiyuang): check if its at top level
     for (size_t i = 0; i < keys.size(); i++) {
-      auto [_, decl] = symbolTable.lookup(keys[i]);
-      symbolTable.insert(keys[i], {newIfOp.getResult(i), decl});
+      auto [_, type, decl] = symbolTable.lookup(keys[i]);
+      symbolTable.insert(keys[i], {newIfOp.getResult(i), type, decl});
     }
     builder.setInsertionPointAfter(newIfOp);
 

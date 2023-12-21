@@ -21,6 +21,7 @@
 #include "mlir/Transforms/InliningUtils.h"
 
 #include "mlir/Transforms/DialectConversion.h"
+#include "mlir/Dialect/CommonFolders.h"
 
 using namespace mlir;
 using namespace mlir::ep2;
@@ -78,6 +79,17 @@ struct ep2InlinerInterface : public DialectInlinerInterface {
 // ep2 Operations
 //===----------------------------------------------------------------------===//
 
+mlir::Value updateValue(mlir::PatternRewriter &rewriter, mlir::Value oldValue,
+                        mlir::Type type) {
+  // we could only update integer value
+  if (!isa<IntegerType>(oldValue.getType()) || !isa<IntegerType>(type))
+    return oldValue;
+  if (oldValue.getType().getIntOrFloatBitWidth() ==
+      type.getIntOrFloatBitWidth())
+    return oldValue;
+  return rewriter.create<ep2::BitCastOp>(oldValue.getLoc(), type, oldValue);
+}
+
 /// A generalized parser for binary operations. This parses the different forms
 /// of 'printBinaryOp' below.
 static mlir::ParseResult parseBinaryOp(mlir::OpAsmParser &parser,
@@ -124,6 +136,27 @@ static void printBinaryOp(mlir::OpAsmPrinter &printer, mlir::Operation *op) {
 
   // Otherwise, print a functional type.
   printer.printFunctionalType(op->getOperandTypes(), op->getResultTypes());
+}
+
+//===----------------------------------------------------------------------===//
+// BitCastOp
+//===----------------------------------------------------------------------===//
+
+bool BitCastOp::areCastCompatible(TypeRange inputs, TypeRange outputs) {
+  if (inputs.size() != 1 || outputs.size() != 1)
+    return false;
+  if (isa<IntegerType>(inputs[0]) && isa<IntegerType>(outputs[0]))
+    return true;
+  if (isa<ep2::AnyType>(inputs[0]))
+    return true;
+  return false;
+}
+
+OpFoldResult BitCastOp::fold(BitCastOp::FoldAdaptor adaptor) {
+  auto width = getType().dyn_cast<IntegerType>().getWidth();
+  return constFoldCastOp<IntegerAttr, IntegerAttr, APInt, APInt, void>(
+      adaptor.getOperands(), getType(),
+      [&](const APInt &value, bool status) { return APInt(width, value.getLimitedValue()); });
 }
 
 //===----------------------------------------------------------------------===//
@@ -195,6 +228,10 @@ static mlir::LogicalResult verifyConstantForType(mlir::Type type,
 
 mlir::LogicalResult StructConstantOp::verify() {
   return verifyConstantForType(getResult().getType(), getValue(), *this);
+}
+
+OpFoldResult ConstantOp::fold(ConstantOp::FoldAdaptor adaptor) {
+  return adaptor.getValue();
 }
 
 //===----------------------------------------------------------------------===//
@@ -338,7 +375,7 @@ mlir::LogicalResult ReturnOp::verify() {
 }
 
 //===----------------------------------------------------------------------===//
-// StructAccessOp
+// StructAccessOp && StructUpdateOp
 //===----------------------------------------------------------------------===//
 
 void StructAccessOp::build(mlir::OpBuilder &b, mlir::OperationState &state,
@@ -363,6 +400,66 @@ mlir::LogicalResult StructAccessOp::verify() {
     return emitOpError() << "must have the same result type as the struct "
                             "element referred to by the index";
   return mlir::success();
+}
+
+class StructUpdateTypeInfer : public OpRewritePattern<StructUpdateOp> {
+  using OpRewritePattern<StructUpdateOp>::OpRewritePattern;
+  LogicalResult matchAndRewrite(StructUpdateOp op,
+                                PatternRewriter &rewriter) const override {
+    auto type = op.getInput().getType().getElementTypes()[op.getIndex()];
+    auto newValue = updateValue(rewriter, op.getNewValue(), type);
+    if (newValue == op.getNewValue())
+      return failure();
+    rewriter.replaceOpWithNewOp<StructUpdateOp>(op, op.getType(), op.getInput(), op.getIndex(),
+                                                newValue);
+    return success();
+  }
+};
+
+void StructUpdateOp::getCanonicalizationPatterns(RewritePatternSet &results,
+                                         MLIRContext *context) {
+  results.add<StructUpdateTypeInfer>(context);
+}
+
+//===----------------------------------------------------------------------===//
+// TableLookup & Update
+//===----------------------------------------------------------------------===//
+
+class UpdateTypeInfer : public OpRewritePattern<UpdateOp> {
+  using OpRewritePattern<UpdateOp>::OpRewritePattern;
+  LogicalResult matchAndRewrite(UpdateOp op,
+                                PatternRewriter &rewriter) const override {
+    auto tableType = op.getTable().getType();
+    auto newKey = updateValue(rewriter, op.getKey(), tableType.getKeyType());
+    auto newValue = updateValue(rewriter, op.getValue(), tableType.getValueType());
+    if (newKey == op.getKey() && newValue == op.getValue())
+      return failure();
+    rewriter.replaceOpWithNewOp<UpdateOp>(op, op.getTable(), newKey, newValue);
+    return success();
+  }
+};
+
+class LookupTypeInfer : public OpRewritePattern<LookupOp> {
+  using OpRewritePattern<LookupOp>::OpRewritePattern;
+  LogicalResult matchAndRewrite(LookupOp op,
+                                PatternRewriter &rewriter) const override {
+    auto tableType = op.getTable().getType();
+    auto newKey = updateValue(rewriter, op.getKey(), tableType.getKeyType());
+    if (newKey == op.getKey())
+      return failure();
+    rewriter.replaceOpWithNewOp<LookupOp>(op, op.getType(), op.getTable(), newKey);
+    return success();
+  }
+};
+
+void LookupOp::getCanonicalizationPatterns(RewritePatternSet &results,
+                                         MLIRContext *context) {
+  results.add<LookupTypeInfer>(context);
+}
+
+void UpdateOp::getCanonicalizationPatterns(RewritePatternSet &results,
+                                         MLIRContext *context) {
+  results.add<UpdateTypeInfer>(context);
 }
 
 //===----------------------------------------------------------------------===//

@@ -12,15 +12,9 @@ struct eth_header_t {
 }
 
 handler LOAD_TABLE:load_table (context ctx) {
-    table<bits<16>, bits<32>, 16> table1;
-    table<eth_header_t, buf, 16> table2;
+    eth_header_t eth_header;
+    eth_header.dst_mac = 0;
 
-    eth_header_t tmp;
-    tmp.dst_mac = 2;
-
-    table1.update(10, 11);
-    table1.update(tmp, 12);
-
-    ctx.a = table1.lookup(10);
-    ctx.b = table2.lookup(tmp);
+    ctx.a = eth_header.dst_mac;
+    ctx.b = eth_header.dst_mac;
 }
