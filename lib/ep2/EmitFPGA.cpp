@@ -18,10 +18,17 @@ void EmitFPGAPass::emitFuncHeader(std::ofstream &file, ep2::FuncOp funcOp) {
   auto handler_name = funcOp.getName().str();
   file << "module " << handler_name << "#()\n";
 
-  std::list<struct inout_config> inout_wires;
+  std::vector<struct inout_config> inout_wires;
 
+  // log event wire info, used in generating top module
+  std::vector<struct wire_config> in_event_wires;
   // push input parameter wire
   auto args = handlerInOutAnalysis->handler_in_arg_list[funcOp];
+  std::string extern_in_event_name = "";
+  // TODO: Support out event extern identification
+  if(funcOp->hasAttr("in_hw_event")){
+    extern_in_event_name = funcOp->getAttr("event").cast<StringAttr>().getValue().str();
+  }
   for (auto arg : args) {
     auto arg_type = arg.getType();
     bool if_stream;
@@ -42,7 +49,11 @@ void EmitFPGAPass::emitFuncHeader(std::ofstream &file, ep2::FuncOp funcOp) {
       assert(false);
     }
 
-    name = "arg" + std::to_string(arg.getArgNumber());
+    if(extern_in_event_name!= "")
+      name = extern_in_event_name + "_" + std::to_string(arg.getArgNumber());
+    else
+      name = assign_var_name("arg");
+      
     UpdateValName(arg, name);
     if (!if_stream) {
       assert(size <= 64 * 8);
@@ -50,13 +61,23 @@ void EmitFPGAPass::emitFuncHeader(std::ofstream &file, ep2::FuncOp funcOp) {
       assert(size % 8 == 0);
     }
     struct axis_config wire = {if_stream, if_stream, size};
+    struct wire_config event_wire = {AXIS, name, "", false, -1, true, wire};
     struct inout_config in_if = {IN, AXIS, name, debuginfo, wire};
     inout_wires.push_back(in_if);
+    in_event_wires.push_back(event_wire);
+    
+    if(extern_in_event_name != "")
+      extern_inouts.push_back(in_if);
   }
+  handler_edge_map[*cur_funcop].push_back({IN, 0, extern_in_event_name != "", in_event_wires});
 
   // push output parameter wires
   auto returnvals = handlerInOutAnalysis->handler_returnop_list[funcOp];
+  int out_event_id = 0;
   for (auto returned_event : returnvals) {
+    // log event wire info, used in generating top module
+    std::vector<struct wire_config> out_event_wires;
+
     auto returned_event_type = returned_event.getType();
     assert(!returned_event.getDefiningOp()->hasAttr("var_name"));
     auto name = assign_var_name("outport");
@@ -87,9 +108,12 @@ void EmitFPGAPass::emitFuncHeader(std::ofstream &file, ep2::FuncOp funcOp) {
       portname = name + "_" + std::to_string(i);
 
       struct axis_config wire = {if_stream, if_stream, size};
+      struct wire_config event_wire = {AXIS, portname, "", false, -1, true, wire};
       struct inout_config out_if = {OUT, AXIS, portname, debuginfo, wire};
       inout_wires.push_back(out_if);
+      out_event_wires.push_back(event_wire);
     }
+    handler_edge_map[*cur_funcop].push_back({OUT, out_event_id++, false, out_event_wires});
   }
 
   emitModuleParameter(file, inout_wires);
@@ -558,7 +582,7 @@ void EmitFPGAPass::emitArithmetic(std::ofstream &file,
       op_name = "SUB";
     }
   else if(isa<ep2::AddOp>(op)){
-      auto addop = cast<ep2::SubOp, mlir::Operation *>(op);
+      auto addop = cast<ep2::AddOp, mlir::Operation *>(op);
       result_val = addop.getResult();
       lval = addop.getLhs();
       rval = addop.getRhs();
@@ -797,7 +821,7 @@ void EmitFPGAPass::emitController(ep2::FuncOp funcOp) {
   file << "module " << handler_name << "#()\n";
 
   // from m replicas to n replicas
-  std::list<struct inout_config> inout_wires;
+  std::vector<struct inout_config> inout_wires;
   std::list<struct wire_config> mux_in_wires;
   std::list<struct wire_config> demux_out_wires;
   // TODO: should have a analysis struct:
@@ -928,16 +952,19 @@ void EmitFPGAPass::runOnOperation() {
   contextbufferAnalysis = &(getAnalysis<ContextBufferizationAnalysis>());
   handlerInOutAnalysis = &(getAnalysis<HandlerInOutAnalysis>());
   tableAnalysis = &(getAnalysis<TableAnalysis>());
+  handlerDependencyAnalysis = &(getAnalysis<HandlerDependencyAnalysis>());
   module->walk([&](ep2::FuncOp funcOp) {
     auto functype = funcOp->getAttr("type").cast<StringAttr>().getValue().str();
     std::cout << functype << "\n";
     if (functype == "handler") {
-      printf("ENTERR\n");
       emitHandler(funcOp);
     } else if (functype == "controller") {
       emitController(funcOp);
     }
   });
+
+
+  emitTop();
 }
 
 std::unique_ptr<Pass> createEmitFPGAPass() {

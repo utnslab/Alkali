@@ -16,7 +16,7 @@ namespace mlir {
 namespace ep2 {
 
 void EmitFPGAPass::emitModuleParameter(std::ofstream &file,
-                                       std::list<struct inout_config> &wires) {
+                                       std::vector<struct inout_config> &wires) {
   file << "(\n"
        << "\t input  wire clk, \n"
        << "\t input  wire rst";

@@ -51,6 +51,7 @@ private:
   ContextBufferizationAnalysis *contextbufferAnalysis;
   HandlerInOutAnalysis *handlerInOutAnalysis;
   TableAnalysis *tableAnalysis;
+  HandlerDependencyAnalysis *handlerDependencyAnalysis;
   FuncOp *cur_funcop;
 
   enum VAL_TYPE { CONTEXT, STRUCT, INT, BUF, ATOM, UNKNOWN };
@@ -139,6 +140,18 @@ private:
       return "";
     }
   }
+
+  // an edge is an event, with a group of wires (all parameters in an event)
+  struct handler_edge {
+    INOUT direction;
+    int id;
+    bool if_extern;
+    std::vector<struct wire_config> event_wires;
+  };
+
+  mlir::DenseMap<mlir::ep2::FuncOp, std::vector<struct handler_edge>> handler_edge_map;
+
+  std::vector<struct inout_config> extern_inouts;
   // std::unordered_map<mlir::Location, std::string> arg_names;
   mlir::DenseMap<Value, std::string> arg_names;
   int global_var_index = 0;
@@ -152,7 +165,7 @@ private:
   VAL_TYPE GetValTypeAndSize(mlir::Type type, int *size);
 
   void emitModuleParameter(std::ofstream &file,
-                           std::list<struct inout_config> &wires);
+                           std::vector<struct inout_config> &wires);
   void emitwire(std::ofstream &file, struct wire_config &wire);
   void emitwireassign(std::ofstream &file, struct wire_assign_config &assign);
 
@@ -184,6 +197,8 @@ private:
   void emitArithmetic(std::ofstream &file, mlir::Operation *op);
   void emitHandler(ep2::FuncOp funcOp);
   void emitController(ep2::FuncOp funcOp);
+
+  void emitTop();
 };
 
 } // namespace ep2
