@@ -417,6 +417,15 @@ private:
       return builder.create<SubOp>(location, lhs.getType(), lhs, rhs);
     case '*':
       return builder.create<MulOp>(location, lhs, rhs);
+    case tok_cmp_eq:  /* FALL THROUGH */
+    case tok_cmp_ge:  /* FALL THROUGH */
+    case tok_cmp_le:  /* FALL THROUGH */
+    case '<':         /* FALL THROUGH */
+    case '>': {
+      
+      char op = binop.getOp() < 0 ? -binop.getOp() : binop.getOp();
+      return builder.create<CmpOp>(location, op, lhs, rhs);
+    }
     case '=':
       // TODO(zhiyuang): Here we do not bring type info into IR, need to do type
       // check here

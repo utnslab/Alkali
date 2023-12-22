@@ -1,0 +1,22 @@
+event MY_EVENT {
+    atom at;
+    context ctx;
+}
+
+handler MY_EVENT:my_handler_event (context ctx) {
+    bits<32> a;
+    bits<32> b;
+
+    a = 1;
+    b = 2;
+
+    if (a > b) {
+        ctx.a = a;
+    }
+    if (a < b) {
+        ctx.a = a;
+    }
+    if (a >= b) {
+        ctx.a = a;
+    }
+}

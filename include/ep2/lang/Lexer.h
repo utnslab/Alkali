@@ -42,6 +42,7 @@ enum Token : int {
   tok_sbracket_close = ']',
   tok_colon = ':',
   tok_dot = '.',
+  tok_eq = '=',
 
   tok_eof = -1,
 
@@ -60,6 +61,11 @@ enum Token : int {
 
   tok_if = -13,
   tok_else = -14,
+
+  // cmp ops
+  tok_cmp_eq = -40,
+  tok_cmp_le = -41,
+  tok_cmp_ge = -42,
 
   // primary
   tok_identifier = -56,
@@ -244,6 +250,23 @@ private:
     // Check for end of file.  Don't eat the EOF.
     if (lastChar == EOF)
       return tok_eof;
+    
+    // Check for '==', '<=', '>='
+    if (lastChar == '=' || lastChar == '<' || lastChar == '>') {
+      Token curTok = Token(lastChar);
+      lastChar = Token(getNextChar());
+      if (lastChar != '=')
+        return curTok;
+      
+      // eat '='
+      lastChar = Token(getNextChar());
+      switch (curTok) {
+        case '=': return tok_cmp_eq;
+        case '<': return tok_cmp_le;
+        case '>': return tok_cmp_ge;
+        default: assert(false && "unreachable in generate cmp op");
+      }
+    }
 
     // Otherwise, just return the character as its ascii value.
     Token thisChar = Token(lastChar);

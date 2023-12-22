@@ -240,6 +240,10 @@ def ConstantOp : EP2_Op<"constant",
 }
 
 //===----------------------------------------------------------------------===//
+// BinaryOps
+//===----------------------------------------------------------------------===//
+
+//===----------------------------------------------------------------------===//
 // AddOp
 //===----------------------------------------------------------------------===//
 
@@ -269,6 +273,27 @@ def SubOp : EP2_Op<"sub",
 
   let arguments = (ins EP2_Integer:$lhs, EP2_Integer:$rhs);
   let results = (outs EP2_Integer);
+}
+
+//===----------------------------------------------------------------------===//
+// Compare Ops
+//===----------------------------------------------------------------------===//
+
+def CmpOp : EP2_Op<"cmp",
+    [Pure]> {
+  let summary = "element-wise compare operation";
+  let description = [{
+    The "cmp" operation performs compare between values
+    The shapes of the tensor operands are expected to match.
+  }];
+
+  let arguments = (ins I16Attr: $predicate, EP2_Integer:$lhs, EP2_Integer:$rhs);
+  let results = (outs AnyI1);
+
+  let builders = [
+    OpBuilder<(ins "char":$pred, "Value":$lhs, "Value":$rhs),
+    [{ build($_builder, $_state, $_builder.getI1Type(), $_builder.getI16IntegerAttr(pred), lhs, rhs); }]>
+  ];
 }
 
 //===----------------------------------------------------------------------===//
