@@ -5,14 +5,15 @@ add_mlir_dialect_library(MLIREP2
         LowerStructAnalysis.cpp
         HandlerDependencyAnalysis.cpp
         ContextBufferizationAnalysis.cpp
-        
-        # Passes
-        ContextRefTypeAssignPass.cpp
-        EmitFPGAHelper.cpp
-        EmitFPGA.cpp
         HandlerInOutAnalysis.cpp
         TableAnalysis.cpp
         AtomAnalysis.cpp
+        
+        # Passes
+        ContextRefTypeAssignPass.cpp
+        ContextToArgumentPass.cpp
+        EmitFPGAHelper.cpp
+        EmitFPGA.cpp
         ContextTypeInferencePass.cpp
         LowerEmitcPass.cpp
         CollectHeaderPass.cpp

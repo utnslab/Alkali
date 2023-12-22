@@ -37,6 +37,7 @@ int main(int argc, char **argv) {
   registry.insert<mlir::ep2::EP2Dialect>();
 
   mlir::PassRegistration<mlir::ep2::ContextTypeInferencePass>();
+  mlir::PassRegistration<mlir::ep2::ContextToArgumentPass>();
   mlir::PassRegistration<mlir::ep2::CollectHeaderPass>();
   mlir::PassRegistration<mlir::ep2::LowerEmitcPass>();
   mlir::PassRegistration<mlir::ep2::LowerIntrinsicsPass>();

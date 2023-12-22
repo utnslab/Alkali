@@ -53,8 +53,8 @@ ContextBufferizationAnalysis::TableT & ContextBufferizationAnalysis::getContextT
   std::string funcName = getFuncName(funcOp);
   auto opIt = contextMap.find(funcName);
   if (opIt == contextMap.end()) {
-    funcOp->emitError("Operation not found");
-    return contextTables[0];
+    funcOp->emitError("Operation not found" + funcName);
+    assert(false && "Cannot find funcOp in context analysis");
   }
   return opIt->second;
 }
@@ -75,6 +75,16 @@ std::pair<int, mlir::Type> ContextBufferizationAnalysis::getContextType(Function
     return {0, mlir::Type{}};
   }
   return it->second;
+}
+
+StructType ContextBufferizationAnalysis::getContextAsStruct(FunctionOpInterface funcOp) {
+  auto &table = getContextTable(funcOp);
+
+  auto types = llvm::map_to_vector(table, [](auto &pair){
+    return pair.second.second;
+  });
+  auto name = "__ctx_" + getFuncName(funcOp);
+  return StructType::get(funcOp.getContext(), false, types, name);
 }
 
 } // namespace ep2

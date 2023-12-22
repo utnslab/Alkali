@@ -53,6 +53,16 @@ struct LowerStructAnalysis {
 // Passes
 ///////////////////
 
+struct ContextToArgumentPass :
+        public PassWrapper<ContextToArgumentPass, OperationPass<ModuleOp>> {
+    void runOnOperation() final;
+    void getDependentDialects(DialectRegistry &registry) const override {
+        registry.insert<EP2Dialect>();
+    }
+    StringRef getArgument() const final { return "ep2-context-to-argument"; }
+    StringRef getDescription() const final { return "Dump all ep2 context to value"; }
+};
+
 // Lower to Emitc pass
 struct LowerEmitcPass :
         public PassWrapper<LowerEmitcPass, OperationPass<ModuleOp>> {
@@ -252,6 +262,7 @@ struct ContextBufferizationAnalysis {
   ContextBufferizationAnalysis(Operation* op, AnalysisManager& am);
   std::pair<int, mlir::Type> getContextType(FunctionOpInterface funcOp, StringRef name);
   TableT &getContextTable(FunctionOpInterface funcOp);
+  StructType getContextAsStruct(FunctionOpInterface op);
 
   void invalidate() {
     AnalysisManager::PreservedAnalyses preserved;

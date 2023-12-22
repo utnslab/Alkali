@@ -19,6 +19,7 @@ include "mlir/IR/AttrTypeBase.td"
 include "mlir/Interfaces/CallInterfaces.td"
 include "mlir/Interfaces/CastInterfaces.td"
 include "mlir/Interfaces/SideEffectInterfaces.td"
+include "mlir/Interfaces/MemorySlotInterfaces.td"
 include "mlir/IR/BuiltinAttributeInterfaces.td"
 include "mlir/IR/OpAsmInterface.td"
 
@@ -39,6 +40,9 @@ def EP2_Dialect : Dialect {
   let dependentDialects = [
     "::mlir::scf::SCFDialect",
   ];
+
+  // for adding attrs
+  let hasRegionArgAttrVerify = 1;
 }
 
 // Base class for toy dialect operations. This operation inherits from the base
@@ -358,7 +362,6 @@ def FuncOp : EP2_Op<"func", [
   }];
   let hasCustomAssemblyFormat = 1;
   let skipDefaultBuilders = 1;
-  let hasCanonicalizer = 1;
 }
 
 //===----------------------------------------------------------------------===//
@@ -406,7 +409,9 @@ def CallOp : EP2_Op<"call",
 // ContextRefOp
 //===----------------------------------------------------------------------===//
 
-def ContextRefOp : EP2_Op<"context_ref", [Pure]> {
+def ContextRefOp : EP2_Op<"context_ref", [Pure,
+  DeclareOpInterfaceMethods<PromotableAllocationOpInterface>,
+]> {
   let summary = "Get a reference from context";
   let description = [{
     This operator get a reference from context. Similar to struct member access,
@@ -416,8 +421,6 @@ def ContextRefOp : EP2_Op<"context_ref", [Pure]> {
 
   let arguments = (ins StrAttr:$name, EP2_ContextType:$context);
   let results = (outs EP2_ContextRefType:$value);
-
-  // let hasVerifier = 1;
 }
 
 //===----------------------------------------------------------------------===//
@@ -487,7 +490,9 @@ def UpdateOp : EP2_Op<"update"> {
 // LoadOp & StoreOp & Nop
 //===----------------------------------------------------------------------===//
 
-def LoadOp : EP2_Op<"load", [Pure]> {
+def LoadOp : EP2_Op<"load", [Pure,
+  DeclareOpInterfaceMethods<PromotableMemOpInterface>,
+]> {
   let summary = "Store variable to Ref";
   let description = [{
     Load an variable to a Ref. The variable could be a struct or a buffer.
@@ -497,7 +502,9 @@ def LoadOp : EP2_Op<"load", [Pure]> {
   let results = (outs EP2_Type:$output);
 }
 
-def StoreOp : EP2_Op<"store"> {
+def StoreOp : EP2_Op<"store", [
+  DeclareOpInterfaceMethods<PromotableMemOpInterface>,
+]> {
   let summary = "Store variable to Ref";
   let description = [{
     Store an variable to a Ref. The variable could be a struct or a buffer.

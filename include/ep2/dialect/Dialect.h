@@ -22,6 +22,7 @@
 #include "mlir/Interfaces/CastInterfaces.h"
 #include "mlir/Interfaces/FunctionInterfaces.h"
 #include "mlir/Interfaces/SideEffectInterfaces.h"
+#include "mlir/Interfaces/MemorySlotInterfaces.h"
 #include "llvm/ADT/TypeSwitch.h"
 
 #include "mlir/Dialect/SCF/IR/SCF.h"

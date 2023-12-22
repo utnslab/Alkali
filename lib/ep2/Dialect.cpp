@@ -238,34 +238,6 @@ OpFoldResult ConstantOp::fold(ConstantOp::FoldAdaptor adaptor) {
 // FuncOp
 //===----------------------------------------------------------------------===//
 
-namespace FuncOpImpl{
-struct RefUniquerPattern : public RewritePattern {
-  RefUniquerPattern(MLIRContext *context)
-      : RewritePattern("ep2.func", 1, context) {}
-
-  LogicalResult matchAndRewrite(Operation *op,
-                                PatternRewriter &rewriter) const override {
-    if (!isa<ep2::FuncOp>(op))
-      return failure();
-
-    auto funcOp = cast<ep2::FuncOp>(op);
-    std::map<llvm::StringRef, mlir::Value> refMap;
-
-    for (auto &block : funcOp.getBlocks()) {
-      for (auto &op : block.getOperations()) {
-        if (auto refOp = dyn_cast<ep2::ContextRefOp>(op)) {
-          auto name = refOp.getName();
-          auto [it, isNew] = refMap.try_emplace(name, refOp.getResult());
-          if (!isNew)
-            rewriter.replaceAllUsesWith(refOp.getResult(), it->second);
-        }
-      }
-    }
-    return success();
-  }
-};
-} // namespace FuncOpImpl
-
 void FuncOp::build(mlir::OpBuilder &builder, mlir::OperationState &state,
                    llvm::StringRef name, mlir::FunctionType type,
                    llvm::ArrayRef<mlir::NamedAttribute> attrs) {
@@ -296,11 +268,6 @@ void FuncOp::print(mlir::OpAsmPrinter &p) {
   mlir::function_interface_impl::printFunctionOp(
       p, *this, /*isVariadic=*/false, getFunctionTypeAttrName(),
       getArgAttrsAttrName(), getResAttrsAttrName());
-}
-
-void FuncOp::getCanonicalizationPatterns(RewritePatternSet &results,
-                                         MLIRContext *context) {
-  results.add<FuncOpImpl::RefUniquerPattern>(context);
 }
 
 //===----------------------------------------------------------------------===//
@@ -463,6 +430,99 @@ void UpdateOp::getCanonicalizationPatterns(RewritePatternSet &results,
 }
 
 //===----------------------------------------------------------------------===//
+// references
+//===----------------------------------------------------------------------===//
+
+llvm::SmallVector<MemorySlot> ContextRefOp::getPromotableSlots() {
+  return { MemorySlot{getResult(), getType().getValueType()} };
+}
+
+Value ContextRefOp::getDefaultValue(const MemorySlot &slot, RewriterBase &rewriter) {
+  auto funcOp = getOperation()->getParentOfType<FuncOp>();
+  for (unsigned i = 0; i < funcOp.getNumArguments(); i++) {
+    auto argAttr = funcOp.getArgAttrOfType<StringAttr>(i, "ep2.context_name");
+    if (argAttr && argAttr.getValue() == getName())
+      return funcOp.getArgument(i);
+  }
+  // TODO(zhiyuang): add assert or warning here?
+  return rewriter.create<InitOp>(getLoc(), slot.elemType);
+}
+
+void ContextRefOp::handlePromotionComplete(const MemorySlot &slot,
+                                               Value defaultValue,
+                                               RewriterBase &rewriter) {
+  if (defaultValue.use_empty() && defaultValue.getDefiningOp())
+    rewriter.eraseOp(defaultValue.getDefiningOp());
+  rewriter.eraseOp(*this);
+}
+
+// TODO(zhiyuang): check this
+void ContextRefOp::handleBlockArgument(const MemorySlot &slot,
+                                           BlockArgument argument,
+                                           RewriterBase &rewriter) {}
+
+// TODO(zhiyuang): type check may block the conversion. Make sure we got all type infered!
+/// LoadOp's Memory Slot Interaface
+bool LoadOp::loadsFrom(const MemorySlot &slot) {
+  return getRef() == slot.ptr;
+}
+bool LoadOp::storesTo(const MemorySlot &slot) { return false; }
+Value LoadOp::getStored(const MemorySlot &slot, RewriterBase &rewriter) {
+  llvm_unreachable("getStored should not be called on LoadOp");
+}
+// TODO(zhiyuang): check this. when do they use this call?
+bool LoadOp::canUsesBeRemoved(
+    const MemorySlot &slot, const SmallPtrSetImpl<OpOperand *> &blockingUses,
+    SmallVectorImpl<OpOperand *> &newBlockingUses) {
+  if (blockingUses.size() != 1)
+    return false;
+  Value blockingUse = (*blockingUses.begin())->get();
+  // If the blocking use is the slot ptr itself, there will be enough
+  // context to reconstruct the result of the load at removal time, so it can
+  // be removed (provided it loads the exact stored value and is not
+  // volatile).
+  return blockingUse == slot.ptr && getRef() == slot.ptr;
+         getResult().getType() == slot.elemType;
+}
+DeletionKind LoadOp::removeBlockingUses(
+    const MemorySlot &slot, const SmallPtrSetImpl<OpOperand *> &blockingUses,
+    RewriterBase &rewriter, Value reachingDefinition) {
+  // `canUsesBeRemoved` checked this blocking use must be the loaded slot
+  // pointer.
+  rewriter.replaceAllUsesWith(getResult(), reachingDefinition);
+  return DeletionKind::Delete;
+}
+
+/// StoreOp's Memory Slot Interaface
+bool StoreOp::loadsFrom(const MemorySlot &slot) { return false; }
+bool StoreOp::storesTo(const MemorySlot &slot) {
+  return getOutput() == slot.ptr;
+}
+Value StoreOp::getStored(const MemorySlot &slot, RewriterBase &rewriter) {
+  return getValue();
+}
+bool StoreOp::canUsesBeRemoved(
+    const MemorySlot &slot, const SmallPtrSetImpl<OpOperand *> &blockingUses,
+    SmallVectorImpl<OpOperand *> &newBlockingUses) {
+  if (blockingUses.size() != 1)
+    return false;
+  Value blockingUse = (*blockingUses.begin())->get();
+  // If the blocking use is the slot ptr itself, dropping the store is
+  // fine, provided we are currently promoting its target value. Don't allow a
+  // store OF the slot pointer, only INTO the slot pointer.
+  return blockingUse == slot.ptr && getOutput() == slot.ptr;
+         getValue() != slot.ptr && getValue().getType() == slot.elemType;
+}
+DeletionKind StoreOp::removeBlockingUses(
+    const MemorySlot &slot, const SmallPtrSetImpl<OpOperand *> &blockingUses,
+    RewriterBase &rewriter, Value reachingDefinition) {
+  // `canUsesBeRemoved` checked this blocking use must be the stored slot
+  // pointer.
+  return DeletionKind::Delete;
+}
+
+
+//===----------------------------------------------------------------------===//
 // ep2 Types
 //===----------------------------------------------------------------------===//
 
@@ -528,4 +588,12 @@ mlir::Operation *EP2Dialect::materializeConstant(mlir::OpBuilder &builder,
                                             llvm::cast<mlir::ArrayAttr>(value));
   return builder.create<ConstantOp>(loc, type,
                                     llvm::cast<mlir::IntegerAttr>(value));
+}
+
+LogicalResult EP2Dialect::verifyRegionArgAttribute(Operation *op,
+                                                   unsigned regionIndex,
+                                                   unsigned argIndex,
+                                                   NamedAttribute attribute) {
+  // currently we allow all success()
+  return success();
 }
