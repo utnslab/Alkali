@@ -430,7 +430,14 @@ void EmitFPGAPass::emitStructAccess(std::ofstream &file,
     assert(false);
   }
 
-  assert(!outval.getDefiningOp()->hasAttr("var_name"));
+  if(outval.getDefiningOp()->hasAttr("var_name"))
+  {
+    auto name = outval.getDefiningOp()->getAttr("var_name").cast<StringAttr>().getValue().str();
+    printf("Error: emitStructAccess's output val already have a name %s\n", name.c_str());
+    outval.dump();
+    assert(false);
+  }
+
   auto name = assign_var_name(debuginfo);
   // outval.getDefiningOp()->setAttr("var_name", builder->getStringAttr(name));
   UpdateValName(outval, name);
@@ -764,6 +771,158 @@ void EmitFPGAPass::emitConst(std::ofstream &file, ep2::ConstantOp constop) {
   struct wire_config wire = {AXIS, name, debuginfo, true, init_value, true, axis};
   emitwire(file, wire);
 }
+
+void EmitFPGAPass::emitIfElse(std::ofstream &file, scf::IfOp ifop){
+      auto &if_region = ifop.getThenRegion();
+      std::vector<mlir::Value> then_yields;
+      std::vector<mlir::Value> else_yields;
+      auto &else_region = ifop.getElseRegion();
+      printf("///////////If region Start//////////////\n");
+      if_region.walk([&](mlir::Operation *op) {
+        if(isa<scf::YieldOp>(op)){
+          auto yieldop = cast<scf::YieldOp, mlir::Operation *>(op);
+          auto oprands = yieldop.getOperands()[0];
+          oprands.dump();
+          then_yields.push_back(oprands);
+        }
+      });
+      printf("///////////If region End//////////////\n");
+
+      file << "///////////Else region Start//////////////\n";
+      else_region.walk([&](mlir::Operation *op) {
+        if(isa<scf::YieldOp>(op)){
+          auto yieldop = cast<scf::YieldOp, mlir::Operation *>(op);
+          auto oprands = yieldop.getOperands()[0];
+          else_yields.push_back(oprands);
+          oprands.dump();
+        }
+      });
+      printf("///////////Else region End//////////////\n");
+
+      // generate demux slecetor
+      auto if_cond = ifop.getCondition();
+      const auto& if_results = ifop.getResults();
+
+      assert(if_results.size() == then_yields.size());
+      assert(if_results.size() == else_yields.size());
+      int i = 0;
+      for(auto result : if_results){
+        auto if_val = then_yields[i];
+        auto else_val = else_yields[i];
+        struct module_port_config demux_result_port, in_if_port, in_else_port, condition_port;
+        struct wire_config demux_result_wire;
+        struct axis_config demux_result_axis, in_if_axis, in_else_axis, condition_axis;
+        auto module_name = assign_var_name("ifelse_demux_" + std::to_string(i));
+
+        // Type checking
+        assert(if_val.getType() == else_val.getType());
+        assert(if_val.getType() == result.getType());
+
+        
+
+        int size;
+        bool if_stream;
+        auto result_type = GetValTypeAndSize(result.getType(), &size);
+        if_stream = if_axis_stream(result_type);
+        if (result_type != INT && result_type != STRUCT && result_type != BUF)  {
+          printf("Error: Cannot generate ifelse result_type wire for\n");
+          result.dump();
+          assert(false);
+        }
+        auto result_name = assign_var_name("ifelse_result" + val_type_str(result_type));
+        auto debuginfo = "ifelse result" + std::to_string(i);
+        UpdateValName(result, result_name);
+
+        demux_result_axis = {if_stream, if_stream, size};
+        demux_result_wire = {AXIS,  result_name, debuginfo, false, -1, has_use(result), demux_result_axis};
+        demux_result_port = {AXIS, {result_name}, "if else selected val", "m_val_axis", demux_result_axis};
+        emitwire(file, demux_result_wire);
+
+        auto in_if_name = getValName(if_val);
+        in_if_axis = {if_stream, if_stream, size};
+        in_if_port = {AXIS, {in_if_name}, "if input val", "s_if_axis", in_if_axis};
+
+        auto in_else_name = getValName(else_val);
+        in_else_axis = {if_stream, if_stream, size};
+        in_else_port = {AXIS, {in_else_name}, "else input val", "s_else_axis", in_else_axis};
+
+        int cond_size;
+        auto condition_name = getValName(if_cond);
+        auto condition_type = GetValTypeAndSize(if_cond.getType(), &cond_size);
+        if (condition_type != INT && condition_type != STRUCT)  {
+          printf("Error: Condition Mast be INT or STRUCT\n");
+          if_cond.dump();
+          assert(false);
+        }
+        condition_axis = {0, 0, cond_size};
+        condition_port = {AXIS, {condition_name}, "if condition", "s_cond_axis", condition_axis};
+
+        std::list<struct module_port_config> ports;
+        ports.push_back(condition_port);
+        ports.push_back(in_if_port);
+        ports.push_back(in_else_port);
+        ports.push_back(demux_result_port);
+
+        std::list<struct module_param_config> params;
+        params.push_back({"VAL_WIDTH", size});
+        params.push_back({"COND_WIDTH", cond_size});
+        params.push_back({"IF_VAL_BUF", if_stream});
+
+        emitModuleCall(file, "ifelse_demux", module_name, ports, params);
+
+        i ++;
+      }
+      
+
+
+
+      // y.walk()
+}
+
+void EmitFPGAPass::emitOp(std::ofstream &file, mlir::Operation *op){
+  if (isa<ep2::InitOp>(op)) {
+    auto initop = cast<ep2::InitOp, mlir::Operation *>(op);
+    if(isa<ep2::TableType>(initop.getResult().getType()))
+      emitTableInit(file, initop);
+    else if (initop.getArgs().size() == 0)
+      emitVariableInit(file, initop);
+    else {
+      // Otherwise this init output event for this hanlder;
+    }
+  } else if (isa<ep2::ExtractOp>(op)) {
+    auto extractop = cast<ep2::ExtractOp, mlir::Operation *>(op);
+    emitExtract(file, extractop);
+  } else if (isa<ep2::StructAccessOp>(op)) {
+    auto structaccessop = cast<ep2::StructAccessOp, mlir::Operation *>(op);
+    emitStructAccess(file, structaccessop);
+  } else if (isa<ep2::StructUpdateOp>(op)) {
+    auto structupdateop = cast<ep2::StructUpdateOp, mlir::Operation *>(op);
+    emitStructUpdate(file, structupdateop);
+  } else if (isa<ep2::EmitOp>(op)) {
+    auto emitop = cast<ep2::EmitOp, mlir::Operation *>(op);
+    emitEmit(file, emitop);
+  } else if (isa<ep2::ReturnOp>(op)) {
+    auto returnop = cast<ep2::ReturnOp, mlir::Operation *>(op);
+    emitReturn(file, returnop);
+  } else if (isa<ep2::ConstantOp>(op)){
+    auto constop = cast<ep2::ConstantOp, mlir::Operation *>(op);
+    emitConst(file, constop);
+  } else if (isa<ep2::LookupOp>(op)){
+    auto lookupop = cast<ep2::LookupOp, mlir::Operation *>(op);
+    emitLookup(file, lookupop);
+  } else if (isa<ep2::UpdateOp>(op)){
+    auto updateop = cast<ep2::UpdateOp, mlir::Operation *>(op);
+    emitUpdate(file, updateop);
+  } else if(isa<ep2::SubOp>(op) || isa<ep2::AddOp>(op)){
+    emitArithmetic(file, op);
+  } else if (isa<scf::IfOp>(op)){
+    auto ifop = cast<scf::IfOp, mlir::Operation *>(op);
+    emitIfElse(file, ifop);
+  }
+  // TODO: Change STURCT ACCESS IR to generate new stream for each accessed
+    // struct
+}
+
 void EmitFPGAPass::emitHandler(ep2::FuncOp funcOp) {
   cur_funcop = &funcOp;
   auto handler_name = funcOp.getName().str();
@@ -771,45 +930,8 @@ void EmitFPGAPass::emitHandler(ep2::FuncOp funcOp) {
   emitFuncHeader(fout_stage, funcOp);
 
   funcOp->walk([&](mlir::Operation *op) {
-    if (isa<ep2::InitOp>(op)) {
-      auto initop = cast<ep2::InitOp, mlir::Operation *>(op);
-      if(isa<ep2::TableType>(initop.getResult().getType()))
-        emitTableInit(fout_stage, initop);
-      else if (initop.getArgs().size() == 0)
-        emitVariableInit(fout_stage, initop);
-      else {
-        // Otherwise this init output event for this hanlder;
-      }
-    } else if (isa<ep2::ExtractOp>(op)) {
-      auto extractop = cast<ep2::ExtractOp, mlir::Operation *>(op);
-      emitExtract(fout_stage, extractop);
-    } else if (isa<ep2::StructAccessOp>(op)) {
-      auto structaccessop = cast<ep2::StructAccessOp, mlir::Operation *>(op);
-      emitStructAccess(fout_stage, structaccessop);
-    } else if (isa<ep2::StructUpdateOp>(op)) {
-      auto structupdateop = cast<ep2::StructUpdateOp, mlir::Operation *>(op);
-      emitStructUpdate(fout_stage, structupdateop);
-    } else if (isa<ep2::EmitOp>(op)) {
-      auto emitop = cast<ep2::EmitOp, mlir::Operation *>(op);
-      emitEmit(fout_stage, emitop);
-    } else if (isa<ep2::ReturnOp>(op)) {
-      auto returnop = cast<ep2::ReturnOp, mlir::Operation *>(op);
-      emitReturn(fout_stage, returnop);
-    } else if (isa<ep2::ConstantOp>(op)){
-      auto constop = cast<ep2::ConstantOp, mlir::Operation *>(op);
-      emitConst(fout_stage, constop);
-    } else if (isa<ep2::LookupOp>(op)){
-      auto lookupop = cast<ep2::LookupOp, mlir::Operation *>(op);
-      emitLookup(fout_stage, lookupop);
-    } else if (isa<ep2::UpdateOp>(op)){
-      auto updateop = cast<ep2::UpdateOp, mlir::Operation *>(op);
-      emitUpdate(fout_stage, updateop);
-    } else if(isa<ep2::SubOp>(op) || isa<ep2::AddOp>(op)){
-      emitArithmetic(fout_stage, op);
-    }
-    // TODO: Add OP Constant
-    // TODO: Change STURCT ACCESS IR to generate new stream for each accessed
-    // struct
+    emitOp(fout_stage, op);
+    
   });
   fout_stage << "\nendmodule\n";
 }

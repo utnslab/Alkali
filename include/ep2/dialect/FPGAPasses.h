@@ -160,6 +160,14 @@ private:
   mlir::DenseMap<mlir::Operation*, struct wire_config> tableops_to_portwire;
 
   bool has_use(mlir::Value val) { return !val.getUses().empty(); }
+  bool if_axis_stream(VAL_TYPE valtype) {
+    bool if_stream = false;
+    if (valtype == BUF) {
+      if_stream = true;
+    }
+    return if_stream;
+  }
+
   std::string getValName(mlir::Value val);
   void UpdateValName(mlir::Value val, std::string name);
   VAL_TYPE GetValTypeAndSize(mlir::Type type, int *size);
@@ -195,8 +203,11 @@ private:
   void emitReturn(std::ofstream &file, ep2::ReturnOp returnop);
   void emitConst(std::ofstream &file, ep2::ConstantOp constop);
   void emitArithmetic(std::ofstream &file, mlir::Operation *op);
+  void emitIfElse(std::ofstream &file, scf::IfOp ifop);
   void emitHandler(ep2::FuncOp funcOp);
   void emitController(ep2::FuncOp funcOp);
+
+  void emitOp(std::ofstream &file, mlir::Operation *op);
 
   void emitTop();
 };
