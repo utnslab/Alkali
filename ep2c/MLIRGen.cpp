@@ -275,7 +275,6 @@ private:
     if (proto.getAtom())
       funcOp->setAttr("atom", builder.getStringAttr(*proto.getAtom()));
     funcOp->setAttr("type", builder.getStringAttr(proto.getFunctionTypeName()));
-
     return funcOp;
   }
 

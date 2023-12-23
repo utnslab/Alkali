@@ -18,10 +18,11 @@ add_mlir_dialect_library(MLIREP2
         ContextTypeInferencePass.cpp
         LowerEmitcPass.cpp
         CollectHeaderPass.cpp
-        EmitFilesPass.cpp
-        LowerIntrinsicsPass.cpp
+        EmitNetronomePass.cpp
+        LowerMemcpyPass.cpp
         AtomAnalysis.cpp
         LocalAllocAnalysis.cpp
+        ExtrEmitOffsetAnalysis.cpp
 
         DEPENDS
         MLIREP2OpsIncGen

@@ -32,6 +32,7 @@ CollectInfoAnalysis::CollectInfoAnalysis(Operation* module, AnalysisManager& am)
     for (const auto& field : ctx) {
       mlir::Type ty = field.second.second;
       assert(ty.isSignlessInteger());
+      typeBitWidths.insert(ty.getIntOrFloatBitWidth());
       contextTypes[field.second.first] = llvmConv.convertType(ty);
     }
     contextTy.setBody(contextTypes, true);
@@ -57,7 +58,11 @@ CollectInfoAnalysis::CollectInfoAnalysis(Operation* module, AnalysisManager& am)
     auto lty = mlir::LLVM::LLVMStructType::getIdentified(module->getContext(), ty.getName());
     llvm::SmallVector<mlir::Type> types;
     for (int i = 0; i<ty.getNumElementTypes(); ++i) {
-      types.push_back(llvmConv.convertType(ty.getElementTypes()[i]));
+      auto ety = ty.getElementTypes()[i];
+      if (ety.isIntOrFloat()) {
+        typeBitWidths.insert(ety.getIntOrFloatBitWidth());
+      }
+      types.push_back(llvmConv.convertType(ety));
     }
     lty.setBody(types, true);
     this->structDefs.emplace_back(ty.getName().str(), lty);
@@ -95,6 +100,9 @@ CollectInfoAnalysis::CollectInfoAnalysis(Operation* module, AnalysisManager& am)
           if (isa<ep2::BufferType>(ty)) {
             types.push_back(charPtrType);
           } else {
+            if (ty.isIntOrFloat()) {
+              typeBitWidths.insert(ty.getIntOrFloatBitWidth());
+            }
             types.push_back(llvmConv.convertType(ty));
           }
         }
@@ -114,7 +122,7 @@ CollectInfoAnalysis::CollectInfoAnalysis(Operation* module, AnalysisManager& am)
     if (funcOp.isExtern()) {
       return;
     }
-    if (funcOp->getAttr("type").cast<StringAttr>().getValue() == "controller") {
+    if (funcOp->getAttr("type").cast<StringAttr>().getValue() == "controller" && !funcOp.isExtern()) {
       funcOp->walk([&](ep2::CallOp op){
         assert(op.getInputs().size() == 3);
         assert(getOpd(op.getOperand(1)) == 1);

@@ -1,5 +1,5 @@
-module attributes {ep2.basePath = "out-example/"} {
-  ep2.func private @__controller_DMA_RECV_CMPL() attributes {event = "DMA_RECV_CMPL", type = "controller"} {
+module {
+  ep2.func private @__controller_DMA_RECV_CMPL() attributes {event = "DMA_RECV_CMPL", extern = true, type = "controller"} {
     %0 = "ep2.constant"() <{value = 256 : i64}> : () -> i64
     %1 = "ep2.constant"() <{value = 1 : i64}> : () -> i64
     %2 = "ep2.constant"() <{value = 1 : i64}> : () -> i64

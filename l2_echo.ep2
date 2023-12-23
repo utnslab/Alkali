@@ -1,7 +1,14 @@
 # Specify the functionality of the target archiecture
 ############## Archiecture Specification ###########
-extern event NET_RECV {context ctx; buf packet;}
-extern event NET_SEND{context ctx; buf packet;}
+
+extern event NET_RECV {
+    context ctx;
+    buf packet;
+}
+extern event NET_SEND{
+    context ctx;
+    buf packet;
+}
 
 extern handler NET_SEND:main_send (context ctx, buf packet) {
 }

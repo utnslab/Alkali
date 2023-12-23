@@ -16,6 +16,8 @@
 #include <memory>
 #include <vector>
 #include <utility>
+#include <optional>
+#include <unordered_set>
 #include <unordered_map>
 
 #include "mlir/Pass/Pass.h"
@@ -105,6 +107,7 @@ enum class MemType {
 };
 
 struct CollectInfoAnalysis {
+  std::unordered_set<unsigned> typeBitWidths;
   std::vector<std::pair<std::string, mlir::LLVM::LLVMStructType>> structDefs;
   std::unordered_map<std::string, std::pair<MemType, int>> eventQueues;
   std::unordered_map<std::string, std::string> eventDeps;
@@ -129,28 +132,28 @@ struct CollectHeaderPass :
 };
 
 // Lower intrinsics in emitc.
-struct LowerIntrinsicsPass :
-        public PassWrapper<LowerIntrinsicsPass, OperationPass<ModuleOp>> {
+struct LowerMemcpyPass :
+        public PassWrapper<LowerMemcpyPass, OperationPass<ModuleOp>> {
     void runOnOperation() final;
     void getDependentDialects(DialectRegistry &registry) const override {
         registry.insert<EP2Dialect, func::FuncDialect, LLVM::LLVMDialect, emitc::EmitCDialect>();
     }
-    StringRef getArgument() const final { return "ep2-lower-intrinsics"; }
-    StringRef getDescription() const final { return "Lower intrinsics file"; }
+    StringRef getArgument() const final { return "ep2-lower-memcpy"; }
+    StringRef getDescription() const final { return "Lower memcpy file"; }
 };
 
-struct EmitFilesPass :
-        public PassWrapper<EmitFilesPass, OperationPass<ModuleOp>> {
+struct EmitNetronomePass :
+        public PassWrapper<EmitNetronomePass, OperationPass<ModuleOp>> {
   // TODO(zhiyuang): copy construction?
-  EmitFilesPass() = default;
-  EmitFilesPass(const EmitFilesPass &pass) {}
+  EmitNetronomePass() = default;
+  EmitNetronomePass(const EmitNetronomePass &pass) {}
   void runOnOperation() final;
   void getDependentDialects(DialectRegistry &registry) const override {
     registry.insert<EP2Dialect, func::FuncDialect, LLVM::LLVMDialect,
                     emitc::EmitCDialect>();
   }
-  StringRef getArgument() const final { return "ep2-emit-files"; }
-  StringRef getDescription() const final { return "Emit files"; }
+  StringRef getArgument() const final { return "ep2-emit-netronome"; }
+  StringRef getDescription() const final { return "Emit netronome"; }
 
   Option<std::string> basePathOpt{
       *this, "basePath", llvm::cl::desc("Base path for generated files")};
@@ -297,6 +300,17 @@ struct LocalAllocAnalysis {
   std::unordered_map<mlir::Operation*, std::string> localAllocs;
 
   LocalAllocAnalysis(Operation* op, AnalysisManager& am);
+};
+
+struct ExtrEmitOffsetAnalysis {
+  std::unordered_map<mlir::Operation*, std::pair<unsigned, int>> extrOffsets;
+  std::unordered_map<mlir::Operation*, std::pair<unsigned, int>> emitOffsets;
+
+  ExtrEmitOffsetAnalysis(Operation* op, AnalysisManager& am);
+
+  bool isInvalidated(const AnalysisManager::PreservedAnalyses &pa) {
+    return false;
+  }
 };
 
 } // namespace ep2

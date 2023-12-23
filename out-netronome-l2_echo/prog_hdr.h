@@ -3,6 +3,11 @@
 
 #include "nfplib.h"
 #include <nfp/mem_ring.h>
+#include "extern/extern_net_meta.h"
+
+typedef __packed struct __int48 {
+	int8_t storage[6];
+} int48_t;
 
 __packed struct __wrapper_arg_t {
 	int32_t f0;
@@ -17,15 +22,18 @@ __packed struct eth_header_t {
 	int48_t f0;
 	int48_t f1;
 	int16_t f2;
+	int8_t padding[2];
 };
 
 __packed struct event_param_NET_RECV {
 	char* f0;
+	struct recv_meta_t meta;
 	struct context_chain_1_t* ctx;
 };
 
 __packed struct event_param_NET_SEND {
 	char* f0;
+	struct send_meta_t meta;
 	struct context_chain_1_t* ctx;
 };
 
@@ -40,7 +48,7 @@ __forceinline static void init_context_chain_ring() {
 		raddr_hi = MEM_RING_GET_MEMADDR(context_chain_ring);
 		for (idx=1; idx<init_range; idx++) mem_ring_journal_fast(rnum, raddr_hi, idx);
 	}
-	for (idx=0; idx<2048; ++idx) context_chain_pool[idx].ctx_id = idx;
+	for (idx=0; idx<init_range; ++idx) context_chain_pool[idx].ctx_id = idx;
 }
 
 __forceinline static struct context_chain_1_t* alloc_context_chain_ring_entry() {

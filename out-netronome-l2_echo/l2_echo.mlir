@@ -1,4 +1,4 @@
-module attributes {ep2.basePath = "out-l2_echo/"} {
+module {
   ep2.func private @__handler_NET_SEND_main_send(%arg0: !ep2.context, %arg1: !ep2.buf) attributes {atom = "main_send", event = "NET_SEND", extern = true, type = "handler"} {
     "ep2.terminate"() : () -> ()
   }

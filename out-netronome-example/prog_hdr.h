@@ -3,6 +3,7 @@
 
 #include "nfplib.h"
 #include <nfp/mem_ring.h>
+#include "extern/extern_net_meta.h"
 
 __packed struct __wrapper_arg_t {
 	int32_t f0;
@@ -39,11 +40,6 @@ __packed struct event_param_USER_EVENT1 {
 #define WORKQ_TYPE_USER_EVENT1 MEM_TYEP_CLS
 CLS_WORKQ_DECLARE(workq_USER_EVENT1, WORKQ_SIZE_USER_EVENT1);
 
-#define WORKQ_SIZE_DMA_RECV_CMPL 256
-#define WORKQ_ID_DMA_RECV_CMPL 11
-#define WORKQ_TYPE_DMA_RECV_CMPL MEM_TYEP_CLS
-CLS_WORKQ_DECLARE(workq_DMA_RECV_CMPL, WORKQ_SIZE_DMA_RECV_CMPL);
-
 EMEM_CONTEXTQ_DECLARE(context_chain_1_t, context_chain_pool, 2048);
 MEM_RING_INIT(context_chain_ring, 2048);
 
@@ -55,7 +51,7 @@ __forceinline static void init_context_chain_ring() {
 		raddr_hi = MEM_RING_GET_MEMADDR(context_chain_ring);
 		for (idx=1; idx<init_range; idx++) mem_ring_journal_fast(rnum, raddr_hi, idx);
 	}
-	for (idx=0; idx<2048; ++idx) context_chain_pool[idx].ctx_id = idx;
+	for (idx=0; idx<init_range; ++idx) context_chain_pool[idx].ctx_id = idx;
 }
 
 __forceinline static struct context_chain_1_t* alloc_context_chain_ring_entry() {

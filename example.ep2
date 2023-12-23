@@ -18,7 +18,7 @@ event DMA_RECV_CMPL {
     buf data;
 }
 
-controller DMA_RECV_CMPL() {
+extern controller DMA_RECV_CMPL() {
     # queue_length=100, batch=1, qos_class_num=1
     Queue(256, 1, 1);
 }
