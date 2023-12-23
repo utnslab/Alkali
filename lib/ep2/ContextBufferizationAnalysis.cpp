@@ -49,14 +49,22 @@ static std::string getFuncName(FunctionOpInterface funcOp) {
     funcOp.getName().str() : funcOp.getName().str().substr(8);
 }
 
-ContextBufferizationAnalysis::TableT & ContextBufferizationAnalysis::getContextTable(FunctionOpInterface funcOp) {
-  std::string funcName = getFuncName(funcOp);
-  auto opIt = contextMap.find(funcName);
+ContextBufferizationAnalysis::TableT & ContextBufferizationAnalysis::getContextTable(std::string mangledName) {
+  auto opIt = contextMap.find(mangledName);
   if (opIt == contextMap.end()) {
-    funcOp->emitError("Operation not found" + funcName);
     assert(false && "Cannot find funcOp in context analysis");
   }
   return opIt->second;
+}
+
+ContextBufferizationAnalysis::TableT & ContextBufferizationAnalysis::getContextTable(InitOp initOp) {
+  HandlerDependencyAnalysis::HandlerFullName name(initOp);
+  return getContextTable(name.mangle());
+}
+
+ContextBufferizationAnalysis::TableT & ContextBufferizationAnalysis::getContextTable(FunctionOpInterface funcOp) {
+  std::string funcName = getFuncName(funcOp);
+  return getContextTable(funcName);
 }
 
 std::pair<int, mlir::Type> ContextBufferizationAnalysis::getContextType(FunctionOpInterface funcOp,

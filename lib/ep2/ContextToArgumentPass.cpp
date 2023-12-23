@@ -59,9 +59,7 @@ namespace {
     argList.erase(it);
 
     // insert new types and values
-    auto funcOp = initOp->getParentOfType<FuncOp>();
-    // TODO(zhiyuang): get this for operator only
-    auto &table = analysis.getContextTable(funcOp);
+    auto &table = analysis.getContextTable(initOp);
     for (auto &pair : table) {
       auto valueType = builder.getType<ContextRefType>(pair.second.second);
       auto ref = builder.create<ContextRefOp>(initOp.getLoc(), valueType, pair.first(), context);
@@ -91,7 +89,6 @@ namespace {
 void ContextToArgumentPass::runOnOperation() {
   ModuleOp moduleOp = getOperation();
   auto &analysis = getAnalysis<ContextBufferizationAnalysis>();
-  analysis.dump();
 
   // insert arguments
   moduleOp.walk([&](FuncOp funcOp){

@@ -155,10 +155,15 @@ struct HandlerDependencyAnalysis {
     friend bool operator<(const HandlerFullName &l, const HandlerFullName &r) {
       return std::tie(l.event, l.atom) < std::tie(r.event, r.atom);
     }
+    std::string mangle() { 
+      auto surffix = atom == "" ? "" : "_" + atom;
+      return ("__handler_" + event + surffix).str();
+    }
 
     HandlerFullName(std::string event, std::string atom = "") : event(event), atom(atom) {}
     HandlerFullName(FuncOp funcOp);
     HandlerFullName(ReturnOp returnOp);
+    HandlerFullName(InitOp initOp);
   };
 
   using KeyTy = FuncOp;
@@ -248,7 +253,9 @@ struct ContextBufferizationAnalysis {
 
   ContextBufferizationAnalysis(Operation* op, AnalysisManager& am);
   std::pair<int, mlir::Type> getContextType(FunctionOpInterface funcOp, StringRef name);
+  TableT &getContextTable(std::string mangledName);
   TableT &getContextTable(FunctionOpInterface funcOp);
+  TableT &getContextTable(InitOp initOp);
   StructType getContextAsStruct(FunctionOpInterface op);
 
   void invalidate() {

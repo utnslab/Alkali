@@ -91,21 +91,27 @@ HandlerDependencyAnalysis::HandlerFullName::HandlerFullName(FuncOp funcOp) {
     atom = funcOp->getAttrOfType<StringAttr>("atom").getValue();
 }
 
-HandlerDependencyAnalysis::HandlerFullName::HandlerFullName(ReturnOp returnOp) {
-  auto eventType = cast<StructType>(returnOp->getOperand(0).getType());
-  // TODO(zhiyuang): move this to an verifier
-  assert(eventType && eventType.getIsEvent() && "Return type must be an event");
+void setWithInit(HandlerDependencyAnalysis::HandlerFullName *fullname, InitOp initOp) {
+  auto eventType = cast<StructType>(initOp.getType());
+  assert(eventType && eventType.getIsEvent() && "init op must be an event");
 
-  event = eventType.getName();
-  // TODO(zhiyuang): verifier. require all atom type to be at 0
+  fullname->event = eventType.getName();
+  if (initOp->getOperand(0).getDefiningOp())
+    if (auto constantOp =
+            dyn_cast<ConstantOp>(initOp->getOperand(0).getDefiningOp()))
+      fullname->atom = constantOp.getValue().cast<StringAttr>().getValue();
+
+}
+
+HandlerDependencyAnalysis::HandlerFullName::HandlerFullName(InitOp initOp) {
+  setWithInit(this, initOp);
+}
+
+HandlerDependencyAnalysis::HandlerFullName::HandlerFullName(ReturnOp returnOp) {
   auto inputOp = returnOp.getInput()[0].getDefiningOp();
   assert(inputOp && isa<InitOp>(inputOp) &&
          "Requires an init op to build return value");
-
-  if (inputOp->getOperand(0).getDefiningOp())
-    if (auto constantOp =
-            dyn_cast<ConstantOp>(inputOp->getOperand(0).getDefiningOp()))
-      atom = constantOp.getValue().cast<StringAttr>().getValue();
+  setWithInit(this, cast<InitOp>(inputOp));
 }
 
 HandlerDependencyAnalysis::HandlerDependencyAnalysis(Operation *module) {
