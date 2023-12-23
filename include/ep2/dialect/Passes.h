@@ -213,18 +213,6 @@ private:
   void getConnectedComponents();
 };
 
-struct ContextRefTypeAssignPass : public PassWrapper<ContextRefTypeAssignPass, OperationPass<>> {
-  std::unordered_map<std::string, mlir::Type> context_ref_name_to_type;
-  std::unordered_map<std::string, mlir::Type> unassigned_list;
-  void runOnOperation() final;
-  void getDependentDialects(DialectRegistry &registry) const override {
-      registry.insert<EP2Dialect>();
-  }
-  StringRef getArgument() const final { return "ep2-context_ref_type_assign";}
-  StringRef getDescription() const final { return "Assign Type to EP2 Context Ref"; }
-  
-};
-
 // Handler dependency analysis pass
 struct HandlerInOutAnalysis {
   // From funcop -> blockarg
@@ -235,7 +223,6 @@ struct HandlerInOutAnalysis {
 
   HandlerInOutAnalysis(Operation* op);
 };
-
 
 // Handler dependency analysis pass
 struct TableAnalysis {

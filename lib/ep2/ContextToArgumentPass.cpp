@@ -91,6 +91,7 @@ namespace {
 void ContextToArgumentPass::runOnOperation() {
   ModuleOp moduleOp = getOperation();
   auto &analysis = getAnalysis<ContextBufferizationAnalysis>();
+  analysis.dump();
 
   // insert arguments
   moduleOp.walk([&](FuncOp funcOp){

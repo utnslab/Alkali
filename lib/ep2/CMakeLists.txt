@@ -10,7 +10,6 @@ add_mlir_dialect_library(MLIREP2
         AtomAnalysis.cpp
         
         # Passes
-        ContextRefTypeAssignPass.cpp
         ContextToArgumentPass.cpp
         EmitFPGAHelper.cpp
         EmitFPGA.cpp
