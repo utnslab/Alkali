@@ -56,7 +56,7 @@ void EmitFPGAPass::emitModuleParameter(std::ofstream &file,
   file << "\n);\n";
 }
 void EmitFPGAPass::emitwire(std::ofstream &file, struct wire_config &wire, int replicas, bool if_emit_replica_src){
-  if(replicas == 1){
+  if(replicas <= 1){
     emitonewire(file, wire);
     return;
   } else {

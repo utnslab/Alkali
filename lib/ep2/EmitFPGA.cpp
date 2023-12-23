@@ -295,7 +295,7 @@ void EmitFPGAPass::emitUpdate(std::ofstream &file, ep2::UpdateOp updateop) {
   emitwireassign(file, value_assign);
 }
 
-void EmitFPGAPass::emitExtract(std::ofstream &file, ep2::ExtractOp extractop) {
+void EmitFPGAPass::emitExtract(std::ofstream &file, ep2::ExtractValueOp extractop) {
   // First emit the wire define for: output buf, output struct
   // Then emit the extract module call
   struct module_port_config in_buf_port, out_buf_port, out_struct_port;
@@ -309,16 +309,22 @@ void EmitFPGAPass::emitExtract(std::ofstream &file, ep2::ExtractOp extractop) {
   in_buf_port = {
       AXIS, {ori_buf_name}, "input buf", "s_inbuf_axis", in_buf_axis};
 
-  // auto new_buf_name = assign_var_name("bufvar");
-  // UpdateValName(buf, new_buf_name);
-  // out_buf_axis = {1, 1, DEFAULT_AXIS_STREAM_SIZE};
-  // out_buf_port = {
-  //     AXIS, {new_buf_name}, "output buf", "m_outbuf_axis", out_buf_axis};
-  // out_buf_wire = {AXIS,  new_buf_name, module_name + " output buf",
-  //                 false, -1, has_use(buf), out_buf_axis};
+  auto new_buf = extractop.getResult(0);
+  auto new_buf_name = assignValNameAndUpdate(new_buf, "bufvar");
+  int new_buf_size = 0;
+  auto bufvaltype = GetValTypeAndSize(new_buf.getType(), &new_buf_size);
+  if (!(bufvaltype == BUF)) {
+    printf("Error: emitExtract's output buf is not buf type\n");
+    new_buf.dump();
+    assert(false);
+  }
+  out_buf_axis = {1, 1, DEFAULT_AXIS_STREAM_SIZE};
+  out_buf_port = {
+      AXIS, {new_buf_name}, "output buf", "m_outbuf_axis", out_buf_axis};
+  out_buf_wire = {AXIS,  new_buf_name, module_name + " output buf",
+                  false, -1, has_use(new_buf), out_buf_axis};
 
-  auto extracted_struct = extractop.getResult();
-  assert(!extracted_struct.getDefiningOp()->hasAttr("var_name"));
+  auto extracted_struct = extractop.getResult(1);
   auto extracted_struct_name = assignValNameAndUpdate(extracted_struct, "structvar");
   auto extracted_struct_type = extracted_struct.getType();
   int extracted_struct_size = 0;
@@ -343,10 +349,10 @@ void EmitFPGAPass::emitExtract(std::ofstream &file, ep2::ExtractOp extractop) {
 
   std::list<struct module_port_config> ports;
   ports.push_back(in_buf_port);
-  // ports.push_back(out_buf_port);
+  ports.push_back(out_buf_port);
   ports.push_back(out_struct_port);
 
-  // emitwire(file, out_buf_wire);
+  emitwire(file, out_buf_wire, val_use_count(new_buf));
   emitwire(file, out_struct_wire, val_use_count(extracted_struct));
 
   std::list<struct module_param_config> params;
@@ -357,7 +363,7 @@ void EmitFPGAPass::emitExtract(std::ofstream &file, ep2::ExtractOp extractop) {
   emitModuleCall(file, "extract", module_name, ports, params);
 }
 
-void EmitFPGAPass::emitEmit(std::ofstream &file, ep2::EmitOp emitop) {
+void EmitFPGAPass::emitEmit(std::ofstream &file, ep2::EmitValueOp emitop) {
   // First emit the wire define for: output buf, output struct
   // Then emit the extract module call
   struct module_port_config in_buf_port, in_struct_port, out_buf_port;
@@ -371,13 +377,20 @@ void EmitFPGAPass::emitEmit(std::ofstream &file, ep2::EmitOp emitop) {
   in_buf_port = {
       AXIS, {ori_buf_name}, "input buf", "s_inbuf_axis", in_buf_axis};
 
-  // auto new_buf_name = assign_var_name("bufvar");
-  // UpdateValName(buf, new_buf_name);
-  // out_buf_axis = {1, 1, DEFAULT_AXIS_STREAM_SIZE};
-  // out_buf_port = {
-  //     AXIS, {new_buf_name}, "output buf", "m_outbuf_axis", out_buf_axis};
-  // out_buf_wire = {AXIS,  new_buf_name, module_name + " output buf",
-  //                 false, -1, has_use(buf), out_buf_axis};
+  auto new_buf = emitop.getResult();
+  auto new_buf_name = assignValNameAndUpdate(new_buf, "bufvar");
+  int new_buf_size = 0;
+  auto bufvaltype = GetValTypeAndSize( new_buf.getType(), &new_buf_size);
+  if (!(bufvaltype == BUF)) {
+    printf("Error: Cannot calculate emitEmit's output buf size\n");
+    new_buf.dump();
+    assert(false);
+  }
+  out_buf_axis = {1, 1, DEFAULT_AXIS_STREAM_SIZE};
+  out_buf_port = {
+      AXIS, {new_buf_name}, "output buf", "m_outbuf_axis", out_buf_axis};
+  out_buf_wire = {AXIS,  new_buf_name, module_name + " output buf",
+                  false, -1, has_use(new_buf), out_buf_axis};
 
   auto input_struct = emitop.getValue();
   auto input_struct_name = getValName(input_struct);
@@ -405,9 +418,9 @@ void EmitFPGAPass::emitEmit(std::ofstream &file, ep2::EmitOp emitop) {
   std::list<struct module_port_config> ports;
   ports.push_back(in_buf_port);
   ports.push_back(in_struct_port);
-  // ports.push_back(out_buf_port);
+  ports.push_back(out_buf_port);
 
-  // emitwire(file, out_buf_wire);
+  emitwire(file, out_buf_wire, val_use_count(new_buf));
 
   std::list<struct module_param_config> params;
   params.push_back({"BUF_DATA_WIDTH", DEFAULT_AXIS_STREAM_SIZE});
@@ -871,8 +884,8 @@ void EmitFPGAPass::emitOp(std::ofstream &file, mlir::Operation *op){
     else {
       // Otherwise this init output event for this hanlder;
     }
-  } else if (isa<ep2::ExtractOp>(op)) {
-    auto extractop = cast<ep2::ExtractOp, mlir::Operation *>(op);
+  } else if (isa<ep2::ExtractValueOp>(op)) {
+    auto extractop = cast<ep2::ExtractValueOp, mlir::Operation *>(op);
     emitExtract(file, extractop);
   } else if (isa<ep2::StructAccessOp>(op)) {
     auto structaccessop = cast<ep2::StructAccessOp, mlir::Operation *>(op);
@@ -880,8 +893,8 @@ void EmitFPGAPass::emitOp(std::ofstream &file, mlir::Operation *op){
   } else if (isa<ep2::StructUpdateOp>(op)) {
     auto structupdateop = cast<ep2::StructUpdateOp, mlir::Operation *>(op);
     emitStructUpdate(file, structupdateop);
-  } else if (isa<ep2::EmitOp>(op)) {
-    auto emitop = cast<ep2::EmitOp, mlir::Operation *>(op);
+  } else if (isa<ep2::EmitValueOp>(op)) {
+    auto emitop = cast<ep2::EmitValueOp, mlir::Operation *>(op);
     emitEmit(file, emitop);
   } else if (isa<ep2::ReturnOp>(op)) {
     auto returnop = cast<ep2::ReturnOp, mlir::Operation *>(op);

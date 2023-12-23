@@ -214,12 +214,12 @@ private:
   void emitTableInit(std::ofstream &file, ep2::InitOp initop);
   void emitLookup(std::ofstream &file, ep2::LookupOp lookupop);
   void emitUpdate(std::ofstream &file, ep2::UpdateOp updateop);
-  void emitExtract(std::ofstream &file, ep2::ExtractOp extractop);
+  void emitExtract(std::ofstream &file, ep2::ExtractValueOp extractop);
   void emitStructAccess(std::ofstream &file,
                         ep2::StructAccessOp structaccessop);
   void emitStructUpdate(std::ofstream &file,
                         ep2::StructUpdateOp structupdateop);
-  void emitEmit(std::ofstream &file, ep2::EmitOp emitop);
+  void emitEmit(std::ofstream &file, ep2::EmitValueOp emitop);
   void emitReturn(std::ofstream &file, ep2::ReturnOp returnop);
   void emitConst(std::ofstream &file, ep2::ConstantOp constop);
   void emitArithmetic(std::ofstream &file, mlir::Operation *op);
