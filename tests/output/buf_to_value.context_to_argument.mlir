@@ -1,4 +1,4 @@
-// ./build/bin/ep2c-opt --canonicalize -cse --ep2-context-infer --ep2-context-to-argument -ep2-buffer-to-value tmp.mlir > tests/output/buf_to_value.buffer_to_value.mlir
+// ./build/bin/ep2c-opt --canonicalize -cse --ep2-context-infer --ep2-context-to-argument  tmp.mlir > tests/output/buf_to_value.buffer_to_value.mlir
 module {
   ep2.func private @__handler_MY_EVENT_my_handler_event(%arg0: !ep2.buf, %arg1: i32, %arg2: i32 {ep2.context_name = "test"}, %arg3: i32 {ep2.context_name = "bench"}) attributes {atom = "my_handler_event", event = "MY_EVENT", type = "handler"} {
     %0 = "ep2.constant"() <{value = "my_handler_event"}> : () -> !ep2.atom

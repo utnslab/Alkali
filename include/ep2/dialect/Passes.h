@@ -192,11 +192,20 @@ struct HandlerDependencyAnalysis {
   std::unordered_map<std::string, std::string> eventDeps;
 
   std::map<HandlerFullName, FuncOp> handlersMap;
-  bool isExternEvent(std::string eventName) {
+  bool hasSuccessor(std::string eventName) {
     auto it = std::find_if(handlersMap.begin(), handlersMap.end(), [&](auto &pr) {
       return pr.first.event == eventName;
     });
     return it == handlersMap.end() || it->second.isExtern();
+  }
+  bool hasPredecessor(FuncOp funcOp) {
+    HandlerFullName name(funcOp);
+    return llvm::count_if(graph, [&](auto &pr){
+      // cast away const
+      Operation *op = pr.first;
+      return !cast<FuncOp>(op).isExtern() &&
+             llvm::count_if(pr.second, [&](FuncOp op) { return op == funcOp; });
+    });
   }
 
   HandlerDependencyAnalysis(Operation *op);
