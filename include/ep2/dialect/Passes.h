@@ -25,6 +25,8 @@
 #include "mlir/Dialect/EmitC/IR/EmitC.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
+#include "mlir/Dialect/SCF/IR/SCF.h"
+#include "mlir/Dialect/ControlFlow/IR/ControlFlow.h"
 #include "mlir/Interfaces/FunctionInterfaces.h"
 
 #include "ep2/dialect/Dialect.h"
@@ -57,7 +59,7 @@ struct ContextToArgumentPass :
         public PassWrapper<ContextToArgumentPass, OperationPass<ModuleOp>> {
     void runOnOperation() final;
     void getDependentDialects(DialectRegistry &registry) const override {
-        registry.insert<EP2Dialect>();
+        registry.insert<EP2Dialect, scf::SCFDialect, cf::ControlFlowDialect>();
     }
     StringRef getArgument() const final { return "ep2-context-to-argument"; }
     StringRef getDescription() const final { return "Dump all ep2 context to value"; }
@@ -67,7 +69,7 @@ struct BufferToValuePass :
         public PassWrapper<BufferToValuePass, OperationPass<ModuleOp>> {
     void runOnOperation() final;
     void getDependentDialects(DialectRegistry &registry) const override {
-        registry.insert<EP2Dialect>();
+        registry.insert<EP2Dialect, scf::SCFDialect, cf::ControlFlowDialect>();
     }
     StringRef getArgument() const final { return "ep2-buffer-to-value"; }
     StringRef getDescription() const final { return "Convert ep2 buffers to a value type"; }

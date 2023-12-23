@@ -11,6 +11,7 @@
 #include "mlir/Transforms/GreedyPatternRewriteDriver.h"
 
 #include "mlir/Transforms/Passes.h"
+#include "mlir/Conversion/Passes.h"
 
 using namespace mlir;
 
@@ -22,7 +23,7 @@ namespace ep2 {
 //===----------------------------------------------------------------------===//
 
 namespace {
-  void insertContextToArguments(FuncOp funcOp, ContextBufferizationAnalysis &analysis) {
+  void insertContextToArguments(FuncOp funcOp, std::map<StringRef, ContextRefOp> &refs, ContextBufferizationAnalysis &analysis) {
     OpBuilder builder(funcOp);
 
     auto args = funcOp.getArguments();
@@ -30,6 +31,11 @@ namespace {
           return isa<ContextType>(ba.getType());
         }))
       return;
+    
+    Value context = nullptr;
+    for (auto &ba : args)
+      if (ba.getType().isa<ContextType>())
+        context = ba;
 
     // insert all parameter as names
     auto &table = analysis.getContextTable(funcOp);
@@ -40,6 +46,14 @@ namespace {
       auto dict = builder.getDictionaryAttr({name});
       auto type = pair.second.second;
       funcOp.insertArgument(last++, type, dict, funcOp.getLoc());
+    }
+
+    // insert all reference at begining
+    builder.setInsertionPointToStart(&funcOp.getBody().front());
+    for (auto &pair : table) {
+      auto refType = builder.getType<ContextRefType>(pair.second.second);
+      auto refOp = builder.create<ContextRefOp>(funcOp.getLoc(), refType, pair.first(), context);
+      refs.insert({pair.first(), refOp});
     }
   }
 
@@ -94,8 +108,9 @@ void ContextToArgumentPass::runOnOperation() {
   auto &analysis = getAnalysis<ContextBufferizationAnalysis>();
 
   // insert arguments
+  std::map<StringRef, ContextRefOp> refs;
   moduleOp.walk([&](FuncOp funcOp){
-    insertContextToArguments(funcOp, analysis);
+    insertContextToArguments(funcOp, refs, analysis);
   });
 
   // rewrite all return with context read
@@ -105,12 +120,18 @@ void ContextToArgumentPass::runOnOperation() {
   moduleOp.walk([&](ContextRefOp refOp) {
     refOp->setAttr("transferToValue",
                    BoolAttr::get(moduleOp.getContext(), true));
+    // replace them with top level ops, as all context refs could be global
+    auto topRefOp = refs[refOp.getName()];
+    if (topRefOp != refOp)
+      refOp.getResult().replaceAllUsesWith(topRefOp.getResult());
   });
 
+  // TODO()
   // execute mem2reg on all transformed funcs
   OpPassManager pm;
   auto &funcPm = pm.nest<FuncOp>();
-  funcPm.addPass(createCSEPass());
+  funcPm.addPass(createCanonicalizerPass());
+  funcPm.addPass(createConvertSCFToCFPass());
   funcPm.addPass(createMem2Reg());
 
   if (failed(runPipeline(pm, moduleOp)))
