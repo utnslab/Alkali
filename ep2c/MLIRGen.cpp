@@ -214,16 +214,10 @@ private:
         symbolTable.insert(varName, {newValue, type, decl});
         // for if/else accesses
         if (updateTable)
-          updateTable->insert_or_assign(varName, value);
+          updateTable->insert_or_assign(varName, newValue);
       }
+      // TODO(zhiyuang): now we do not really have Expr_Var type?
       // else if (targetAst.getKind() == ExprAST::Expr_Var) {
-      //   auto &var = cast<VariableExprAST>(targetAst);
-      //   auto varName = var.getName();
-      //   auto [_, type, decl] = symbolTable.lookup(varName);
-      //   symbolTable.insert(varName, {value, type, decl});
-      //   if (updateTable)
-      //     updateTable->insert_or_assign(varName, value);
-      // }
   }
 
   /// ===========

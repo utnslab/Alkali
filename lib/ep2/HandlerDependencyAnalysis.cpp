@@ -149,17 +149,19 @@ HandlerDependencyAnalysis::HandlerDependencyAnalysis(Operation *module) {
         }
 
         auto it2 = externForwards.find(target.event);
-        if (it2 == externForwards.end())
-          assert(false && "Cannot find target handler");
-        for (auto &target2 : it2->second) {
-          HandlerFullName newTarget(target2);
-          newTarget.atom = target.atom;
-          auto it = handlersMap.find(target);
-          if (it != handlersMap.end()) {
-            targets.push_back(it->second);
-            continue;
+        if (it2 != externForwards.end()) {
+          for (auto &target2 : it2->second) {
+            HandlerFullName newTarget(target2);
+            newTarget.atom = target.atom;
+            auto it = handlersMap.find(target);
+            if (it != handlersMap.end()) {
+              targets.push_back(it->second);
+              continue;
+            }
           }
         }
+
+        // TODO(zhiyaung): if we cannot find it, its an extern handler
       }
 
       // insert back to graph

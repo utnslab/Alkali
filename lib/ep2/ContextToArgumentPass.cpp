@@ -59,7 +59,10 @@ namespace {
     argList.erase(it);
 
     // insert new types and values
-    auto &table = analysis.getContextTable(initOp);
+    auto funcOp = initOp->getParentOfType<FuncOp>();
+    auto &table = analysis.getContextTable(funcOp);
+    // TODO(zhiyuang): switch to a initOp-driven method
+    // auto &table = analysis.getContextTable(initOp);
     for (auto &pair : table) {
       auto valueType = builder.getType<ContextRefType>(pair.second.second);
       auto ref = builder.create<ContextRefOp>(initOp.getLoc(), valueType, pair.first(), context);
@@ -98,10 +101,16 @@ void ContextToArgumentPass::runOnOperation() {
   // rewrite all return with context read
   moduleOp.walk([&](InitOp initOp) { rewriteEventInit(initOp, analysis); });
 
+  // mark all ref ops
+  moduleOp.walk([&](ContextRefOp refOp) {
+    refOp->setAttr("transferToValue",
+                   BoolAttr::get(moduleOp.getContext(), true));
+  });
+
   // execute mem2reg on all transformed funcs
   OpPassManager pm;
   auto &funcPm = pm.nest<FuncOp>();
-  funcPm.addPass(createCanonicalizerPass());
+  funcPm.addPass(createCSEPass());
   funcPm.addPass(createMem2Reg());
 
   if (failed(runPipeline(pm, moduleOp)))

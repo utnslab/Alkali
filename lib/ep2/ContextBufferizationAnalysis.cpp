@@ -52,6 +52,8 @@ static std::string getFuncName(FunctionOpInterface funcOp) {
 ContextBufferizationAnalysis::TableT & ContextBufferizationAnalysis::getContextTable(std::string mangledName) {
   auto opIt = contextMap.find(mangledName);
   if (opIt == contextMap.end()) {
+    llvm::errs() << "Looking up mangled name: " << mangledName << " in table:\n";
+    dump();
     assert(false && "Cannot find funcOp in context analysis");
   }
   return opIt->second;
