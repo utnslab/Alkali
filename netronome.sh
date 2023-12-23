@@ -9,5 +9,5 @@ mkdir -p "$OUT_FILE_NAME"
 cd llvm-project && ninja -C build/ && cd -
 ninja -C build/
 ./build/bin/ep2c $1 --emit=mlir -o "$OUT_FILE_NAME/$BASE_NAME.mlir" 
-./build/bin/ep2c-opt -canonicalize -ep2-context-infer -o "$OUT_FILE_NAME/canon.mlir" "$OUT_FILE_NAME/$BASE_NAME.mlir"
+./build/bin/ep2c-opt -canonicalize -cse -ep2-context-infer -canonicalize -cse -o "$OUT_FILE_NAME/canon.mlir" "$OUT_FILE_NAME/$BASE_NAME.mlir"
 ./build/bin/ep2c-opt -ep2-collect-header -ep2-lower-emitc -ep2-lower-memcpy -ep2-emit-netronome="basePath=$OUT_FILE_NAME" "$OUT_FILE_NAME/canon.mlir" -o /dev/null
