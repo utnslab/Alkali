@@ -1,11 +1,11 @@
 diff --git a/mlir/lib/Target/Cpp/TranslateToCpp.cpp b/mlir/lib/Target/Cpp/TranslateToCpp.cpp
-index 4645ca4b2..de3c4fa0c 100644
+index 4645ca4b2..02f5d9c64 100644
 --- a/mlir/lib/Target/Cpp/TranslateToCpp.cpp
 +++ b/mlir/lib/Target/Cpp/TranslateToCpp.cpp
-@@ -417,9 +417,36 @@ static LogicalResult printOperation(CppEmitter &emitter, emitc::CallOp callOp) {
+@@ -417,9 +417,78 @@ static LogicalResult printOperation(CppEmitter &emitter, emitc::CallOp callOp) {
    raw_ostream &os = emitter.ostream();
    Operation &op = *callOp.getOperation();
-
+ 
 -  if (failed(emitter.emitAssignPrefix(op)))
 -    return failure();
 -  os << callOp.getCallee();
@@ -22,8 +22,24 @@ index 4645ca4b2..de3c4fa0c 100644
 +      os << (*callOp.getArgs())[0].cast<StringAttr>().getValue();
 +    }
 +    return success();
-+  } else if (callOp.getCallee() == "__ep2_intrin_struct_write" ||
-+             callOp.getCallee() == "__ep2_intrin_ctx_write") {
++  } else if (callOp.getCallee() == "__ep2_intrin_struct_write") {
++    mlir::Operation* opp = &op;
++    while (opp != nullptr && isa<emitc::CallOp>(opp) && cast<emitc::CallOp>(opp).getCallee() == "__ep2_intrin_struct_write") {
++      opp = opp->getOperand(1).getDefiningOp();
++    }
++    if (opp == nullptr) {
++      os << emitter.getOrCreateName(op.getOperand(1)) << "->";
++    } else {
++      os << emitter.getOrCreateName(opp->getResult(0)) << "->";
++    }
++    if (isa<IntegerAttr>((*callOp.getArgs())[0])) {
++      os << "f" << (*callOp.getArgs())[0].cast<IntegerAttr>().getValue();
++    } else {
++      os << (*callOp.getArgs())[0].cast<StringAttr>().getValue();
++    }
++    os << " = " << emitter.getOrCreateName(op.getOperand(0));
++    return success();
++  } else if (callOp.getCallee() == "__ep2_intrin_ctx_write") {
 +    os << emitter.getOrCreateName(op.getOperand(1)) << "->";
 +    if (isa<IntegerAttr>((*callOp.getArgs())[0])) {
 +      os << "f" << (*callOp.getArgs())[0].cast<IntegerAttr>().getValue();
@@ -32,20 +48,46 @@ index 4645ca4b2..de3c4fa0c 100644
 +    }
 +    os << " = " << emitter.getOrCreateName(op.getOperand(0));
 +    return success();
-+  } else if (callOp.getCallee() == "__ep2_intrin_incr_ptr") {
-+    os << emitter.getOrCreateName(op.getOperand(0)) << " += ";
-+    os << (*callOp.getArgs())[0].cast<IntegerAttr>().getValue();
++  } else if (callOp.getCallee().starts_with("__ep2_intrin_memcpy_")) {
++    // extract real name
++    llvm::StringRef realCallee = callOp.getCallee().substr(20);
++    os << realCallee << "(";
++    int xferOffset = (*callOp.getArgs())[1].cast<IntegerAttr>().getValue().getSExtValue();
++    if (xferOffset >= 0) {
++      // a pointer arithmetic
++      os << emitter.getOrCreateName(op.getOperand(0)) << '+';
++      os << (*callOp.getArgs())[1].cast<IntegerAttr>().getValue() << ", ";
++    } else {
++      xferOffset = ~xferOffset;
++      os << "&" << emitter.getOrCreateName(op.getOperand(0)) << "->f" << xferOffset << ", ";
++    }
++    os << emitter.getOrCreateName(op.getOperand(1)) << '+';
++    os << (*callOp.getArgs())[0].cast<IntegerAttr>().getValue() << ", ";
++
++    int sz = (*callOp.getArgs())[2].cast<IntegerAttr>().getValue().getSExtValue();
++    if (sz >= 0) {
++      os << sz;
++    } else {
++      // meta & 0xfflen-this_value
++      os << "(work.meta.len)-" << (-sz);
++    }
++    os << ")";
++    return success();
++  } else if (callOp.getCallee() == "__ep2_intrin_xfer2gpr" ||
++             callOp.getCallee() == "__ep2_intrin_gpr2xfer") {
++    os << "*(" << emitter.getOrCreateName(op.getOperand(1)) << ") = *(";
++    os << emitter.getOrCreateName(op.getOperand(0)) << ")";
 +    return success();
 +  } else {
 +    os << callOp.getCallee();
 +  }
-
+ 
    auto emitArgs = [&](Attribute attr) -> LogicalResult {
      if (auto t = dyn_cast<IntegerAttr>(attr)) {
-@@ -451,10 +478,15 @@ static LogicalResult printOperation(CppEmitter &emitter, emitc::CallOp callOp) {
-
+@@ -451,10 +520,15 @@ static LogicalResult printOperation(CppEmitter &emitter, emitc::CallOp callOp) {
+ 
    os << "(";
-
+ 
 -  LogicalResult emittedArgs =
 -      callOp.getArgs()
 -          ? interleaveCommaWithError(*callOp.getArgs(), os, emitArgs)
@@ -62,7 +104,7 @@ index 4645ca4b2..de3c4fa0c 100644
    if (failed(emittedArgs))
      return failure();
    os << ")";
-@@ -1050,6 +1082,7 @@ LogicalResult CppEmitter::emitType(Location loc, Type type) {
+@@ -1050,6 +1124,7 @@ LogicalResult CppEmitter::emitType(Location loc, Type type) {
      case 8:
      case 16:
      case 32:
