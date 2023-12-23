@@ -423,11 +423,37 @@ def ContextRefOp : EP2_Op<"context_ref", [Pure,
   let results = (outs EP2_ContextRefType:$value);
 }
 
+def ReRefOp : EP2_Op<"reref", [
+  DeclareOpInterfaceMethods<PromotableAllocationOpInterface>,
+]> {
+  let summary = "Reexport an value as a reference";
+  let description = [{
+    Reexport a value to a reference, and export to the allocation interface. This is an intermidiate operator, should not be used after the transformation
+  }];
+
+  let arguments = (ins EP2_Type:$input);
+  let results = (outs EP2_Type:$output);
+}
+
+def DeRefOp : EP2_Op<"deref", [
+  DeclareOpInterfaceMethods<PromotableMemOpInterface>,
+]> {
+  let summary = "Load from a reref buffer";
+  let description = [{
+    Extract from buffer to a variable or struct. Return a new buffer.
+  }];
+
+  let arguments = (ins EP2_Type:$input);
+  let results = (outs EP2_Type:$output);
+}
+
 //===----------------------------------------------------------------------===//
 // ExtractOp
 //===----------------------------------------------------------------------===//
 
-def ExtractOp : EP2_Op<"extract"> {
+def ExtractOp : EP2_Op<"extract", [
+  DeclareOpInterfaceMethods<PromotableMemOpInterface>,
+]> {
   let summary = "extract from buffer to variable";
   let description = [{
     Extract from buffer to a variable or struct. The buffer will be modified;
@@ -438,11 +464,23 @@ def ExtractOp : EP2_Op<"extract"> {
   // let hasVerifier = 1;
 }
 
+def ExtractValueOp : EP2_Op<"extract_value", [Pure]> {
+  let summary = "extract from buffer of value type to variable";
+  let description = [{
+    Extract from buffer to a variable or struct. Return a new buffer.
+  }];
+
+  let arguments = (ins EP2_BufferType:$buffer);
+  let results = (outs EP2_BufferType, EP2_Type:$output);
+}
+
 //===----------------------------------------------------------------------===//
 // EmitOp
 //===----------------------------------------------------------------------===//
 
-def EmitOp : EP2_Op<"emit"> {
+def EmitOp : EP2_Op<"emit", [
+  DeclareOpInterfaceMethods<PromotableMemOpInterface>,
+]> {
   let summary = "emit op to buffer";
   let description = [{
     Emit from a variable or struct to a buffer. The buffer will be modified;
@@ -452,6 +490,17 @@ def EmitOp : EP2_Op<"emit"> {
 
   let arguments = (ins EP2_BufferType:$buffer, EP2_Type:$value);
   // let hasVerifier = 1;
+}
+
+def EmitValueOp : EP2_Op<"emit_value", [Pure]> {
+  let summary = "emit op to buffer";
+  let description = [{
+    Emit from a variable or struct to a buffer. Return the new buffer
+    The semantic is to prepend the header to the buffer
+  }];
+
+  let arguments = (ins EP2_BufferType:$buffer, EP2_Type:$value);
+  let results = (outs EP2_BufferType);
 }
 
 //===----------------------------------------------------------------------===//

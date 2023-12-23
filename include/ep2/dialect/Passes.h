@@ -63,6 +63,16 @@ struct ContextToArgumentPass :
     StringRef getDescription() const final { return "Dump all ep2 context to value"; }
 };
 
+struct BufferToValuePass :
+        public PassWrapper<BufferToValuePass, OperationPass<ModuleOp>> {
+    void runOnOperation() final;
+    void getDependentDialects(DialectRegistry &registry) const override {
+        registry.insert<EP2Dialect>();
+    }
+    StringRef getArgument() const final { return "ep2-buffer-to-value"; }
+    StringRef getDescription() const final { return "Convert ep2 buffers to a value type"; }
+};
+
 // Lower to Emitc pass
 struct LowerEmitcPass :
         public PassWrapper<LowerEmitcPass, OperationPass<ModuleOp>> {

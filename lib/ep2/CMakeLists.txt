@@ -1,5 +1,6 @@
 add_mlir_dialect_library(MLIREP2
-        Dialect.cpp
+        Dialect/Dialect.cpp
+        Dialect/MemorySlotInstance.cpp
 
         # Analysis
         LowerStructAnalysis.cpp
@@ -11,6 +12,7 @@ add_mlir_dialect_library(MLIREP2
         
         # Passes
         ContextToArgumentPass.cpp
+        BufferToValuePass.cpp
         EmitFPGAHelper.cpp
         EmitFPGA.cpp
         ContextTypeInferencePass.cpp
