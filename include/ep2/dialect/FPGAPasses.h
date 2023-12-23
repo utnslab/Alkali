@@ -152,14 +152,31 @@ private:
   mlir::DenseMap<mlir::ep2::FuncOp, std::vector<struct handler_edge>> handler_edge_map;
 
   std::vector<struct inout_config> extern_inouts;
+
+  struct name_and_uses {
+    std::string name;
+    int total_uses;
+    int cur_use;
+  };
+
   // std::unordered_map<mlir::Location, std::string> arg_names;
-  mlir::DenseMap<Value, std::string> arg_names;
+  mlir::DenseMap<Value, struct name_and_uses> val_names_and_useid;
   int global_var_index = 0;
 
   // For each lookupop/updateop -> table lookup/update port name
   mlir::DenseMap<mlir::Operation*, struct wire_config> tableops_to_portwire;
 
   bool has_use(mlir::Value val) { return !val.getUses().empty(); }
+
+  int val_use_count(mlir::Value val) {   
+    auto uses = val.getUses();
+    int i = 0;
+    for(auto &u: uses){
+      i++;
+    } 
+    return i;
+  }
+
   bool if_axis_stream(VAL_TYPE valtype) {
     bool if_stream = false;
     if (valtype == BUF) {
@@ -168,13 +185,16 @@ private:
     return if_stream;
   }
 
+  std::string assignValNameAndUpdate(mlir::Value val, std::string prefix, bool if_add_gindex=true);
+  
   std::string getValName(mlir::Value val);
-  void UpdateValName(mlir::Value val, std::string name);
   VAL_TYPE GetValTypeAndSize(mlir::Type type, int *size);
 
   void emitModuleParameter(std::ofstream &file,
                            std::vector<struct inout_config> &wires);
-  void emitwire(std::ofstream &file, struct wire_config &wire);
+  void emitReplicationModule(std::ofstream &file, struct wire_config &wire, int replicas=1);
+  void emitonewire(std::ofstream &file, struct wire_config &wire);
+  void emitwire(std::ofstream &file, struct wire_config &wire, int replicas=1, bool if_emit_replica_src = true);
   void emitwireassign(std::ofstream &file, struct wire_assign_config &assign);
 
   void emitModuleCall(std::ofstream &file, std::string module_type,
@@ -187,7 +207,7 @@ private:
   unsigned getStructValOffset(ep2::StructType in_struct, int index);
   unsigned getStructValSize(ep2::StructType in_struct, int index);
 
-  std::string assign_var_name(std::string prefix);
+  std::string assign_name(std::string prefix);
 
   void emitFuncHeader(std::ofstream &file, ep2::FuncOp funcop);
   void emitVariableInit(std::ofstream &file, ep2::InitOp initop);

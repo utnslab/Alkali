@@ -55,8 +55,43 @@ void EmitFPGAPass::emitModuleParameter(std::ofstream &file,
 
   file << "\n);\n";
 }
+void EmitFPGAPass::emitwire(std::ofstream &file, struct wire_config &wire, int replicas, bool if_emit_replica_src){
+  if(replicas == 1){
+    emitonewire(file, wire);
+    return;
+  } else {
+    std::list<struct module_port_config> ports;
+    auto module_name = assign_name("axis_replication");
 
-void EmitFPGAPass::emitwire(std::ofstream &file, struct wire_config &wire) {
+    if(if_emit_replica_src)
+      emitonewire(file, wire);
+    assert(wire.if_use == true);
+    
+    assert(wire.type == AXIS);
+    struct module_port_config in_port_config, out_port_config;
+    in_port_config = {wire.type, {wire.name}, "", "s_axis_in", .axis = wire.axis};
+    std::vector<std::string> replicas_names;
+    for(int i = 0; i < replicas; i++){
+      struct wire_config new_wire = wire;
+      new_wire.name = wire.name + "_" + std::to_string(i);
+      // replicas don't have self drivend init value
+      new_wire.if_init_value = false;
+      emitonewire(file, new_wire);
+      replicas_names.push_back(new_wire.name);
+    }
+    out_port_config = {wire.type, replicas_names, "", "m_axis_out", .axis = wire.axis};
+    ports.push_back(in_port_config);
+    ports.push_back(out_port_config);
+    
+    std::list<struct module_param_config> params;
+    params.push_back({"DATA_WIDTH", wire.axis.data_width});
+    params.push_back({"IF_STREAM", wire.axis.if_keep});
+    params.push_back({"REAPLICA_COUNT", replicas});
+    emitModuleCall(file, "axis_replication", module_name, ports, params);
+  }
+}
+
+void EmitFPGAPass::emitonewire(std::ofstream &file, struct wire_config &wire) {
   if (wire.type == AXIS) {
     std::string inoutstr, reverse_inoutstr, tab;
 
@@ -394,36 +429,51 @@ unsigned EmitFPGAPass::getStructValSize(ep2::StructType in_struct, int index) {
   return size;
 }
 
-std::string EmitFPGAPass::assign_var_name(std::string prefix) {
+std::string EmitFPGAPass::assign_name(std::string prefix) {
   return prefix + "_" + std::to_string(global_var_index++);
 }
 
-std::string EmitFPGAPass::getValName(mlir::Value val) {
-  std::string name;
+std::string EmitFPGAPass::assignValNameAndUpdate(mlir::Value val, std::string prefix, bool if_add_gindex) {
+  if(val_names_and_useid.find(val) != val_names_and_useid.end()){
+    val.dump();
+    printf("Error: val already defined\n");
+    assert(false);
+  }
+
+  auto name = prefix;
+  if(if_add_gindex)
+    name = name + "_" + std::to_string(global_var_index++);
+  int i = val_use_count(val);
+  printf("assignValNameAndUpdate: %s, %d\n", name.c_str(), i);
+  val_names_and_useid[val] = {name, i, 0};
   bool if_buf_block_arg = isa<mlir::BlockArgument>(val);
-  if (if_buf_block_arg) {
-    assert(arg_names.find(val) != arg_names.end());
-    name = arg_names[val];
-  } else {
-    if(!val.getDefiningOp()->hasAttr("var_name")){
-      val.dump();
-      assert(false);
-    }
-    name = val.getDefiningOp()
-               ->getAttr("var_name")
-               .cast<StringAttr>()
-               .getValue()
-               .str();
+  // for debug purpose
+  if (!if_buf_block_arg) {
+    val.getDefiningOp()->setAttr("var_name", builder->getStringAttr(name));
   }
   return name;
 }
 
-void EmitFPGAPass::UpdateValName(mlir::Value val, std::string name) {
-  bool if_buf_block_arg = isa<mlir::BlockArgument>(val);
-  if (if_buf_block_arg) {
-    arg_names[val] = name;
+std::string EmitFPGAPass::getValName(mlir::Value val) {
+  if(val_names_and_useid.find(val) == val_names_and_useid.end()){
+    val.dump();
+    assert(false);
+  }
+  auto name_and_uses = val_names_and_useid[val];
+  if(name_and_uses.cur_use >  name_and_uses.total_uses){
+    printf("Error: val %s's use exceed totoal use\n", name_and_uses.name.c_str());
+    assert(false);
+  }
+
+  if(name_and_uses.total_uses == 1){
+    name_and_uses.cur_use++;
+    val_names_and_useid[val] = name_and_uses;
+    return name_and_uses.name;
   } else {
-    val.getDefiningOp()->setAttr("var_name", builder->getStringAttr(name));
+    auto return_name = name_and_uses.name + "_" + std::to_string(name_and_uses.cur_use);
+    name_and_uses.cur_use++;
+    val_names_and_useid[val] = name_and_uses;
+    return return_name;
   }
 }
 

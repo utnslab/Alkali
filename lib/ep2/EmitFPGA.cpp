@@ -25,6 +25,8 @@ void EmitFPGAPass::emitFuncHeader(std::ofstream &file, ep2::FuncOp funcOp) {
   // push input parameter wire
   auto args = handlerInOutAnalysis->handler_in_arg_list[funcOp];
   std::string extern_in_event_name = "";
+
+  std::vector<std::pair<struct wire_config, int>> replica_args;
   // TODO: Support out event extern identification
   if(funcOp->hasAttr("in_hw_event")){
     extern_in_event_name = funcOp->getAttr("event").cast<StringAttr>().getValue().str();
@@ -50,11 +52,9 @@ void EmitFPGAPass::emitFuncHeader(std::ofstream &file, ep2::FuncOp funcOp) {
     }
 
     if(extern_in_event_name!= "")
-      name = extern_in_event_name + "_" + std::to_string(arg.getArgNumber());
+      name = assignValNameAndUpdate(arg, extern_in_event_name + "_" + std::to_string(arg.getArgNumber()), false);
     else
-      name = assign_var_name("arg");
-      
-    UpdateValName(arg, name);
+      name = assignValNameAndUpdate(arg, "arg");
     if (!if_stream) {
       assert(size <= 64 * 8);
     } else {
@@ -68,6 +68,12 @@ void EmitFPGAPass::emitFuncHeader(std::ofstream &file, ep2::FuncOp funcOp) {
     
     if(extern_in_event_name != "")
       extern_inouts.push_back(in_if);
+
+    // save temp info for replication
+    if(val_use_count(arg) > 1){
+      event_wire.if_use = has_use(arg);
+      replica_args.push_back({event_wire, val_use_count(arg)});
+    }
   }
   handler_edge_map[*cur_funcop].push_back({IN, 0, extern_in_event_name != "", in_event_wires});
 
@@ -79,9 +85,7 @@ void EmitFPGAPass::emitFuncHeader(std::ofstream &file, ep2::FuncOp funcOp) {
     std::vector<struct wire_config> out_event_wires;
 
     auto returned_event_type = returned_event.getType();
-    assert(!returned_event.getDefiningOp()->hasAttr("var_name"));
-    auto name = assign_var_name("outport");
-    UpdateValName(returned_event, name);
+    auto name = assignValNameAndUpdate(returned_event, "outport");
 
     assert(isa<ep2::StructType>(returned_event_type));
     auto return_event_struct = cast<ep2::StructType, Type>(returned_event_type);
@@ -117,6 +121,11 @@ void EmitFPGAPass::emitFuncHeader(std::ofstream &file, ep2::FuncOp funcOp) {
   }
 
   emitModuleParameter(file, inout_wires);
+
+  // emit replication for arg input wires
+  for(auto &arg : replica_args){
+    emitwire(file, arg.first, arg.second, false);
+  }
 }
 
 void EmitFPGAPass::emitVariableInit(std::ofstream &file, ep2::InitOp initop) {
@@ -139,10 +148,7 @@ void EmitFPGAPass::emitVariableInit(std::ofstream &file, ep2::InitOp initop) {
     assert(false);
   }
 
-  assert(!arg.getDefiningOp()->hasAttr("var_name"));
-  name = assign_var_name(debuginfo);
-  // defined_value->setAttr("var_name", builder->getStringAttr(name));
-  UpdateValName(arg, name);
+  name = assignValNameAndUpdate(arg, debuginfo);
 
   if (!if_stream) {
     assert(size <= 64 * 8);
@@ -151,13 +157,13 @@ void EmitFPGAPass::emitVariableInit(std::ofstream &file, ep2::InitOp initop) {
   }
   struct axis_config axis = {if_stream, if_stream, size};
   struct wire_config wire = {AXIS, name, debuginfo, true, 0, true, axis};
-  emitwire(file, wire);
+  emitwire(file, wire, val_use_count(arg));
 }
 
 
 void EmitFPGAPass::emitTableInit(std::ofstream &file, ep2::InitOp initop) {
   auto table = cast<ep2::TableType, Type>(initop.getType());
-  auto tabel_name = assign_var_name("table");
+  auto tabel_name = assign_name("table");
   // get all lookup uses
   // get all update uses
   auto lookups = tableAnalysis->table_lookup_uses[initop.getResult()];
@@ -240,13 +246,12 @@ void EmitFPGAPass::emitLookup(std::ofstream &file, ep2::LookupOp lookupop) {
     assert(false);
   }
 
-  auto value_name = assign_var_name("lookedup_" + val_type_str(value_val_type));
-  UpdateValName(value_val, value_name);
+  auto value_name = assignValNameAndUpdate(value_val, "lookedup_" + val_type_str(value_val_type));
   struct axis_config value_axis = {0, 0, size};
   struct wire_config value_wire = {AXIS,  value_name, "table lookup result" + value_name,
                   false, -1, has_use(value_val), value_axis};
   struct wire_assign_config value_assign = {-1, -1, -1, -1, table_port_wire, value_wire};
-  emitwire(file, value_wire);
+  emitwire(file, value_wire, val_use_count(value_val));
   emitwireassign(file, value_assign);
 }
 
@@ -290,7 +295,7 @@ void EmitFPGAPass::emitExtract(std::ofstream &file, ep2::ExtractOp extractop) {
   struct module_port_config in_buf_port, out_buf_port, out_struct_port;
   struct wire_config out_buf_wire, out_struct_wire;
   struct axis_config in_buf_axis, out_buf_axis, out_struct_axis;
-  auto module_name = assign_var_name("extract_module");
+  auto module_name = assign_name("extract_module");
 
   auto buf = extractop.getBuffer();
   std::string ori_buf_name = getValName(buf);
@@ -298,18 +303,17 @@ void EmitFPGAPass::emitExtract(std::ofstream &file, ep2::ExtractOp extractop) {
   in_buf_port = {
       AXIS, {ori_buf_name}, "input buf", "s_inbuf_axis", in_buf_axis};
 
-  auto new_buf_name = assign_var_name("bufvar");
-  UpdateValName(buf, new_buf_name);
-  out_buf_axis = {1, 1, DEFAULT_AXIS_STREAM_SIZE};
-  out_buf_port = {
-      AXIS, {new_buf_name}, "output buf", "m_outbuf_axis", out_buf_axis};
-  out_buf_wire = {AXIS,  new_buf_name, module_name + " output buf",
-                  false, -1, has_use(buf), out_buf_axis};
+  // auto new_buf_name = assign_var_name("bufvar");
+  // UpdateValName(buf, new_buf_name);
+  // out_buf_axis = {1, 1, DEFAULT_AXIS_STREAM_SIZE};
+  // out_buf_port = {
+  //     AXIS, {new_buf_name}, "output buf", "m_outbuf_axis", out_buf_axis};
+  // out_buf_wire = {AXIS,  new_buf_name, module_name + " output buf",
+  //                 false, -1, has_use(buf), out_buf_axis};
 
   auto extracted_struct = extractop.getResult();
   assert(!extracted_struct.getDefiningOp()->hasAttr("var_name"));
-  auto extracted_struct_name = assign_var_name("structvar");
-  UpdateValName(extracted_struct, extracted_struct_name);
+  auto extracted_struct_name = assignValNameAndUpdate(extracted_struct, "structvar");
   auto extracted_struct_type = extracted_struct.getType();
   int extracted_struct_size = 0;
   // struct extract value can only be struct or int
@@ -333,11 +337,11 @@ void EmitFPGAPass::emitExtract(std::ofstream &file, ep2::ExtractOp extractop) {
 
   std::list<struct module_port_config> ports;
   ports.push_back(in_buf_port);
-  ports.push_back(out_buf_port);
+  // ports.push_back(out_buf_port);
   ports.push_back(out_struct_port);
 
-  emitwire(file, out_buf_wire);
-  emitwire(file, out_struct_wire);
+  // emitwire(file, out_buf_wire);
+  emitwire(file, out_struct_wire, val_use_count(extracted_struct));
 
   std::list<struct module_param_config> params;
   params.push_back({"BUF_DATA_WIDTH", DEFAULT_AXIS_STREAM_SIZE});
@@ -353,7 +357,7 @@ void EmitFPGAPass::emitEmit(std::ofstream &file, ep2::EmitOp emitop) {
   struct module_port_config in_buf_port, in_struct_port, out_buf_port;
   struct wire_config out_buf_wire;
   struct axis_config in_buf_axis, in_struct_axis, out_buf_axis;
-  auto module_name = assign_var_name("emit_module");
+  auto module_name = assign_name("emit_module");
 
   auto buf = emitop.getBuffer();
   std::string ori_buf_name = getValName(buf);
@@ -361,13 +365,13 @@ void EmitFPGAPass::emitEmit(std::ofstream &file, ep2::EmitOp emitop) {
   in_buf_port = {
       AXIS, {ori_buf_name}, "input buf", "s_inbuf_axis", in_buf_axis};
 
-  auto new_buf_name = assign_var_name("bufvar");
-  UpdateValName(buf, new_buf_name);
-  out_buf_axis = {1, 1, DEFAULT_AXIS_STREAM_SIZE};
-  out_buf_port = {
-      AXIS, {new_buf_name}, "output buf", "m_outbuf_axis", out_buf_axis};
-  out_buf_wire = {AXIS,  new_buf_name, module_name + " output buf",
-                  false, -1, has_use(buf), out_buf_axis};
+  // auto new_buf_name = assign_var_name("bufvar");
+  // UpdateValName(buf, new_buf_name);
+  // out_buf_axis = {1, 1, DEFAULT_AXIS_STREAM_SIZE};
+  // out_buf_port = {
+  //     AXIS, {new_buf_name}, "output buf", "m_outbuf_axis", out_buf_axis};
+  // out_buf_wire = {AXIS,  new_buf_name, module_name + " output buf",
+  //                 false, -1, has_use(buf), out_buf_axis};
 
   auto input_struct = emitop.getValue();
   auto input_struct_name = getValName(input_struct);
@@ -395,9 +399,9 @@ void EmitFPGAPass::emitEmit(std::ofstream &file, ep2::EmitOp emitop) {
   std::list<struct module_port_config> ports;
   ports.push_back(in_buf_port);
   ports.push_back(in_struct_port);
-  ports.push_back(out_buf_port);
+  // ports.push_back(out_buf_port);
 
-  emitwire(file, out_buf_wire);
+  // emitwire(file, out_buf_wire);
 
   std::list<struct module_param_config> params;
   params.push_back({"BUF_DATA_WIDTH", DEFAULT_AXIS_STREAM_SIZE});
@@ -413,10 +417,10 @@ void EmitFPGAPass::emitStructAccess(std::ofstream &file,
 
   auto outval = structaccessop.getResult();
   auto outval_type = outval.getType();
-  auto module_name = assign_var_name("struct_access");
-  struct module_port_config outval_port, src_struct_port, new_struct_port;
-  struct axis_config outval_axis, src_struct_axis, new_struct_axis;
-  struct wire_config outval_wire, src_struct_wire, new_struct_wire;
+  auto module_name = assign_name("struct_access");
+  struct module_port_config outval_port, src_struct_port;
+  struct axis_config outval_axis, src_struct_axis;
+  struct wire_config outval_wire, src_struct_wire;
   // struct wire_assign_config wire_assignment;
   int size;
   std::string debuginfo;
@@ -438,9 +442,7 @@ void EmitFPGAPass::emitStructAccess(std::ofstream &file,
     assert(false);
   }
 
-  auto name = assign_var_name(debuginfo);
-  // outval.getDefiningOp()->setAttr("var_name", builder->getStringAttr(name));
-  UpdateValName(outval, name);
+  auto name = assignValNameAndUpdate(outval, debuginfo);
   outval_axis = {0, 0, size};
   outval_wire = {AXIS,       name, "Access Struct", false, -1, has_use(outval),
                  outval_axis};
@@ -465,30 +467,11 @@ void EmitFPGAPass::emitStructAccess(std::ofstream &file,
                      "s_struct_axis",
                      src_struct_axis};
 
-  // TODO, we don't want to update the symbol table, but we want to use another
-  // IR op
-
-  auto new_struct_name = assign_var_name("structvar");
-  new_struct_wire.name = new_struct_name;
-  UpdateValName(srcval, new_struct_name);
-  new_struct_axis = {0, 0, src_struct_size};
-  ;
-  new_struct_wire = {AXIS,  new_struct_name, "Struct Assign new Struct",
-                     false, -1, has_use(srcval), new_struct_axis};
-  ;
-  new_struct_port = {AXIS,
-                     {new_struct_name},
-                     "struct output",
-                     "m_struct_axis",
-                     new_struct_axis};
-
   std::list<struct module_port_config> ports;
   ports.push_back(src_struct_port);
-  ports.push_back(new_struct_port);
   ports.push_back(outval_port);
 
-  emitwire(file, outval_wire);
-  emitwire(file, new_struct_wire);
+  emitwire(file, outval_wire, val_use_count(outval));
 
   std::list<struct module_param_config> params;
   params.push_back({"STRUCT_WIDTH", src_struct_size});
@@ -505,7 +488,7 @@ void EmitFPGAPass::emitStructUpdate(std::ofstream &file,
   struct module_port_config ori_struct_port, in_val_port, new_struct_port;
   struct wire_config new_struct_wire;
   struct axis_config ori_struct_axis, in_val_axis, new_struct_axis;
-  auto module_name = assign_var_name("struct_assign");
+  auto module_name = assign_name("struct_assign");
 
   auto ori_struct = structupdateop.getInput();
   auto ori_struct_name = getValName(ori_struct);
@@ -541,9 +524,8 @@ void EmitFPGAPass::emitStructUpdate(std::ofstream &file,
       AXIS, {in_val_name}, "input val", "s_assignv_axis", in_val_axis};
 
   auto new_struct = structupdateop.getOutput();
-  auto new_struct_name = assign_var_name("structvar");
+  auto new_struct_name = assignValNameAndUpdate(new_struct, "structvar");
   auto new_struct_type = new_struct.getType();
-  UpdateValName(new_struct, new_struct_name);
   assert(isa<ep2::StructType>(new_struct_type));
   int new_struct_size =
       getStructTotalSize(cast<ep2::StructType, Type>(new_struct_type));
@@ -562,7 +544,7 @@ void EmitFPGAPass::emitStructUpdate(std::ofstream &file,
   ports.push_back(in_val_port);
   ports.push_back(new_struct_port);
 
-  emitwire(file, new_struct_wire);
+  emitwire(file, new_struct_wire, val_use_count(new_struct));
 
   std::list<struct module_param_config> params;
   int assign_index = structupdateop.getIndex();
@@ -597,7 +579,7 @@ void EmitFPGAPass::emitArithmetic(std::ofstream &file,
       op_name = "ADD";
   }
 
-  auto module_name = assign_var_name(op_name);
+  auto module_name = assign_name(op_name);
   struct module_port_config lval_port, rval_port, result_val_port;
   struct axis_config lval_axis, rval_axis, result_val_axis;
   struct wire_config lval_wire, rval_wire, result_val_wire;
@@ -610,10 +592,7 @@ void EmitFPGAPass::emitArithmetic(std::ofstream &file,
     assert(false);
   }
 
-  assert(!result_val.getDefiningOp()->hasAttr("var_name"));
-  auto name = assign_var_name(module_name + "_out_" + val_type_str(result_val_type));
-  // outval.getDefiningOp()->setAttr("var_name", builder->getStringAttr(name));
-  UpdateValName(result_val, name);
+  auto name = assignValNameAndUpdate(result_val, module_name + "_out_" + val_type_str(result_val_type));
   result_val_axis = {0, 0, size};
   result_val_wire = {AXIS,   name, "Arithmetic OP Out", false, -1, has_use(result_val),
                  result_val_axis};
@@ -655,7 +634,7 @@ void EmitFPGAPass::emitArithmetic(std::ofstream &file,
   ports.push_back(rval_port);
   ports.push_back(result_val_port);
 
-  emitwire(file, result_val_wire);
+  emitwire(file, result_val_wire, val_use_count(result_val));
 
   std::list<struct module_param_config> params;
   params.push_back({"LVAL_SIZE", lval_size});
@@ -758,9 +737,7 @@ void EmitFPGAPass::emitConst(std::ofstream &file, ep2::ConstantOp constop) {
     // assert(false);
     // TODO
   }
-  assert(!arg.getDefiningOp()->hasAttr("var_name"));
-  name = assign_var_name(debuginfo);
-  UpdateValName(arg, name);
+  name = assignValNameAndUpdate(arg, debuginfo);
 
   if (!if_stream) {
     assert(size <= 64 * 8);
@@ -769,7 +746,7 @@ void EmitFPGAPass::emitConst(std::ofstream &file, ep2::ConstantOp constop) {
   }
   struct axis_config axis = {if_stream, if_stream, size};
   struct wire_config wire = {AXIS, name, debuginfo, true, init_value, true, axis};
-  emitwire(file, wire);
+  emitwire(file, wire, val_use_count(arg));
 }
 
 void EmitFPGAPass::emitIfElse(std::ofstream &file, scf::IfOp ifop){
@@ -812,7 +789,7 @@ void EmitFPGAPass::emitIfElse(std::ofstream &file, scf::IfOp ifop){
         struct module_port_config demux_result_port, in_if_port, in_else_port, condition_port;
         struct wire_config demux_result_wire;
         struct axis_config demux_result_axis, in_if_axis, in_else_axis, condition_axis;
-        auto module_name = assign_var_name("ifelse_demux_" + std::to_string(i));
+        auto module_name = assign_name("ifelse_demux_" + std::to_string(i));
 
         // Type checking
         assert(if_val.getType() == else_val.getType());
@@ -829,14 +806,13 @@ void EmitFPGAPass::emitIfElse(std::ofstream &file, scf::IfOp ifop){
           result.dump();
           assert(false);
         }
-        auto result_name = assign_var_name("ifelse_result" + val_type_str(result_type));
+        auto result_name = assignValNameAndUpdate(result, "ifelse_result" + val_type_str(result_type));
         auto debuginfo = "ifelse result" + std::to_string(i);
-        UpdateValName(result, result_name);
 
         demux_result_axis = {if_stream, if_stream, size};
         demux_result_wire = {AXIS,  result_name, debuginfo, false, -1, has_use(result), demux_result_axis};
         demux_result_port = {AXIS, {result_name}, "if else selected val", "m_val_axis", demux_result_axis};
-        emitwire(file, demux_result_wire);
+        emitwire(file, demux_result_wire, val_use_count(result));
 
         auto in_if_name = getValName(if_val);
         in_if_axis = {if_stream, if_stream, size};
@@ -866,7 +842,7 @@ void EmitFPGAPass::emitIfElse(std::ofstream &file, scf::IfOp ifop){
         std::list<struct module_param_config> params;
         params.push_back({"VAL_WIDTH", size});
         params.push_back({"COND_WIDTH", cond_size});
-        params.push_back({"IF_VAL_BUF", if_stream});
+        params.push_back({"IF_STREAM", if_stream});
 
         emitModuleCall(file, "ifelse_demux", module_name, ports, params);
 
@@ -975,7 +951,7 @@ void EmitFPGAPass::emitController(ep2::FuncOp funcOp) {
   std::string portname, debuginfo;
 
   for (int src_id = 0; src_id < src_count; src_id++) {
-    auto name = assign_var_name("inport");
+    auto name = assign_name("inport");
     debuginfo = "input event from src port " + std::to_string(src_id);
     portname = name + "_" + std::to_string(src_id);
     struct axis_config wire = {if_stream, if_stream, eventsize};
@@ -987,7 +963,7 @@ void EmitFPGAPass::emitController(ep2::FuncOp funcOp) {
   }
 
   for (int dst_id = 0; dst_id < dst_count; dst_id++) {
-    auto name = assign_var_name("outport");
+    auto name = assign_name("outport");
     debuginfo = "output event for dst port " + std::to_string(dst_id);
     portname = name + "_" + std::to_string(dst_id);
     struct axis_config wire = {if_stream, if_stream, eventsize};
@@ -1007,7 +983,7 @@ void EmitFPGAPass::emitController(ep2::FuncOp funcOp) {
     //  emit mux's output wire defination
     struct module_port_config mux_in_port, mux_out_port;
     struct wire_config mux_out_wire;
-    auto mux_out_name = assign_var_name("mux_out");
+    auto mux_out_name = assign_name("mux_out");
     mux_out_wire.name = mux_out_name;
     mux_out_wire = {AXIS,  mux_out_name, "Mux output wire",
                     false, -1, true,         event_axis};
