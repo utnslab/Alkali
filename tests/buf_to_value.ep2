@@ -1,0 +1,43 @@
+event MY_EVENT {
+    atom at;
+    context ctx;
+    buf b;
+    bits<32> a;
+}
+
+event MY_EVENT_OUT {
+    atom at;
+    context ctx;
+    buf b;
+    bits<32> a;
+}
+
+struct header {
+    bits<32> field_a;
+    bits<32> field_b;
+}
+
+handler MY_EVENT:my_handler_event (context ctx, buf b, int a) {
+    int x;
+    int y;
+    int c;
+    int z;
+    header hdr;
+
+    x = 1;
+    y = 2;
+    z = 4;
+    b.extract(hdr);
+    b.emit(hdr);
+    # insert this here to test separation
+    ctx.test = hdr.field_a;
+    c = ctx.test;
+    # if else test
+    if (x < a) {
+        ctx.test = z;
+        ctx.bench = z;
+    } else {
+        ctx.test = y;
+    }
+    generate MY_EVENT_OUT:my_handler_event {ctx, b, c};
+}
