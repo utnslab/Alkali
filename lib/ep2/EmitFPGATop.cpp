@@ -23,6 +23,8 @@ void EmitFPGAPass::emitTop() {
     for (auto &[handler, edges] : handlerDependencyAnalysis->graph) {
         Operation *op = handler;
         auto funcOp = dyn_cast<FuncOp>(op);
+        if(funcOp->hasAttr("extern"))
+            continue;
         // currently we only emit connectivity for handler
         if (funcOp->getAttr("type").cast<StringAttr>().getValue().str() != "handler") {
             printf("Error: Currently only support handler type\n");
@@ -40,22 +42,30 @@ void EmitFPGAPass::emitTop() {
             handlerDependencyAnalysis->dump();
             assert(false);
         }
-
+        printf("handler_edge size matches with handlerDependencyAnalysis's result: %ld- %ld\n", handler_edge.size() , edges.size());
         // first emit edge wires.
         for(auto &e : handler_edge) {
+           
             // TODO: when supporting global table, type is not AXIS
             for(auto &w : e.event_wires) {
                 if(e.direction == OUT){
+                     printf("HIHIHI");
                     auto target_func = dyn_cast<FuncOp>((Operation *)edges[e.id]);
                     if(!target_func){
                         funcOp.dump();
                         printf("Error:%d out port's target_func is null\n", e.id);
                         assert(false);
                     }
-                    // target handler's firest EVENT wire and the first argument
-                    auto target_func_name = handler_edge_map[target_func][0].event_wires[0].name;
-                    struct module_port_config port_config = {AXIS, {target_func_name}, "", w.name, .axis = w.axis};
+                    std::string out_wire_name;
+                    if(e.if_extern)
+                        out_wire_name = w.name;
+                    else
+                    {    
+                        out_wire_name = handler_edge_map[target_func][0].event_wires[0].name;
+                    }
+                    struct module_port_config port_config = {AXIS, {out_wire_name}, "", w.name, .axis = w.axis};
                     ports.push_back(port_config);
+                    printf("NNONON");
                 }
                 else if (e.direction == IN){ // TODO: CHECK extern
                     struct module_port_config port_config = {AXIS, {w.name}, "", w.name, .axis = w.axis};
@@ -70,7 +80,7 @@ void EmitFPGAPass::emitTop() {
         std::list<struct module_param_config> params;
         emitModuleCall(file, funcOp.getName().str(), funcOp.getName().str(), ports, params);
         
-
+        
 
     }
     file <<  "\nendmodule\n";

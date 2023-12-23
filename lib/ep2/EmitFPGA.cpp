@@ -24,13 +24,10 @@ void EmitFPGAPass::emitFuncHeader(std::ofstream &file, ep2::FuncOp funcOp) {
   std::vector<struct wire_config> in_event_wires;
   // push input parameter wire
   auto args = handlerInOutAnalysis->handler_in_arg_list[funcOp];
-  std::string extern_in_event_name = "";
+  std::string in_event_name = funcOp->getAttr("event").cast<StringAttr>().getValue().str();
+  bool if_in_extern_event = handlerDependencyAnalysis->isExternEvent(in_event_name);
 
   std::vector<std::pair<struct wire_config, int>> replica_args;
-  // TODO: Support out event extern identification
-  if(funcOp->hasAttr("in_hw_event")){
-    extern_in_event_name = funcOp->getAttr("event").cast<StringAttr>().getValue().str();
-  }
   for (auto arg : args) {
     auto arg_type = arg.getType();
     bool if_stream;
@@ -51,8 +48,8 @@ void EmitFPGAPass::emitFuncHeader(std::ofstream &file, ep2::FuncOp funcOp) {
       assert(false);
     }
 
-    if(extern_in_event_name!= "")
-      name = assignValNameAndUpdate(arg, extern_in_event_name + "_" + std::to_string(arg.getArgNumber()), false);
+    if(if_in_extern_event) // extern event's val name is determined by its unique name
+      name = assignValNameAndUpdate(arg, in_event_name + "_" + std::to_string(arg.getArgNumber()), false);
     else
       name = assignValNameAndUpdate(arg, "arg");
     if (!if_stream) {
@@ -66,7 +63,7 @@ void EmitFPGAPass::emitFuncHeader(std::ofstream &file, ep2::FuncOp funcOp) {
     inout_wires.push_back(in_if);
     in_event_wires.push_back(event_wire);
     
-    if(extern_in_event_name != "")
+    if(if_in_extern_event)
       extern_inouts.push_back(in_if);
 
     // save temp info for replication
@@ -75,7 +72,7 @@ void EmitFPGAPass::emitFuncHeader(std::ofstream &file, ep2::FuncOp funcOp) {
       replica_args.push_back({event_wire, val_use_count(arg)});
     }
   }
-  handler_edge_map[*cur_funcop].push_back({IN, 0, extern_in_event_name != "", in_event_wires});
+  handler_edge_map[*cur_funcop].push_back({IN, 0, if_in_extern_event, in_event_wires});
 
   // push output parameter wires
   auto returnvals = handlerInOutAnalysis->handler_returnop_list[funcOp];
@@ -83,41 +80,50 @@ void EmitFPGAPass::emitFuncHeader(std::ofstream &file, ep2::FuncOp funcOp) {
   for (auto returned_event : returnvals) {
     // log event wire info, used in generating top module
     std::vector<struct wire_config> out_event_wires;
+    std::string name;
 
     auto returned_event_type = returned_event.getType();
-    auto name = assignValNameAndUpdate(returned_event, "outport");
 
     assert(isa<ep2::StructType>(returned_event_type));
     auto return_event_struct = cast<ep2::StructType, Type>(returned_event_type);
+    auto return_event_name = return_event_struct.getName().str();
+    auto if_out_extern_event = handlerDependencyAnalysis->isExternEvent(return_event_name);
     auto field_types = return_event_struct.getElementTypes();
+
+    
+    if(if_out_extern_event) // extern event's val name is determined by its unique name
+      name = assignValNameAndUpdate(returned_event, return_event_name, false);
+    else
+      name = assignValNameAndUpdate(returned_event, "outport");
+
     for (int i = 0; i < field_types.size(); i++) {
-      bool if_stream;
       int size;
-      std::string portname, debuginfo;
+      std::string portname;
 
       auto valtype = GetValTypeAndSize(field_types[i], &size);
-      debuginfo = "output ports " + val_type_str(valtype);
+      bool if_stream = if_axis_stream(valtype);
+
       if ((valtype == CONTEXT && size == 0) || valtype == ATOM) {
         continue;
-      } else if (valtype == CONTEXT || valtype == INT || valtype == STRUCT) {
-        if_stream = false;
-      } else if (valtype == BUF) {
-        if_stream = true;
-      } else {
+      } else if (!(valtype == CONTEXT || valtype == INT || valtype == STRUCT || valtype == BUF)) {
         printf("Error: Cannot generate in parameter wire for\n");
         field_types[i].dump();
         assert(false);
       }
 
+    
       portname = name + "_" + std::to_string(i);
 
       struct axis_config wire = {if_stream, if_stream, size};
       struct wire_config event_wire = {AXIS, portname, "", false, -1, true, wire};
-      struct inout_config out_if = {OUT, AXIS, portname, debuginfo, wire};
+      struct inout_config out_if = {OUT, AXIS, portname, "output ports " + val_type_str(valtype), wire};
       inout_wires.push_back(out_if);
       out_event_wires.push_back(event_wire);
+
+      if(if_out_extern_event)
+        extern_inouts.push_back(out_if);
     }
-    handler_edge_map[*cur_funcop].push_back({OUT, out_event_id++, false, out_event_wires});
+    handler_edge_map[*cur_funcop].push_back({OUT, out_event_id++, if_out_extern_event, out_event_wires});
   }
 
   emitModuleParameter(file, inout_wires);
@@ -1054,7 +1060,7 @@ void EmitFPGAPass::runOnOperation() {
   module->walk([&](ep2::FuncOp funcOp) {
     auto functype = funcOp->getAttr("type").cast<StringAttr>().getValue().str();
     std::cout << functype << "\n";
-    if (functype == "handler") {
+    if (functype == "handler" && !funcOp->hasAttr("extern")) {
       emitHandler(funcOp);
     } else if (functype == "controller") {
       emitController(funcOp);
