@@ -12,6 +12,7 @@ add_mlir_dialect_library(MLIREP2
         
         # Passes
         ContextToArgumentPass.cpp
+        CFToPredPass.cpp
         BufferToValuePass.cpp
         EmitFPGAHelper.cpp
         EmitFPGA.cpp

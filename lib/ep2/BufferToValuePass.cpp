@@ -11,6 +11,7 @@
 #include "mlir/Transforms/GreedyPatternRewriteDriver.h"
 
 #include "mlir/Transforms/Passes.h"
+#include "mlir/Conversion/Passes.h"
 
 using namespace mlir;
 
@@ -63,11 +64,11 @@ void BufferToValuePass::runOnOperation() {
 
   // first, we find all values
   moduleOp.walk(reRefBuffers);
-//   moduleOp.walk([&](FuncOp funcOp) { reRefBuffers(funcOp); });
 
   // execute mem2reg on all functions
   OpPassManager pm;
   auto &funcPm = pm.nest<FuncOp>();
+  funcPm.addPass(createConvertSCFToCFPass());
   funcPm.addPass(createMem2Reg());
   funcPm.addPass(createCanonicalizerPass());
   funcPm.addPass(createCSEPass());

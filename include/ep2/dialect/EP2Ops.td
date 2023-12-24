@@ -233,7 +233,10 @@ def ConstantOp : EP2_Op<"constant",
     }]>,
 
     // Build a constant with a given constant floating-point value.
-    OpBuilder<(ins "int":$width, "unsigned long":$value)>
+    OpBuilder<(ins "unsigned":$width, "int64_t":$value), [{
+      build($_builder, $_state, $_builder.getIntegerType(width),
+            $_builder.getIntegerAttr($_builder.getIntegerType(width), value));
+    }]>
   ];
 
   // Indicate that additional verification for this operation is necessary.

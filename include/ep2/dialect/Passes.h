@@ -29,6 +29,7 @@
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Dialect/SCF/IR/SCF.h"
 #include "mlir/Dialect/ControlFlow/IR/ControlFlow.h"
+#include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Interfaces/FunctionInterfaces.h"
 
 #include "ep2/dialect/Dialect.h"
@@ -75,6 +76,16 @@ struct BufferToValuePass :
     }
     StringRef getArgument() const final { return "ep2-buffer-to-value"; }
     StringRef getDescription() const final { return "Convert ep2 buffers to a value type"; }
+};
+
+struct CFToPredPass :
+        public PassWrapper<CFToPredPass, OperationPass<ModuleOp>> {
+    void runOnOperation() final;
+    void getDependentDialects(DialectRegistry &registry) const override {
+        registry.insert<EP2Dialect, scf::SCFDialect, cf::ControlFlowDialect, arith::ArithDialect>();
+    }
+    StringRef getArgument() const final { return "cf-to-pred"; }
+    StringRef getDescription() const final { return "General pass for adding a pred value for every block in the function"; }
 };
 
 // Lower to Emitc pass
