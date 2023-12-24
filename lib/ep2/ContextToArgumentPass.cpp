@@ -153,8 +153,6 @@ void ContextToArgumentPass::runOnOperation() {
   funcPm.addPass(createCanonicalizerPass());
   funcPm.addPass(createConvertSCFToCFPass());
   funcPm.addPass(createMem2Reg());
-  funcPm.addPass(createCanonicalizerPass());
-  funcPm.addPass(createCSEPass());
 
   if (failed(runPipeline(pm, moduleOp)))
     return signalPassFailure();

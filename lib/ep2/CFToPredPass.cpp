@@ -61,15 +61,6 @@ namespace {
 void CFToPredPass::runOnOperation() {
   auto moduleOp = getOperation();
   moduleOp->walk(insertNewBlockParameter);
-
-  OpPassManager pm;
-  auto &funcPm = pm.nest<FuncOp>();
-  funcPm.addPass(createCanonicalizerPass());
-  funcPm.addPass(createCSEPass());
-  funcPm.addPass(createCanonicalizerPass());
-
-  if (failed(runPipeline(pm, moduleOp)))
-    return signalPassFailure();
 }
 
 } // namespace ep2
