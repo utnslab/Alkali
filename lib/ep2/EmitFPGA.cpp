@@ -768,6 +768,81 @@ void EmitFPGAPass::emitConst(std::ofstream &file, ep2::ConstantOp constop) {
   emitwire(file, wire, val_use_count(arg));
 }
 
+void EmitFPGAPass::emitBBCondBranch(std::ofstream &file, cf::CondBranchOp condbranchop){
+  auto cond = condbranchop.getCondition();
+  auto true_bb = condbranchop.getTrueDest();
+  auto false_bb = condbranchop.getFalseDest();
+  auto true_param_list = condbranchop.getTrueOperands();
+  auto false_param_list = condbranchop.getFalseOperands();
+
+  for(int i = 0; i < true_param_list.size(); i ++){
+    auto true_param = true_param_list[i];
+    auto bb_wire = getBBDemuxInputWire(true_bb, i);
+
+    int size;
+    auto true_param_type = GetValTypeAndSize(true_param.getType(), &size);
+    auto if_stream = if_axis_stream(true_param_type);
+    if (!(true_param_type == INT || true_param_type == STRUCT || true_param_type == BUF)) {
+      printf("Error: emitBBCondBranch's true_param can only be int or struct or buf\n");
+      true_param.dump();
+      assert(false);
+    }
+
+    auto true_param_name = getValName(true_param);
+    struct axis_config true_param_axis =  {if_stream, if_stream, size};
+    struct wire_config true_param_wire = {AXIS, true_param_name, "", false, -1, true, true_param_axis};
+    struct wire_assign_config true_param_assign = {-1, -1, -1, -1, true_param_wire, bb_wire};
+    emitwireassign(file, true_param_assign); 
+  }
+
+  for(int i = 0; i < false_param_list.size(); i ++){
+    auto false_param = false_param_list[i];
+    auto bb_wire = getBBDemuxInputWire(false_bb, i);
+
+    int size;
+    auto false_param_type = GetValTypeAndSize(false_param.getType(), &size);
+    auto if_stream = if_axis_stream(false_param_type);
+    if (!(false_param_type == INT || false_param_type == STRUCT || false_param_type == BUF)) {
+      printf("Error: emitBBCondBranch's false_param can only be int or struct or buf\n");
+      false_param.dump();
+      assert(false);
+    }
+
+    auto false_param_name = getValName(false_param);
+    struct axis_config false_param_axis =  {if_stream, if_stream, size};
+    struct wire_config false_param_wire = {AXIS, false_param_name, "", false, -1, true, false_param_axis};
+    struct wire_assign_config false_param_assign = {-1, -1, -1, -1, false_param_wire, bb_wire};
+    emitwireassign(file, false_param_assign); 
+  }
+}
+
+
+void EmitFPGAPass::emitBBBranch(std::ofstream &file,cf::BranchOp branchop){
+  auto true_bb = branchop.getDest();
+  auto true_param_list = branchop.getOperands();
+
+  for(int i = 0; i < true_param_list.size(); i ++){
+    auto true_param = true_param_list[i];
+    auto bb_wire = getBBDemuxInputWire(true_bb, i);
+
+    int size;
+    auto true_param_type = GetValTypeAndSize(true_param.getType(), &size);
+    auto if_stream = if_axis_stream(true_param_type);
+    if (!(true_param_type == INT || true_param_type == STRUCT || true_param_type == BUF)) {
+      printf("Error: emitBBCondBranch's true_param can only be int or struct or buf\n");
+      true_param.dump();
+      assert(false);
+    }
+
+    auto true_param_name = getValName(true_param);
+    struct axis_config true_param_axis =  {if_stream, if_stream, size};
+    struct wire_config true_param_wire = {AXIS, true_param_name, "", false, -1, true, true_param_axis};
+    struct wire_assign_config true_param_assign = {-1, -1, -1, -1, true_param_wire, bb_wire};
+    emitwireassign(file, true_param_assign); 
+  }
+
+}
+
 void EmitFPGAPass::emitIfElse(std::ofstream &file, scf::IfOp ifop){
       auto &if_region = ifop.getThenRegion();
       std::vector<mlir::Value> then_yields;
@@ -913,9 +988,77 @@ void EmitFPGAPass::emitOp(std::ofstream &file, mlir::Operation *op){
   } else if (isa<scf::IfOp>(op)){
     auto ifop = cast<scf::IfOp, mlir::Operation *>(op);
     emitIfElse(file, ifop);
-  }
+  } else if (isa<cf::CondBranchOp>(op)){
+    auto condop = cast<cf::CondBranchOp, mlir::Operation *>(op);
+    emitBBCondBranch(file, condop);
+  } else if (isa<cf::BranchOp>(op)){
+    auto branchop = cast<cf::BranchOp, mlir::Operation *>(op);
+    emitBBBranch(file, branchop);
+  } 
   // TODO: Change STURCT ACCESS IR to generate new stream for each accessed
     // struct
+}
+
+void EmitFPGAPass::emitBBInputDemux(std::ofstream &file, ep2::FuncOp funcOp){
+  auto it = funcOp.getBody().begin();
+  int bb_count = 0;
+  for (it++; it != funcOp.getBody().end(); it++) {
+    auto &block = *it;
+    auto args = block.getArguments();
+
+    // how many input mux ports for each arg
+    int port_count = llvm::count_if(block.getPredecessors(), [](auto) { return true; });
+    // int port_count = 2;
+    int arg_count = 0;
+    std::vector<struct demux_inout_arg> demux_inout_args;
+    for (auto &arg: args) {
+      // for each arg, generate "port" number demux input wires
+      std::vector<std::string> demux_in_wire_names;
+      std::list<struct module_port_config> ports;
+      int arg_size;
+      bool if_stream;
+      auto valtype = GetValTypeAndSize( arg.getType(), &arg_size);
+      if_stream = if_axis_stream(valtype);
+      if (valtype != INT && valtype != STRUCT && valtype != BUF)  {
+        printf("Error: Cannot generate BBInputDemux's input wire for\n");
+        arg.dump();
+        assert(false);
+      }
+
+      // single bit cond valid put in axis user
+      struct axis_config arg_axis = {if_stream, if_stream, arg_size};
+
+      std::vector<struct wire_config> in_args_wires;
+      // generate demux input wires
+      for(int i = 0; i < port_count; i ++){
+        auto demux_in_wire_name = "BB" + std::to_string(bb_count) +  "demux_arg" + std::to_string(i);
+        struct wire_config in_arg_wire = {AXIS,  demux_in_wire_name, "BB input demux wire", false, -1, true, arg_axis};
+        demux_in_wire_names.push_back(demux_in_wire_name);
+        emitwire(file, in_arg_wire);
+        in_args_wires.push_back(in_arg_wire);
+      }
+      struct module_port_config inport = {AXIS, {demux_in_wire_names}, "demux in port ", "s_demux_in", arg_axis};
+      ports.push_back(inport);
+
+      // generate demux output wire
+      auto out_val_name = assignValNameAndUpdate(arg, "BB" + std::to_string(bb_count) + "demux_out" + std::to_string(arg_count));
+      struct wire_config out_val_wire = {AXIS,  out_val_name, "BB output demux wire", false, -1, has_use(arg), arg_axis};
+      emitwire(file, out_val_wire, val_use_count(arg));
+      struct module_port_config outport = {AXIS, {out_val_name}, "demux out port ", "m_demux_out", arg_axis};
+      ports.push_back(outport);
+      std::list<struct module_param_config> params;
+      params.push_back({"VAL_WIDTH", arg_size});
+      params.push_back({"PORT_COUNT", port_count});
+      params.push_back({"IF_STREAM", if_stream});
+      emitModuleCall(file, "demux", "BB" + std::to_string(bb_count) + "demux_arg" + std::to_string(arg_count), ports, params);
+
+      demux_inout_args.push_back({port_count, 0, in_args_wires, out_val_wire});
+      arg_count ++;
+    }
+    bb_to_demux_inout[&block] = demux_inout_args;
+
+    bb_count ++;
+  }
 }
 
 void EmitFPGAPass::emitHandler(ep2::FuncOp funcOp) {
@@ -923,7 +1066,7 @@ void EmitFPGAPass::emitHandler(ep2::FuncOp funcOp) {
   auto handler_name = funcOp.getName().str();
   std::ofstream fout_stage(handler_name + ".sv");
   emitFuncHeader(fout_stage, funcOp);
-
+  emitBBInputDemux(fout_stage, funcOp);
   funcOp->walk([&](mlir::Operation *op) {
     emitOp(fout_stage, op);
     

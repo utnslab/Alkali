@@ -444,7 +444,6 @@ std::string EmitFPGAPass::assignValNameAndUpdate(mlir::Value val, std::string pr
   if(if_add_gindex)
     name = name + "_" + std::to_string(global_var_index++);
   int i = val_use_count(val);
-  printf("assignValNameAndUpdate: %s, %d\n", name.c_str(), i);
   val_names_and_useid[val] = {name, i, 0};
   bool if_buf_block_arg = isa<mlir::BlockArgument>(val);
   // for debug purpose

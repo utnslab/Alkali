@@ -28,6 +28,7 @@
 #include "mlir/Dialect/EmitC/IR/EmitC.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
+#include "mlir/Dialect/ControlFlow/IR/ControlFlowOps.h"
 
 #include "ep2/dialect/Dialect.h"
 
@@ -64,8 +65,9 @@ private:
     int if_keep;
     int if_last;
     int data_width;
+    int user_width;
   };
-
+  
   struct table_if_config {
     int index_width;
     int data_width;
@@ -121,6 +123,13 @@ private:
     };
   };
 
+  struct demux_inout_arg{
+    int total_in_ports;
+    int cur_in_port;
+    std::vector<struct wire_config> in_ports_wires;
+    struct wire_config out_port_wire;
+  };
+
   std::string val_type_str(VAL_TYPE e) {
     switch (e) {
     case CONTEXT:
@@ -165,6 +174,18 @@ private:
 
   // For each lookupop/updateop -> table lookup/update port name
   mlir::DenseMap<mlir::Operation*, struct wire_config> tableops_to_portwire;
+
+
+  struct wire_config getBBDemuxInputWire(mlir::Block *bb, int arg_index){
+    auto demux_inout = bb_to_demux_inout[bb][arg_index];
+    auto wire = demux_inout.in_ports_wires[demux_inout.cur_in_port];
+    demux_inout.cur_in_port++;
+    bb_to_demux_inout[bb][arg_index] = demux_inout;
+    return wire;
+  }
+
+  // For each basic block ->  inout demux's agr lists (each arg has multiple inports and one outport)
+  mlir::DenseMap<mlir::Block*, std::vector<struct demux_inout_arg>> bb_to_demux_inout;
 
   bool has_use(mlir::Value val) { return !val.getUses().empty(); }
 
@@ -215,6 +236,9 @@ private:
   void emitLookup(std::ofstream &file, ep2::LookupOp lookupop);
   void emitUpdate(std::ofstream &file, ep2::UpdateOp updateop);
   void emitExtract(std::ofstream &file, ep2::ExtractValueOp extractop);
+  void emitBBInputDemux(std::ofstream &file, ep2::FuncOp funcOp);
+  void emitBBCondBranch(std::ofstream &file, cf::CondBranchOp condbranchop);
+  void emitBBBranch(std::ofstream &file, cf::BranchOp branchop);
   void emitStructAccess(std::ofstream &file,
                         ep2::StructAccessOp structaccessop);
   void emitStructUpdate(std::ofstream &file,
