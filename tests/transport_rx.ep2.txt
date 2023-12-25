@@ -1,18 +1,17 @@
-struct dma_desc_t {
-    bits<16> queue_id; 
-    bits<16> meta;
+struct dma_write_cmd_t {
+    bits<32> addr; 
+    bits<32> size; 
 }
 
 extern event NET_RECV {context ctx; buf packet;}
 extern event NET_SEND{context ctx; buf packet;}
 
-extern event DMA_SEND{context ctx; buf data; dma_desc_t desc;}
-extern event DMA_RECV{context ctx; buf data; dma_desc_t desc;}
+extern event DMA_WRITE{context ctx; buf data; dma_write_cmd_t desc;}
 
-extern handler NET_SEND (context ctx, buf packet) {
+extern handler NET_SEND:net_send (context ctx, buf packet) {
 }
 
-extern handler DMA_SEND (context ctx, buf data, dma_desc_t desc) {
+extern handler DMA_WRITE:dma_wirte (context ctx, buf data, dma_write_cmd_t desc) {
 }
 
 ############## main program ###########
@@ -54,7 +53,7 @@ struct tcp_header_t {
 
     bits<16> sum;                     # /** Checksum */
     bits<16> urp;                     # /** Urgent pointer */
-};
+}
 
 struct flow_state_t
 {
@@ -83,8 +82,10 @@ struct ack_info_t
     bits<32> win;
 }
 
+event OoO_DETECT {context ctx; pkt_info_t pkt_info;}
+event ACK_GEN {context ctx; ack_info_t ack;}
+
 handler NET_RECV:process_packet (context ctx, buf packet) {
-    ctx.seq = global_seq ++;
     eth_header_t eth_header;
     ip_header_t ip_header;
     tcp_header_t tcp_header;
@@ -97,56 +98,66 @@ handler NET_RECV:process_packet (context ctx, buf packet) {
     ctx.eth_header = eth_header;
     ctx.ip_header = ip_header;
     ctx.tcp_header = tcp_header;
+    ctx.packet = packet;
 
-    pkt_info.pk_len = 0;
-    pkt_info.pk_seq = 1;
-    pkt_info.flow_id = 0;
-    generate OoO_DETECT{ctx, pkt_info};
+    pkt_info.pk_len = ip_header.length + 14; # ip length + ethernet header length
+    pkt_info.pk_seq = tcp_header.seq;
+    pkt_info.flow_id = 0; # TODO: this should calculate by hashing src/dst port and ip
+
+    generate OoO_DETECT:OoO_detection{ctx, pkt_info};
 }
 
-# TODO reorder buf
-controller(reorderbuf)
-@sync
-handler OoO_DETECT:OoO_detection (context ctx, pkt_info_t pkt_info) {
-    # possible optimizations, table concacting
-    table <bits<16> a; flow_state_t b;>(16) flow_table;
-    
-    flow_state_t flow_state = flow_table.lookup(pkt_info.flow_id);
+scope scope_1 <OoO_DETECT:OoO_detection>[flow_id];
 
-    int trim_start = flow_state.rx_next_seq - pkt_info.pk_seq;
-    int trim_end = pkt_bytes - trim - flow_state.avail;
-    if((pkt_bytes - trim) < flow_state.avail)
+# key: flow_id, value: state, size: 1;
+# this global variable currently only used in OoO_detection handler. In more complexed example, it can be shared across multiple handlers.
+[sync=scope_1] global table <bits<16>, flow_state_t, 16> flow_table;
+
+
+[sync=scope_1] handler OoO_DETECT:OoO_detection (context ctx, pkt_info_t pkt_info) {
+    flow_state_t flow_state;
+    flow_state = flow_table.lookup(pkt_info.flow_id);
+
+    bits<32> trim_start;
+    bits<32> trim_end;
+    bits<32> payload_bytes;
+    bits<32> dma_pos;
+    dma_write_cmd_t dma_cmd;
+    ack_info_t ack;
+
+    trim_start = flow_state.rx_next_seq - pkt_info.pk_seq;
+    
+    if((pkt_info.pk_len - trim_start) < flow_state.rx_avail)
     {
         trim_end = 0;
+    } else{
+        trim_end = pkt_info.pk_len - trim_start - flow_state.rx_avail;
     }
 
-    int payload_bytes = pkt_info.pk_len - (trim_start + trim_end);
+    payload_bytes = pkt_info.pk_len - (trim_start + trim_end);
 
-    if(trim > pkt_info.pk_len ){
-        #OoO DROP
+    # if((trim_start <= pkt_info.pk_len) && payload_bytes > 0 ){
+    if(payload_bytes > 0 ){
+        dma_pos =  flow_state.rx_next_pos;
+        flow_state.rx_avail = flow_state.rx_avail - payload_bytes;
+        flow_state.rx_next_seq = flow_state.rx_next_seq + payload_bytes;
+        flow_state.rx_next_pos = flow_state.rx_next_pos + payload_bytes;
+        
+        dma_cmd.addr = dma_pos;
+        dma_cmd.size = payload_bytes;
+        # DMA WRITE this packet to host
+        generate DMA_WRITE:dma_wirte{ctx, ctx.packet, dma_cmd};
     }
-    else{
-        int payload_bytes = pkt_info.pk_len - (trim_start + trim_end);
-        if(payload_bytes != 0){
-            int dma_pos =  flow_state.rx_next_pos;
-            flow_state.rx_avail = flow_state.rx_avail - payload_bytes;
-            flow_state.rx_next_seq = flow_state.rx_next_seq + payload_bytes;
-            flow_state.rx_next_pos = flow_state.rx_next_pos + payload_bytes;
-
-            dma_write_cmd_t dma_cmd;
-            dma_cmd.addr = dma_pos;
-            dma_cmd.size = payload_bytes;
-            generate DMA_WRITE(ctx, dma_cmd)
-        }
-
-        flow_table.update(flow_id, flow_state);
-
-        ack_info_t ack;
+    
+    if (trim_start <= pkt_info.pk_len)
+    {
+        flow_table.update(pkt_info.flow_id, flow_state);
+        
         ack.seq = flow_state.tx_next_seq;
         ack.ack = flow_state.rx_next_seq;
         ack.win = flow_state.rx_avail;
 
-        generate ACK_GEN(ctx, ack);
+        generate ACK_GEN:ack_gen{ctx, ack};
     }
 }
 
@@ -159,7 +170,7 @@ handler ACK_GEN:ack_gen (context ctx, ack_info_t ack){
     bits<16> tmp_port;
     buf packet_out;
 
-    ack_eth_header = ctx.eth_header.ether_type;
+    ack_eth_header = ctx.eth_header;
     tmp_mac = ack_eth_header.dst_mac;
     ack_eth_header.dst_mac = ack_eth_header.src_mac;
     ack_eth_header.src_mac = tmp_mac;
