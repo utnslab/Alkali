@@ -1,0 +1,26 @@
+event MY_EVENT {
+    atom at;
+    context ctx;
+}
+
+handler MY_EVENT:my_handler_event (context ctx) {
+    bits<1> cond;
+    bits<32> result;
+    bits<64> name;
+    result = 1;
+    cond = 0;
+    if (cond) {
+        cond = 0;
+        if (cond) {
+            ctx.const = 2;
+            ctx.name = result;
+            result = 566;
+            name = 12341412;
+        }
+    } else {
+        result = 233;
+    }
+
+    result = result + 2;
+    cond = cond + 1;
+}

@@ -29,9 +29,10 @@
 #include "llvm/Support/raw_ostream.h"
 #include <numeric>
 #include <optional>
+#include <stack>
 
 using namespace mlir::ep2;
-using namespace ep2;
+using namespace ::ep2;
 
 using llvm::ArrayRef;
 using llvm::cast;
@@ -163,7 +164,7 @@ private:
 
   /// TODO(zhiyuang): nested if else?
   using UpdateTableT = std::map<StringRef, mlir::Value>;
-  std::unique_ptr<UpdateTableT> updateTable = nullptr;
+  std::stack<UpdateTableT> updateTables{};
 
   /// A mapping for the functions that have been code generated to MLIR.
   ModuleAST* modAST;
@@ -201,20 +202,23 @@ private:
   }
 
   // Update the symbol table with the new value
+  void update(StringRef varName, mlir::Value value) {
+    auto [_, type, decl] = symbolTable.lookup(varName);
+    // try update the value
+
+    auto newValue = tryCast(value, type);
+    symbolTable.insert(varName, {newValue, type, decl});
+    // for if/else accesses
+    if (!updateTables.empty())
+      updateTables.top().insert_or_assign(varName, newValue);
+  }
   void update(ExprAST &targetAst, mlir::Value value) {
       if (targetAst.getKind() == ExprAST::Expr_Path) {
         auto &path = cast<PathExprAST>(targetAst);
 
         // could be a variable or a struct access
         auto varName = path.getPath()[0]->getName();
-        auto [_, type, decl] = symbolTable.lookup(varName);
-        // try update the value
-
-        auto newValue = tryCast(value, type);
-        symbolTable.insert(varName, {newValue, type, decl});
-        // for if/else accesses
-        if (updateTable)
-          updateTable->insert_or_assign(varName, newValue);
+        update(varName, value);
       }
       // TODO(zhiyuang): now we do not really have Expr_Var type?
       // else if (targetAst.getKind() == ExprAST::Expr_Var) {
@@ -773,33 +777,35 @@ private:
     auto ip = builder.saveInsertionPoint();
     builder.setInsertionPointToStart(&thenRegion.emplaceBlock());
     // build if block
-    updateTable = std::make_unique<UpdateTableT>();
+    auto &table = updateTables.emplace();
     if (mlirGen(*ifelse.getThenExprs(), /* newScope= */ false).failed())
       return mlir::failure();
-    auto thenTable = std::move(updateTable);
+    auto thenTable = std::move(table);
+    updateTables.pop();
 
     // build else block
     builder.setInsertionPointToStart(&elseRegion.emplaceBlock());
-    updateTable = std::make_unique<UpdateTableT>();
+    auto &table2 = updateTables.emplace();
     if (ifelse.hasElse()) {
       if (mlirGen(*ifelse.getElseExprs(), /* newScope= */ false).failed())
         return mlir::failure();
     }
-    auto elseTable = std::move(updateTable);
+    auto elseTable = std::move(table2);
+    updateTables.pop();
 
     // both table exists here
-    auto merge = [&, this](UpdateTableT *from, UpdateTableT *to) {
-      for (auto &[k, v] : *from) {
-        if (!to->count(k)) {
+    auto merge = [&, this](UpdateTableT &from, UpdateTableT &to) {
+      for (auto &[k, v] : from) {
+        if (!to.count(k)) {
           auto value = std::get<mlir::Value>(symbolTable.lookup(k));
-          to->insert({k, value});
+          to.insert({k, value});
         }
       }
     };
-    merge(thenTable.get(), elseTable.get());
-    merge(elseTable.get(), thenTable.get());
+    merge(thenTable, elseTable);
+    merge(elseTable, thenTable);
 
-    auto keys = llvm::map_to_vector(*thenTable, [](auto &pair) { return pair.first; });
+    auto keys = llvm::map_to_vector(thenTable, [](auto &pair) { return pair.first; });
 
     // create a new if op
     bool hasElse = ifelse.hasElse() || keys.size() != 0;
@@ -815,21 +821,19 @@ private:
     // TODO(zhiyuang): empty else block?
     builder.setInsertionPointToEnd(newIfOp.thenBlock());
     auto thenYields = llvm::map_to_vector(
-        keys, [&](auto &key) { return thenTable->at(key); });
+        keys, [&](auto &key) { return thenTable.at(key); });
     builder.create<mlir::scf::YieldOp>(loc(ifelse.loc()), thenYields);
     if (hasElse) {
       builder.setInsertionPointToEnd(newIfOp.elseBlock());
       auto elseYields = llvm::map_to_vector(
-          keys, [&](auto &key) { return elseTable->at(key); });
+          keys, [&](auto &key) { return elseTable.at(key); });
       builder.create<mlir::scf::YieldOp>(loc(ifelse.loc()), elseYields);
     }
 
-    // update the values
-    // TODO(zhiyuang): check if its at top level
-    for (size_t i = 0; i < keys.size(); i++) {
-      auto [_, type, decl] = symbolTable.lookup(keys[i]);
-      symbolTable.insert(keys[i], {newIfOp.getResult(i), type, decl});
-    }
+    // update the values. If its not at top level, its fine (as it will be
+    // defined in the current symtable)
+    for (size_t i = 0; i < keys.size(); i++)
+      update(keys[i], newIfOp.getResult(i));
     builder.setInsertionPointAfter(newIfOp);
 
     return mlir::success();
