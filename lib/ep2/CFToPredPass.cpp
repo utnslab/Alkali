@@ -27,6 +27,7 @@ namespace {
       else
         pred = block.insertArgument(unsigned{0}, builder.getI1Type(), funcOp.getLoc());
 
+      // Convert the branch ops
       auto &op = block.back();
       builder.setInsertionPoint(&op);
       if (auto brOp = dyn_cast<cf::BranchOp>(op)) {
@@ -51,6 +52,12 @@ namespace {
             condBrOp.getLoc(), cond, condBrOp.getTrueDest(), trueOperands,
             condBrOp.getFalseDest(), falseOperands);
         condBrOp.erase();
+      }
+
+      // Insert the sink for final user
+      if (!block.hasNoPredecessors() && block.hasNoSuccessors()) {
+        builder.setInsertionPointToStart(&block);
+        builder.create<SinkOp>(funcOp.getLoc(), mlir::ValueRange{pred});
       }
     }
   }

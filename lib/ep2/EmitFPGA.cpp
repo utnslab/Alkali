@@ -25,7 +25,7 @@ void EmitFPGAPass::emitFuncHeader(std::ofstream &file, ep2::FuncOp funcOp) {
   // push input parameter wire
   auto args = handlerInOutAnalysis->handler_in_arg_list[funcOp];
   std::string in_event_name = funcOp->getAttr("event").cast<StringAttr>().getValue().str();
-  bool if_in_extern_event = handlerDependencyAnalysis->isExternEvent(in_event_name);
+  bool if_in_extern_event = !handlerDependencyAnalysis->hasPredecessor(funcOp);
 
   std::vector<std::pair<struct wire_config, int>> replica_args;
   for (auto arg : args) {
@@ -87,7 +87,7 @@ void EmitFPGAPass::emitFuncHeader(std::ofstream &file, ep2::FuncOp funcOp) {
     assert(isa<ep2::StructType>(returned_event_type));
     auto return_event_struct = cast<ep2::StructType, Type>(returned_event_type);
     auto return_event_name = return_event_struct.getName().str();
-    auto if_out_extern_event = handlerDependencyAnalysis->isExternEvent(return_event_name);
+    auto if_out_extern_event = !handlerDependencyAnalysis->hasSuccessor(return_event_name);
     auto field_types = return_event_struct.getElementTypes();
 
     
@@ -589,6 +589,14 @@ void EmitFPGAPass::emitArithmetic(std::ofstream &file,
       op_id = 0;
       op_name = "SUB";
     }
+  else if (isa<arith::SubIOp>(op)){
+    auto subop = cast<arith::SubIOp, mlir::Operation *>(op);
+    result_val = subop.getResult();
+    lval = subop.getLhs();
+    rval = subop.getRhs();
+    op_id = 0;
+    op_name = "SUB";
+  }
   else if(isa<ep2::AddOp>(op)){
       auto addop = cast<ep2::AddOp, mlir::Operation *>(op);
       result_val = addop.getResult();
@@ -596,7 +604,15 @@ void EmitFPGAPass::emitArithmetic(std::ofstream &file,
       rval = addop.getRhs();
       op_id = 1;
       op_name = "ADD";
-  }
+  } 
+  else if(isa<arith::AndIOp>(op)){
+      auto andop = cast<arith::AndIOp, mlir::Operation *>(op);
+      result_val = andop.getResult();
+      lval = andop.getLhs();
+      rval = andop.getRhs();
+      op_id = 2;
+      op_name = "AND";
+  } 
 
   auto module_name = assign_name(op_name);
   struct module_port_config lval_port, rval_port, result_val_port;
@@ -983,7 +999,7 @@ void EmitFPGAPass::emitOp(std::ofstream &file, mlir::Operation *op){
   } else if (isa<ep2::UpdateOp>(op)){
     auto updateop = cast<ep2::UpdateOp, mlir::Operation *>(op);
     emitUpdate(file, updateop);
-  } else if(isa<ep2::SubOp>(op) || isa<ep2::AddOp>(op)){
+  } else if(isa<ep2::SubOp>(op) || isa<ep2::AddOp>(op) || isa<arith::SubIOp>(op) || isa<arith::AndIOp>(op)){
     emitArithmetic(file, op);
   } else if (isa<scf::IfOp>(op)){
     auto ifop = cast<scf::IfOp, mlir::Operation *>(op);
@@ -1001,16 +1017,19 @@ void EmitFPGAPass::emitOp(std::ofstream &file, mlir::Operation *op){
 
 void EmitFPGAPass::emitBBInputDemux(std::ofstream &file, ep2::FuncOp funcOp){
   auto it = funcOp.getBody().begin();
-  int bb_count = 0;
+  int bb_count = 1; // bb0 is jumpped
   for (it++; it != funcOp.getBody().end(); it++) {
     auto &block = *it;
     auto args = block.getArguments();
 
     // how many input mux ports for each arg
     int port_count = llvm::count_if(block.getPredecessors(), [](auto) { return true; });
-    // int port_count = 2;
     int arg_count = 0;
+    int totoal_arg_count = args.size();
     std::vector<struct demux_inout_arg> demux_inout_args;
+    struct axis_config pred_axis;
+    struct wire_config pred_wire;
+    std::vector<std::string> local_pred_out_names;
     for (auto &arg: args) {
       // for each arg, generate "port" number demux input wires
       std::vector<std::string> demux_in_wire_names;
@@ -1019,8 +1038,8 @@ void EmitFPGAPass::emitBBInputDemux(std::ofstream &file, ep2::FuncOp funcOp){
       bool if_stream;
       auto valtype = GetValTypeAndSize( arg.getType(), &arg_size);
       if_stream = if_axis_stream(valtype);
-      if (valtype != INT && valtype != STRUCT && valtype != BUF)  {
-        printf("Error: Cannot generate BBInputDemux's input wire for\n");
+      if (valtype != INT && valtype != STRUCT)  {
+        printf("Error: Cannot generate BBInputDemux's input wire, Note that we currently don't support buf as tlast constraint\n");
         arg.dump();
         assert(false);
       }
@@ -1029,10 +1048,15 @@ void EmitFPGAPass::emitBBInputDemux(std::ofstream &file, ep2::FuncOp funcOp){
       struct axis_config arg_axis = {if_stream, if_stream, arg_size};
 
       std::vector<struct wire_config> in_args_wires;
+
+      std::string module_name = "arg_demux";
+      if(arg_count == 0)
+        module_name = "pred_demux";
+        
       // generate demux input wires
       for(int i = 0; i < port_count; i ++){
-        auto demux_in_wire_name = "BB" + std::to_string(bb_count) +  "demux_arg" + std::to_string(i);
-        struct wire_config in_arg_wire = {AXIS,  demux_in_wire_name, "BB input demux wire", false, -1, true, arg_axis};
+        auto demux_in_wire_name = "BB" + std::to_string(bb_count) +  module_name + "_in" + std::to_string(i);
+        struct wire_config in_arg_wire = {AXIS,  demux_in_wire_name, demux_in_wire_name, false, -1, true, arg_axis};
         demux_in_wire_names.push_back(demux_in_wire_name);
         emitwire(file, in_arg_wire);
         in_args_wires.push_back(in_arg_wire);
@@ -1041,16 +1065,44 @@ void EmitFPGAPass::emitBBInputDemux(std::ofstream &file, ep2::FuncOp funcOp){
       ports.push_back(inport);
 
       // generate demux output wire
-      auto out_val_name = assignValNameAndUpdate(arg, "BB" + std::to_string(bb_count) + "demux_out" + std::to_string(arg_count));
-      struct wire_config out_val_wire = {AXIS,  out_val_name, "BB output demux wire", false, -1, has_use(arg), arg_axis};
+      auto out_val_name = assignValNameAndUpdate(arg, "BB" + std::to_string(bb_count) + module_name + "_out" +  std::to_string(arg_count));
+      struct wire_config out_val_wire = {AXIS,  out_val_name, out_val_name, false, -1, has_use(arg), arg_axis};
       emitwire(file, out_val_wire, val_use_count(arg));
+
+      if(arg_count == 0){
+        // pred case: replicate pred wire based on the total arg count
+        pred_axis = arg_axis;
+        pred_wire = out_val_wire;
+        
+        if(totoal_arg_count > 1)
+        {
+          for(int p = 0; p < totoal_arg_count -1; p ++){
+            struct wire_config local_pred_out_wire = out_val_wire;
+            local_pred_out_wire.axis.data_width = port_count;
+            local_pred_out_wire.name = out_val_wire.name +"_local_pred_" + std::to_string(p);
+            emitwire(file, local_pred_out_wire, 1);
+            local_pred_out_names.push_back(local_pred_out_wire.name);
+          }
+          struct module_port_config predout_to_demux = {AXIS, {local_pred_out_names}, "local pred out", "m_pred_out", pred_axis};
+          ports.push_back(predout_to_demux);
+        }
+      }else {
+        // arg case
+        struct module_port_config predinport = {AXIS, {local_pred_out_names[arg_count-1]}, "pred in port ", "s_pred_in", pred_axis};
+        ports.push_back(predinport);
+      }
+      
       struct module_port_config outport = {AXIS, {out_val_name}, "demux out port ", "m_demux_out", arg_axis};
       ports.push_back(outport);
+
       std::list<struct module_param_config> params;
       params.push_back({"VAL_WIDTH", arg_size});
       params.push_back({"PORT_COUNT", port_count});
       params.push_back({"IF_STREAM", if_stream});
-      emitModuleCall(file, "demux", "BB" + std::to_string(bb_count) + "demux_arg" + std::to_string(arg_count), ports, params);
+      if(arg_count == 0 )
+        params.push_back({"LOCAL_PRED_OUT_PORT_COUNT", totoal_arg_count - 1});
+      
+      emitModuleCall(file, module_name, "BB" + std::to_string(bb_count) + "demux_arg" + std::to_string(arg_count), ports, params);
 
       demux_inout_args.push_back({port_count, 0, in_args_wires, out_val_wire});
       arg_count ++;
@@ -1224,7 +1276,7 @@ void EmitFPGAPass::runOnOperation() {
   });
 
 
-  emitTop();
+  // emitTop();
 }
 
 std::unique_ptr<Pass> createEmitFPGAPass() {

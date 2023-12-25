@@ -579,6 +579,15 @@ def NopOp : EP2_Op<"nop", [Pure]> {
   // let hasVerifier = 1;
 }
 
+def SinkOp : EP2_Op<"sink"> {
+  let summary = "Value sink to hold a value and prevent it from being optimized away";
+  let description = [{
+    Take a list of values. Hold (use) the values.
+  }];
+
+  let arguments = (ins Variadic<EP2_Type>:$args);
+}
+
 //===----------------------------------------------------------------------===//
 // InitOp
 //===----------------------------------------------------------------------===//
