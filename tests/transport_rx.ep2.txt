@@ -8,10 +8,10 @@ extern event NET_SEND{context ctx; buf packet;}
 
 extern event DMA_WRITE{context ctx; buf data; dma_write_cmd_t desc;}
 
-extern handler NET_SEND:net_send (context ctx, buf packet) {
+extern handler NET_SEND (context ctx, buf packet) {
 }
 
-extern handler DMA_WRITE:dma_wirte (context ctx, buf data, dma_write_cmd_t desc) {
+extern handler DMA_WRITE (context ctx, buf data, dma_write_cmd_t desc) {
 }
 
 ############## main program ###########
@@ -107,14 +107,13 @@ handler NET_RECV:process_packet (context ctx, buf packet) {
     generate OoO_DETECT:OoO_detection{ctx, pkt_info};
 }
 
-scope scope_1 <OoO_DETECT:OoO_detection>[flow_id];
+# scope scope_1 <OoO_DETECT:OoO_detection>[flow_id];
 
 # key: flow_id, value: state, size: 1;
 # this global variable currently only used in OoO_detection handler. In more complexed example, it can be shared across multiple handlers.
-[sync=scope_1] global table <bits<16>, flow_state_t, 16> flow_table;
 
-
-[sync=scope_1] handler OoO_DETECT:OoO_detection (context ctx, pkt_info_t pkt_info) {
+handler OoO_DETECT:OoO_detection (context ctx, pkt_info_t pkt_info) {
+    table <bits<16>, flow_state_t, 16> flow_table;
     flow_state_t flow_state;
     flow_state = flow_table.lookup(pkt_info.flow_id);
 
@@ -136,21 +135,19 @@ scope scope_1 <OoO_DETECT:OoO_detection>[flow_id];
 
     payload_bytes = pkt_info.pk_len - (trim_start + trim_end);
 
-    # if((trim_start <= pkt_info.pk_len) && payload_bytes > 0 ){
-    if(payload_bytes > 0 ){
-        dma_pos =  flow_state.rx_next_pos;
-        flow_state.rx_avail = flow_state.rx_avail - payload_bytes;
-        flow_state.rx_next_seq = flow_state.rx_next_seq + payload_bytes;
-        flow_state.rx_next_pos = flow_state.rx_next_pos + payload_bytes;
-        
-        dma_cmd.addr = dma_pos;
-        dma_cmd.size = payload_bytes;
-        # DMA WRITE this packet to host
-        generate DMA_WRITE:dma_wirte{ctx, ctx.packet, dma_cmd};
-    }
-    
-    if (trim_start <= pkt_info.pk_len)
-    {
+    # If not OoO receive
+    if(trim_start <= pkt_info.pk_len){
+        if(payload_bytes > 0 ){
+            dma_pos =  flow_state.rx_next_pos;
+            flow_state.rx_avail = flow_state.rx_avail - payload_bytes;
+            flow_state.rx_next_seq = flow_state.rx_next_seq + payload_bytes;
+            flow_state.rx_next_pos = flow_state.rx_next_pos + payload_bytes;
+            
+            dma_cmd.addr = dma_pos;
+            dma_cmd.size = payload_bytes;
+            # DMA WRITE this packet to host
+            generate DMA_WRITE:dma_wirte{ctx, ctx.packet, dma_cmd};
+        }
         flow_table.update(pkt_info.flow_id, flow_state);
         
         ack.seq = flow_state.tx_next_seq;
@@ -159,6 +156,7 @@ scope scope_1 <OoO_DETECT:OoO_detection>[flow_id];
 
         generate ACK_GEN:ack_gen{ctx, ack};
     }
+    
 }
 
 handler ACK_GEN:ack_gen (context ctx, ack_info_t ack){

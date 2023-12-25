@@ -330,10 +330,6 @@ void MulOp::print(mlir::OpAsmPrinter &p) { printBinaryOp(p, *this); }
 //===----------------------------------------------------------------------===//
 
 mlir::LogicalResult ReturnOp::verify() {
-  // We know that the parent operation is a function, because of the 'HasParent'
-  // trait attached to the operation definition.
-  auto function = cast<FuncOp>((*this)->getParentOp());
-
   /// ReturnOps can only have a single optional operand.
   if (getNumOperands() > 1)
     return emitOpError() << "expects at most 1 return operand";

@@ -644,7 +644,7 @@ def TerminateOp : EP2_Op<"terminate", [Pure, HasParent<"FuncOp">, Terminator]> {
   }];
 }
 
-def ReturnOp : EP2_Op<"return", [HasParent<"FuncOp">]> {
+def ReturnOp : EP2_Op<"return"> {
   let summary = "return operation";
   let description = [{
     The "return" operation represents a return operation within a function.
