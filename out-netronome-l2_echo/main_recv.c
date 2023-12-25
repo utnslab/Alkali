@@ -17,8 +17,8 @@ void __event___handler_NET_RECV_main_recv(struct __wrapper_arg_t* v1, struct __w
   int32_t v3;
   struct event_param_NET_RECV* v4;
   struct context_chain_1_t* v5;
-  char* v6;
-  char* v7;
+  struct __buf_t v6;
+  struct __buf_t v7;
   struct eth_header_t* v8;
   __xrw struct eth_header_t* v9;
   int48_t v10;
@@ -31,11 +31,13 @@ void __event___handler_NET_RECV_main_recv(struct __wrapper_arg_t* v1, struct __w
   v4 = v1->f1;
   v5 = v4->ctx;
   v6 = v4->f0;
-  v7 = alloc_packet_buffer();
+  v7 = alloc_packet_buf();
   v8 = &_loc_buf_0;
   v9 = &_loc_buf_0_xfer;
-  mem_read32(&v9->f0, v6+0, 12);
-  mem_read8(&v9->f2, v6+12, 2);
+  mem_read32(&v9->f0, v6.buf + v6.offs, 12);
+  v6.offs += 12;
+  mem_read8(&v9->f2, v6.buf + v6.offs, 2);
+  v6.offs += 2;
   *(v8) = *(v9);
   v10 = v8->f1;
   v11 = v8->f0;
@@ -43,9 +45,12 @@ void __event___handler_NET_RECV_main_recv(struct __wrapper_arg_t* v1, struct __w
   v8->f0 = v10;
   v14 = &_loc_buf_0_xfer;
   *(v14) = *(v8);
-  mem_write32(&v14->f0, v7+0, 12);
-  mem_write8(&v14->f2, v7+12, 2);
-  bulk_memcpy(v7+14, v6+14, (work.meta.len)-14);
+  mem_write32(&v14->f0, v7.buf + v7.offs, 12);
+  v7.offs += 12;
+  mem_write8(&v14->f2, v7.buf + v7.offs, 2);
+  v7.offs += 2;
+  bulk_memcpy(v7.buf + v7.offs, v6.buf + v6.offs, work.meta.len - v6.offs);
+  v7.offs += work.meta.len - v6.offs;
   v15 = &next_work;
   v2->f0 = v3;
   v2->f1 = v15;
@@ -62,7 +67,7 @@ int main(void) {
 		wrap_in.f1 = &work;
 		work.ctx = alloc_context_chain_ring_entry();
 		__event___handler_NET_RECV_main_recv(&wrap_in, &wrap_out);
-		next_work.meta.len = work.meta.len+0;
+		next_work.meta.len = next_work.f0.offs;
 		inlined_net_send(&next_work);
 	}
 }

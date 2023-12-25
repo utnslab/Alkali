@@ -1,8 +1,16 @@
 diff --git a/mlir/lib/Target/Cpp/TranslateToCpp.cpp b/mlir/lib/Target/Cpp/TranslateToCpp.cpp
-index 4645ca4b2..02f5d9c64 100644
+index 4645ca4b2..bf7838ebe 100644
 --- a/mlir/lib/Target/Cpp/TranslateToCpp.cpp
 +++ b/mlir/lib/Target/Cpp/TranslateToCpp.cpp
-@@ -417,9 +417,78 @@ static LogicalResult printOperation(CppEmitter &emitter, emitc::CallOp callOp) {
+@@ -24,6 +24,7 @@
+ #include "llvm/Support/Debug.h"
+ #include "llvm/Support/FormatVariadic.h"
+ #include <utility>
++#include <cassert>
+ 
+ #define DEBUG_TYPE "translate-to-cpp"
+ 
+@@ -417,9 +418,98 @@ static LogicalResult printOperation(CppEmitter &emitter, emitc::CallOp callOp) {
    raw_ostream &os = emitter.ostream();
    Operation &op = *callOp.getOperation();
  
@@ -52,24 +60,29 @@ index 4645ca4b2..02f5d9c64 100644
 +    // extract real name
 +    llvm::StringRef realCallee = callOp.getCallee().substr(20);
 +    os << realCallee << "(";
-+    int xferOffset = (*callOp.getArgs())[1].cast<IntegerAttr>().getValue().getSExtValue();
++    int xferOffset = (*callOp.getArgs())[0].cast<IntegerAttr>().getValue().getSExtValue();
++    int tag = (*callOp.getArgs())[2].cast<IntegerAttr>().getValue().getSExtValue();
++
 +    if (xferOffset >= 0) {
 +      // a pointer arithmetic
-+      os << emitter.getOrCreateName(op.getOperand(0)) << '+';
-+      os << (*callOp.getArgs())[1].cast<IntegerAttr>().getValue() << ", ";
++      os << emitter.getOrCreateName(op.getOperand(0)) << ".buf + ";
++      if (tag == 2) {
++        os << emitter.getOrCreateName(op.getOperand(0)) << ".offs, ";
++      } else {
++        os << xferOffset << ", ";
++      }
 +    } else {
 +      xferOffset = ~xferOffset;
 +      os << "&" << emitter.getOrCreateName(op.getOperand(0)) << "->f" << xferOffset << ", ";
 +    }
-+    os << emitter.getOrCreateName(op.getOperand(1)) << '+';
-+    os << (*callOp.getArgs())[0].cast<IntegerAttr>().getValue() << ", ";
++    os << emitter.getOrCreateName(op.getOperand(1)) << ".buf + ";
++    os << emitter.getOrCreateName(op.getOperand(1)) << ".offs, ";
 +
-+    int sz = (*callOp.getArgs())[2].cast<IntegerAttr>().getValue().getSExtValue();
-+    if (sz >= 0) {
++    int sz = (*callOp.getArgs())[1].cast<IntegerAttr>().getValue().getSExtValue();
++    if (tag != 2) {
 +      os << sz;
 +    } else {
-+      // meta & 0xfflen-this_value
-+      os << "(work.meta.len)-" << (-sz);
++      os << "work.meta.len - " << emitter.getOrCreateName(op.getOperand(1)) << ".offs";
 +    }
 +    os << ")";
 +    return success();
@@ -78,13 +91,28 @@ index 4645ca4b2..02f5d9c64 100644
 +    os << "*(" << emitter.getOrCreateName(op.getOperand(1)) << ") = *(";
 +    os << emitter.getOrCreateName(op.getOperand(0)) << ")";
 +    return success();
++  } else if (callOp.getCallee() == "__ep2_intrin_incr_offs") {
++    int sz = (*callOp.getArgs())[1].cast<IntegerAttr>().getValue().getSExtValue();
++    int tag = (*callOp.getArgs())[0].cast<IntegerAttr>().getValue().getSExtValue();
++    os << emitter.getOrCreateName(op.getOperand(0)) << ".offs += ";
++    if (tag != 2) {
++      os << sz;
++    } else {
++      os << "work.meta.len - " << emitter.getOrCreateName(op.getOperand(1)) << ".offs";
++    }
++    return success();
++  } else if (callOp.getCallee() == "__ep2_intrin_ternary") {
++    os << "(" << emitter.getOrCreateName(op.getOperand(0)) << " ? ";
++    os << emitter.getOrCreateName(op.getOperand(1)) << " : ";
++    os << emitter.getOrCreateName(op.getOperand(2)) << ")";
++    return success();
 +  } else {
 +    os << callOp.getCallee();
 +  }
  
    auto emitArgs = [&](Attribute attr) -> LogicalResult {
      if (auto t = dyn_cast<IntegerAttr>(attr)) {
-@@ -451,10 +520,15 @@ static LogicalResult printOperation(CppEmitter &emitter, emitc::CallOp callOp) {
+@@ -451,10 +541,15 @@ static LogicalResult printOperation(CppEmitter &emitter, emitc::CallOp callOp) {
  
    os << "(";
  
@@ -104,7 +132,7 @@ index 4645ca4b2..02f5d9c64 100644
    if (failed(emittedArgs))
      return failure();
    os << ")";
-@@ -1050,6 +1124,7 @@ LogicalResult CppEmitter::emitType(Location loc, Type type) {
+@@ -1050,6 +1145,7 @@ LogicalResult CppEmitter::emitType(Location loc, Type type) {
      case 8:
      case 16:
      case 32:

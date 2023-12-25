@@ -13,6 +13,7 @@
 #include <fstream>
 #include <string>
 #include <cassert>
+#include <optional>
 
 using namespace mlir;
 
@@ -42,9 +43,9 @@ void EmitNetronomePass::runOnOperation() {
     return;
   }
 
+  std::optional<int> recvBufOffs;
   std::string basePath = basePathOpt.getValue();
   const CollectInfoAnalysis& info = getCachedAnalysis<CollectInfoAnalysis>().value();
-  const ExtrEmitOffsetAnalysis& offsetInfo = getCachedAnalysis<ExtrEmitOffsetAnalysis>().value();
 
   {
     std::ofstream fout_prog_hdr(basePath + "/prog_hdr.h");
@@ -67,6 +68,11 @@ void EmitNetronomePass::runOnOperation() {
     fout_prog_hdr << "\tint32_t f0;\n"; // atom
     fout_prog_hdr << "\tchar* f1;\n"; // ptr to event
     fout_prog_hdr << "};\n\n";
+
+    fout_prog_hdr << "__packed struct __buf_t {\n";
+    fout_prog_hdr << "\tchar* buf;\n";
+    fout_prog_hdr << "\tunsigned offs;\n";
+    fout_prog_hdr << "};\n\n";
     
     // emit structs
     for (const auto& pr : info.structDefs) {
@@ -75,9 +81,10 @@ void EmitNetronomePass::runOnOperation() {
       unsigned width = 0;
       for (int i = 0; i<pr.second.getBody().size(); ++i) {
         mlir::Type ty = pr.second.getBody()[i];
-        if (isa<LLVM::LLVMPointerType>(ty)) {
+        if (isa<LLVM::LLVMStructType>(ty)) {
           // TODO assume buffer is the only ptr for now.
-          fout_prog_hdr << "\tchar*" << " f" << i << ";\n";
+          if (pr.first.find("NET_SEND") != std::string::npos) recvBufOffs = i;
+          fout_prog_hdr << "\tstruct __buf_t" << " f" << i << ";\n";
         } else if (isa<mlir::IntegerType>(ty)) {
           fout_prog_hdr << "\tint" << cast<mlir::IntegerType>(ty).getWidth() << "_t f" << i << ";\n";
           // only add here, ptrs are guaranteed to be modulo 4.
@@ -135,6 +142,12 @@ void EmitNetronomePass::runOnOperation() {
     fout_prog_hdr << "\traddr_hi = MEM_RING_GET_MEMADDR(" << declName << ");\n";
     fout_prog_hdr << "\twhile (mem_ring_get(rnum, raddr_hi, &context_idx, sizeof(context_idx)) != 0);\n";
     fout_prog_hdr << "\treturn &" << declId << "[context_idx];\n";
+    fout_prog_hdr << "}\n\n";
+    fout_prog_hdr << "__forceinline static struct __buf_t alloc_packet_buf() {\n";
+    fout_prog_hdr << "\tstruct __buf_t buf;\n";
+    fout_prog_hdr << "\tbuf.buf = alloc_packet_buffer();\n";
+    fout_prog_hdr << "\tbuf.offs = 0;\n";
+    fout_prog_hdr << "\treturn buf;\n";
     fout_prog_hdr << "}\n\n";
     fout_prog_hdr << "#endif\n";
   }
@@ -228,18 +241,8 @@ void EmitNetronomePass::runOnOperation() {
           fout_stage << "\t\tnext_work_ref = next_work;\n";
           fout_stage << "\t\tcls_workq_add_work(WORKQ_ID_" << nextEventName << ", &next_work_ref, sizeof(next_work_ref));\n";
         } else {
-          // if no negative size, no buffer emit.
-          // just get biggest size.
-          bool addOrig = false;
-          int size = 0;
-          for (const auto& pr : offsetInfo.emitOffsets) {
-            if (pr.second.second < 0) {
-              addOrig = true;
-            }
-            size += pr.second.second;
-          }
-
-          fout_stage << "\t\tnext_work.meta.len = " << (addOrig ? "work.meta.len+" : "") << size << ";\n";
+          assert(recvBufOffs.has_value());
+          fout_stage << "\t\tnext_work.meta.len = next_work.f" << recvBufOffs.value() << ".offs;\n";
           fout_stage << "\t\tinlined_net_send(&next_work);\n";
         }
       }

@@ -3,6 +3,8 @@
 #include "extern/extern_dma.h"
 #include "extern/extern_net.h"
 
+unsigned extr_offset = 0;
+unsigned emit_offset = 0;
 __declspec(aligned(4)) struct event_param_USER_EVENT1 work;
 __xrw struct event_param_USER_EVENT1 work_ref;
 struct __wrapper_arg_t wrap_in;

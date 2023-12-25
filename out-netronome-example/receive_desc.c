@@ -5,6 +5,8 @@
 
 struct recv_desc_t _loc_buf_0;
 __xrw struct recv_desc_t _loc_buf_0_xfer;
+unsigned extr_offset = 0;
+unsigned emit_offset = 0;
 __declspec(aligned(4)) struct event_param_DMA_RECV_CMPL work;
 __xrw struct event_param_DMA_RECV_CMPL work_ref;
 struct __wrapper_arg_t wrap_in;
@@ -14,8 +16,8 @@ struct __wrapper_arg_t wrap_out;
 
 __forceinline
 void __event___handler_DMA_RECV_CMPL_receive_desc(struct __wrapper_arg_t* v1, struct __wrapper_arg_t* v2) {
-  int64_t v3;
-  int32_t v4;
+  int32_t v3;
+  int64_t v4;
   struct event_param_DMA_RECV_CMPL* v5;
   struct context_chain_1_t* v6;
   char* v7;
@@ -26,14 +28,15 @@ void __event___handler_DMA_RECV_CMPL_receive_desc(struct __wrapper_arg_t* v1, st
   int32_t v12;
   int32_t v13;
   struct event_param_USER_EVENT1* v14;
-  v3 = 100;
-  v4 = 1;
+  v3 = 1;
+  v4 = 100;
   v5 = v1->f1;
   v6 = v5->ctx;
   v7 = v5->f0;
   v8 = &_loc_buf_0;
   v9 = &_loc_buf_0_xfer;
-  mem_read32(&v9->f0, v7+0, 16);
+  mem_read32(&v9->f0, v7+extr_offset, 16);
+  extr_offset += 16;
   *(v8) = *(v9);
   v10 = v8->f0;
   v6->f0 = v10;
@@ -44,10 +47,10 @@ void __event___handler_DMA_RECV_CMPL_receive_desc(struct __wrapper_arg_t* v1, st
   v13 = v8->f3;
   v6->f3 = v13;
   v14 = &next_work;
-  v2->f0 = v4;
+  v2->f0 = v3;
   v2->f1 = v14;
   v14->ctx = v6;
-  v14->f0 = v3;
+  v14->f0 = v4;
   return;
 }
 

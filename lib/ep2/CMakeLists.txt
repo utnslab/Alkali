@@ -23,7 +23,6 @@ add_mlir_dialect_library(MLIREP2
         LowerMemcpyPass.cpp
         AtomAnalysis.cpp
         LocalAllocAnalysis.cpp
-        ExtrEmitOffsetAnalysis.cpp
 
         DEPENDS
         MLIREP2OpsIncGen

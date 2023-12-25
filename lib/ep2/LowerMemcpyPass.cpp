@@ -12,6 +12,7 @@
 
 #include <cassert>
 #include <string>
+#include <climits>
 #include <algorithm>
 
 using namespace mlir;
@@ -54,12 +55,13 @@ struct LowerMemcpyPattern : public OpRewritePattern<emitc::CallOp> {
       if ((op = followUpdateOps(op)) == nullptr) {
         return false;
       }
-      if (!isa<emitc::CallOp>(op)) {
+      if (isa<emitc::VariableOp>(op)) {
+        emitc::VariableOp varOp = cast<emitc::VariableOp>(op);
+        if (varOp.getValue().cast<emitc::OpaqueAttr>().getValue().contains("alloc_packet_buf")) {
+          return true;
+        }
+      } else if (!isa<emitc::CallOp>(op)) {
         return false;
-      }
-      emitc::CallOp callOp = cast<emitc::CallOp>(op);
-      if (callOp.getCallee() == "alloc_packet_buffer") {
-        return true;
       }
       // trace back to wrapper
       while (op != nullptr) {
@@ -93,17 +95,24 @@ struct LowerMemcpyPattern : public OpRewritePattern<emitc::CallOp> {
       return 0;
     };
 
-    auto emitMemIntrinsic = [&, this](std::string intrinsic, bool isWrite, mlir::Operation* xfer, int srcOffs, int dstOffs, int sz) {
+    auto emitMemIntrinsic = [&, this](std::string intrinsic, bool isWrite, mlir::Operation* xfer, int offs, int sz) {
       std::string structType = cast<emitc::OpaqueType>(cast<emitc::PointerType>(xfer->getResult(0).getType()).getPointee()).getValue().str();
       structType = structType.substr(structType.find("struct ")+7);
-      int memberNum = translateStructOffset(isWrite ? srcOffs : dstOffs, structType);
+      int memberNum = translateStructOffset(offs, structType);
 
+      int tag = op.getArgs().value().getValue()[2].cast<IntegerAttr>().getValue().getLimitedValue();
       llvm::SmallVector<Type> resTypes = {};
       // convey to cpp translator to generate member offset here
-      mlir::ArrayAttr args = rewriter.getI32ArrayAttr({isWrite ? dstOffs : srcOffs, ~memberNum, sz});
+      mlir::ArrayAttr args = rewriter.getI32ArrayAttr({~memberNum, sz, tag});
       mlir::ArrayAttr templ_args;
 
       rewriter.create<emitc::CallOp>(op->getLoc(), resTypes, rewriter.getStringAttr(intrinsic), args, templ_args, ValueRange{xfer->getResult(0), isWrite ? op->getOperand(0) : op->getOperand(1)});
+
+      // emit increment
+      llvm::SmallVector<Type> resTypes3 = {};
+      mlir::ArrayAttr args3 = rewriter.getI32ArrayAttr({isWrite, sz});
+      mlir::ArrayAttr templ_args3;
+      rewriter.create<emitc::CallOp>(op->getLoc(), resTypes3, rewriter.getStringAttr("__ep2_intrin_incr_offs"), args3, templ_args3, ValueRange{isWrite ? op->getOperand(0) : op->getOperand(1)});
     };
 
     auto decomposeMemcpy = [&, this](bool isWrite, mlir::Operation* xfer) {
@@ -111,25 +120,22 @@ struct LowerMemcpyPattern : public OpRewritePattern<emitc::CallOp> {
       opPrefix = "__ep2_intrin_memcpy_mem_" + opPrefix;
 
       const auto& args = op.getArgs().value().getValue();
-      int sz = args[2].cast<IntegerAttr>().getValue().getLimitedValue();
+      int sz = args[1].cast<IntegerAttr>().getValue().getLimitedValue();
       assert(sz >= 0);
-      int off0 = args[0].cast<IntegerAttr>().getValue().getLimitedValue();
-      int off1 = args[1].cast<IntegerAttr>().getValue().getLimitedValue();
+      int off = args[0].cast<IntegerAttr>().getValue().getLimitedValue();
 
       // Netronome supports r/w aligned to 64,32,8-bit boundaries.
       // For simplicity, just use 32,8-bit. Max size is 128
       while (sz > 0) {
         if (sz >= 4) {
           int sz32 = std::min(128, (sz/4)*4);
-          emitMemIntrinsic(opPrefix + std::string{"32"}, isWrite, xfer, off0, off1, sz32);
+          emitMemIntrinsic(opPrefix + std::string{"32"}, isWrite, xfer, off, sz32);
           sz -= sz32;
-          off0 += sz32;
-          off1 += sz32;
+          off += sz32;
         } else if (sz >= 1) {
-          emitMemIntrinsic(opPrefix + std::string{"8"}, isWrite, xfer, off0, off1, sz);
+          emitMemIntrinsic(opPrefix + std::string{"8"}, isWrite, xfer, off, sz);
           sz = 0;
-          off0 += sz;
-          off1 += sz;
+          off += sz;
         }
       }
     };
@@ -145,7 +151,14 @@ struct LowerMemcpyPattern : public OpRewritePattern<emitc::CallOp> {
       llvm::SmallVector<Type> resTypes = {};
       mlir::ArrayAttr args = op.getArgs().value();
       mlir::ArrayAttr templ_args;
-      rewriter.replaceOpWithNewOp<emitc::CallOp>(op, resTypes, rewriter.getStringAttr("__ep2_intrin_memcpy_bulk_memcpy"), args, templ_args, op->getOperands());
+      auto bulkMemcpy = rewriter.create<emitc::CallOp>(op->getLoc(), resTypes, rewriter.getStringAttr("__ep2_intrin_memcpy_bulk_memcpy"), args, templ_args, op->getOperands());
+
+      llvm::SmallVector<Type> resTypes3 = {};
+      mlir::ArrayAttr args3 = rewriter.getI32ArrayAttr({2, INT32_MIN});
+      mlir::ArrayAttr templ_args3;
+      rewriter.create<emitc::CallOp>(op->getLoc(), resTypes3, rewriter.getStringAttr("__ep2_intrin_incr_offs"), args3, templ_args3, op->getOperands());
+
+      rewriter.replaceOp(op, bulkMemcpy);
     } else if (isLocBuf(opd0) && isRtBuf(opd1)) {
       // Copy from mem to transfer register (assume packet buffers stored in EMEM).
       // Assume rt_buf is aligned at alloc wide enough.

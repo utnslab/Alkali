@@ -14,6 +14,11 @@ __packed struct __wrapper_arg_t {
 	char* f1;
 };
 
+__packed struct __buf_t {
+	char* buf;
+	unsigned offs;
+};
+
 __packed struct context_chain_1_t {
 	int32_t ctx_id;
 };
@@ -26,13 +31,13 @@ __packed struct eth_header_t {
 };
 
 __packed struct event_param_NET_RECV {
-	char* f0;
+	struct __buf_t f0;
 	struct recv_meta_t meta;
 	struct context_chain_1_t* ctx;
 };
 
 __packed struct event_param_NET_SEND {
-	char* f0;
+	struct __buf_t f0;
 	struct send_meta_t meta;
 	struct context_chain_1_t* ctx;
 };
@@ -58,6 +63,13 @@ __forceinline static struct context_chain_1_t* alloc_context_chain_ring_entry() 
 	raddr_hi = MEM_RING_GET_MEMADDR(context_chain_ring);
 	while (mem_ring_get(rnum, raddr_hi, &context_idx, sizeof(context_idx)) != 0);
 	return &context_chain_pool[context_idx];
+}
+
+__forceinline static struct __buf_t alloc_packet_buf() {
+	struct __buf_t buf;
+	buf.buf = alloc_packet_buffer();
+	buf.offs = 0;
+	return buf;
 }
 
 #endif

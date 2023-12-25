@@ -91,6 +91,12 @@ CollectInfoAnalysis::CollectInfoAnalysis(Operation* module, AnalysisManager& am)
       if (doInsert) {
         auto charType = builder.getI8Type();
         auto charPtrType = LLVM::LLVMPointerType::get(charType);
+        auto u32Type = builder.getI32Type();
+        auto bufType = LLVM::LLVMStructType::getIdentified(module->getContext(), "__buf_t");
+        llvm::SmallVector<mlir::Type> sTypes = {charPtrType, u32Type};
+        auto bRes = bufType.setBody(sTypes, true);
+        assert(bRes.succeeded());
+
         std::string name = "event_param_" + wrapType.getName().str();
 
         llvm::SmallVector<mlir::Type> types;
@@ -98,7 +104,7 @@ CollectInfoAnalysis::CollectInfoAnalysis(Operation* module, AnalysisManager& am)
         unsigned ctr = 0;
         for (mlir::Type ty : wrapType.getBody()) {
           if (isa<ep2::BufferType>(ty)) {
-            types.push_back(charPtrType);
+            types.push_back(bufType);
           } else {
             if (ty.isIntOrFloat()) {
               typeBitWidths.insert(ty.getIntOrFloatBitWidth());

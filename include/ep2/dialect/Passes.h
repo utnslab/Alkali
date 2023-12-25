@@ -322,17 +322,6 @@ struct LocalAllocAnalysis {
   LocalAllocAnalysis(Operation* op, AnalysisManager& am);
 };
 
-struct ExtrEmitOffsetAnalysis {
-  std::unordered_map<mlir::Operation*, std::pair<unsigned, int>> extrOffsets;
-  std::unordered_map<mlir::Operation*, std::pair<unsigned, int>> emitOffsets;
-
-  ExtrEmitOffsetAnalysis(Operation* op, AnalysisManager& am);
-
-  bool isInvalidated(const AnalysisManager::PreservedAnalyses &pa) {
-    return false;
-  }
-};
-
 } // namespace ep2
 } // namespace mlir
 
