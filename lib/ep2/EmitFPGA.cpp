@@ -793,6 +793,10 @@ void EmitFPGAPass::emitBBCondBranch(std::ofstream &file, cf::CondBranchOp condbr
   auto true_param_list = condbranchop.getTrueOperands();
   auto false_param_list = condbranchop.getFalseOperands();
 
+  // cond value is not used, just assign 1 to tready
+  auto cond_name = getValName(cond);
+    file << " assign " << cond_name << "_tready"
+         << " = 1" << ";\n";
   for(int i = 0; i < true_param_list.size(); i ++){
     auto true_param = true_param_list[i];
     auto bb_wire = getBBDemuxInputWire(true_bb, i);
@@ -960,11 +964,13 @@ void EmitFPGAPass::emitIfElse(std::ofstream &file, scf::IfOp ifop){
 
         i ++;
       }
-      
+}
 
-
-
-      // y.walk()
+void  EmitFPGAPass::emitSink(std::ofstream &file, ep2::SinkOp sinkop){
+  auto val = sinkop.getOperand(0);
+  auto val_name = getValName(val);
+  file << " assign " << val_name << "_tready"
+         << " = 1" << ";\n";
 }
 
 void EmitFPGAPass::emitOp(std::ofstream &file, mlir::Operation *op){
@@ -1012,7 +1018,10 @@ void EmitFPGAPass::emitOp(std::ofstream &file, mlir::Operation *op){
   } else if (isa<cf::BranchOp>(op)){
     auto branchop = cast<cf::BranchOp, mlir::Operation *>(op);
     emitBBBranch(file, branchop);
-  } 
+  } else if (isa<ep2::SinkOp>(op)){
+    auto sinkop = cast<ep2::SinkOp, mlir::Operation *>(op);
+    emitSink(file, sinkop);
+  }
   // TODO: Change STURCT ACCESS IR to generate new stream for each accessed
     // struct
 }
@@ -1102,7 +1111,7 @@ void EmitFPGAPass::emitBBInputDemux(std::ofstream &file, ep2::FuncOp funcOp){
       params.push_back({"PORT_COUNT", port_count});
       params.push_back({"IF_STREAM", if_stream});
       if(arg_count == 0 )
-        params.push_back({"LOCAL_PRED_OUT_PORT_COUNT", totoal_arg_count - 1});
+        params.push_back({"IF_LOCAL_PRED_OUT", totoal_arg_count > 1});
       
       emitModuleCall(file, module_name, "BB" + std::to_string(bb_count) + "demux_arg" + std::to_string(arg_count), ports, params);
 

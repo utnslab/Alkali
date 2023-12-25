@@ -248,6 +248,7 @@ private:
   void emitConst(std::ofstream &file, ep2::ConstantOp constop);
   void emitArithmetic(std::ofstream &file, mlir::Operation *op);
   void emitIfElse(std::ofstream &file, scf::IfOp ifop);
+  void emitSink(std::ofstream &file, ep2::SinkOp sinkop);
   void emitHandler(ep2::FuncOp funcOp);
   void emitController(ep2::FuncOp funcOp);
 
