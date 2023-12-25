@@ -459,7 +459,7 @@ std::string EmitFPGAPass::getValName(mlir::Value val) {
     assert(false);
   }
   auto name_and_uses = val_names_and_useid[val];
-  if(name_and_uses.cur_use >  name_and_uses.total_uses){
+  if(name_and_uses.cur_use >=  name_and_uses.total_uses){
     printf("Error: val %s's use exceed totoal use\n", name_and_uses.name.c_str());
     assert(false);
   }

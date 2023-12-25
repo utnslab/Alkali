@@ -647,19 +647,21 @@ void EmitFPGAPass::emitArithmetic(std::ofstream &file,
     rval.dump();
     assert(false);
   }
+  auto lval_name = getValName(lval);
   lval_axis = {0, 0, lval_size};
-  lval_wire = {AXIS,  getValName(lval), "Arithmetic OP lval",
+  lval_wire = {AXIS, lval_name, "Arithmetic OP lval",
                      false, -1, false,           lval_axis};
   lval_port = {AXIS,
-                     {getValName(lval)},
+                     {lval_name},
                      "lval input",
                      "s_lval_axis",
                      lval_axis};
+  auto rval_name = getValName(rval);
   rval_axis = {0, 0, rval_size};
-  rval_wire = {AXIS,  getValName(rval), "Arithmetic OP rval",
+  rval_wire = {AXIS,  rval_name, "Arithmetic OP rval",
                      false, -1, false,           rval_axis};
   rval_port = {AXIS,
-                     {getValName(rval)},
+                     {rval_name},
                      "rval input",
                      "s_rval_axis",
                      rval_axis};
