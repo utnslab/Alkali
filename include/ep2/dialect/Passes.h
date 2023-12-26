@@ -54,6 +54,121 @@ struct LowerStructAnalysis {
     std::map<std::pair<std::string, std::string>, llvm::SmallVector<LLVM::LLVMStructType>> ioTypes;
 };
 
+// Handler dependency analysis pass
+struct HandlerDependencyAnalysis {
+
+  // Struct for fullname
+  struct HandlerFullName {
+    llvm::StringRef event;
+    llvm::StringRef atom = "";
+
+    friend bool operator<(const HandlerFullName &l, const HandlerFullName &r) {
+      return std::tie(l.event, l.atom) < std::tie(r.event, r.atom);
+    }
+    std::string mangle() { 
+      auto surffix = atom == "" ? "" : "_" + atom;
+      return ("__handler_" + event + surffix).str();
+    }
+
+    HandlerFullName(std::string event, std::string atom = "") : event(event), atom(atom) {}
+    HandlerFullName(FuncOp funcOp);
+    HandlerFullName(ReturnOp returnOp);
+    HandlerFullName(InitOp initOp);
+  };
+
+  using KeyTy = FuncOp;
+  using EdgeTy = FuncOp;
+  using GraphType = std::map<KeyTy, std::vector<EdgeTy>>;
+  using OrderType = std::vector<FuncOp>;
+
+  GraphType graph;
+  std::vector<GraphType> subGraphs;
+  std::vector<std::vector<FuncOp>> subGraphsOrder;
+  std::unordered_map<std::string, std::string> eventDeps;
+
+  std::map<HandlerFullName, FuncOp> handlersMap;
+  bool hasSuccessor(llvm::StringRef eventName) {
+    auto it = std::find_if(handlersMap.begin(), handlersMap.end(), [&](auto &pr) {
+      return pr.first.event == eventName;
+    });
+    return it != handlersMap.end() && !it->second.isExtern();
+  }
+  bool hasPredecessor(FuncOp funcOp) {
+    HandlerFullName name(funcOp);
+    return llvm::count_if(graph, [&](auto &pr){
+      // cast away const
+      Operation *op = pr.first;
+      return !cast<FuncOp>(op).isExtern() &&
+             llvm::count_if(pr.second, [&](FuncOp op) { return op == funcOp; });
+    });
+  }
+
+  HandlerDependencyAnalysis(Operation *op);
+
+  size_t numComponents() { return subGraphs.size(); }
+
+  template <typename F>
+  void forEachComponent(F f) {
+    for (size_t i = 0; i < subGraphs.size(); ++i)
+      f(i, subGraphs[i], subGraphsOrder[i]);
+  }
+
+  void dump() {
+    llvm::errs() << "Found " << subGraphs.size() << " connected components\n";
+    for (size_t i = 0; i < subGraphs.size(); ++i) {
+      llvm::errs() << "Component " << i << " " << subGraphs[i].size() << " "
+                   << subGraphsOrder.size() << "\n";
+    }
+
+    for (auto &[handler, edges] : graph) {
+      Operation *op = handler;
+      auto funcOp = dyn_cast<FuncOp>(op);
+      llvm::errs() << "Handler " << funcOp.getSymName().str() << " has "
+                   << edges.size() << " edges\n";
+      for (auto &target : edges) {
+        Operation *op = target;
+        auto funcOp = dyn_cast<FuncOp>(op);
+        llvm::errs() << "  " << funcOp.getSymName().str() << "\n";
+      }
+    }
+  }
+
+private:
+  void getConnectedComponents();
+};
+
+/// Analysis for context
+struct ContextBufferizationAnalysis {
+  using TableT = llvm::StringMap<std::pair<int, mlir::Type>>;
+
+  std::vector<TableT> contextTables;
+  std::map<std::string, TableT&> contextMap;
+  AnalysisManager& am;
+
+  ContextBufferizationAnalysis(Operation* op, AnalysisManager& am);
+  std::pair<int, mlir::Type> getContextType(FunctionOpInterface funcOp, StringRef name);
+  TableT &getContextTable(std::string mangledName);
+  TableT &getContextTable(FunctionOpInterface funcOp);
+  TableT &getContextTable(InitOp initOp);
+  StructType getContextAsStruct(FunctionOpInterface op);
+
+  void invalidate() {
+    AnalysisManager::PreservedAnalyses preserved;
+    preserved.preserve<HandlerDependencyAnalysis>();
+    am.invalidate(preserved);
+  }
+  void dump() {
+    for (auto &[opName, table] : contextMap) {
+      llvm::errs() << "Context table for " << opName << "\n";
+      for (auto &[name, pr] : table) {
+        llvm::errs() << "  " << name << " : ";
+        pr.second.dump();
+      }
+    }
+    llvm::errs() << "\n";
+  }
+};
+
 ///////////////////
 // Passes
 ///////////////////
@@ -61,6 +176,8 @@ struct LowerStructAnalysis {
 struct ContextToArgumentPass :
         public PassWrapper<ContextToArgumentPass, OperationPass<ModuleOp>> {
     void runOnOperation() final;
+    void runOnFunction(FuncOp funcOp, ContextBufferizationAnalysis &analysis,
+                       HandlerDependencyAnalysis &dependency);
     void getDependentDialects(DialectRegistry &registry) const override {
         registry.insert<EP2Dialect, scf::SCFDialect, cf::ControlFlowDialect>();
     }
@@ -170,88 +287,6 @@ struct EmitNetronomePass :
       *this, "basePath", llvm::cl::desc("Base path for generated files")};
 };
 
-// Handler dependency analysis pass
-struct HandlerDependencyAnalysis {
-
-  // Struct for fullname
-  struct HandlerFullName {
-    llvm::StringRef event;
-    llvm::StringRef atom = "";
-
-    friend bool operator<(const HandlerFullName &l, const HandlerFullName &r) {
-      return std::tie(l.event, l.atom) < std::tie(r.event, r.atom);
-    }
-    std::string mangle() { 
-      auto surffix = atom == "" ? "" : "_" + atom;
-      return ("__handler_" + event + surffix).str();
-    }
-
-    HandlerFullName(std::string event, std::string atom = "") : event(event), atom(atom) {}
-    HandlerFullName(FuncOp funcOp);
-    HandlerFullName(ReturnOp returnOp);
-    HandlerFullName(InitOp initOp);
-  };
-
-  using KeyTy = FuncOp;
-  using EdgeTy = FuncOp;
-  using GraphType = std::map<KeyTy, std::vector<EdgeTy>>;
-  using OrderType = std::vector<FuncOp>;
-
-  GraphType graph;
-  std::vector<GraphType> subGraphs;
-  std::vector<std::vector<FuncOp>> subGraphsOrder;
-  std::unordered_map<std::string, std::string> eventDeps;
-
-  std::map<HandlerFullName, FuncOp> handlersMap;
-  bool hasSuccessor(std::string eventName) {
-    auto it = std::find_if(handlersMap.begin(), handlersMap.end(), [&](auto &pr) {
-      return pr.first.event == eventName;
-    });
-    return it == handlersMap.end() || it->second.isExtern();
-  }
-  bool hasPredecessor(FuncOp funcOp) {
-    HandlerFullName name(funcOp);
-    return llvm::count_if(graph, [&](auto &pr){
-      // cast away const
-      Operation *op = pr.first;
-      return !cast<FuncOp>(op).isExtern() &&
-             llvm::count_if(pr.second, [&](FuncOp op) { return op == funcOp; });
-    });
-  }
-
-  HandlerDependencyAnalysis(Operation *op);
-
-  size_t numComponents() { return subGraphs.size(); }
-
-  template <typename F>
-  void forEachComponent(F f) {
-    for (size_t i = 0; i < subGraphs.size(); ++i)
-      f(i, subGraphs[i], subGraphsOrder[i]);
-  }
-
-  void dump() {
-    llvm::errs() << "Found " << subGraphs.size() << " connected components\n";
-    for (size_t i = 0; i < subGraphs.size(); ++i) {
-      llvm::errs() << "Component " << i << " " << subGraphs[i].size() << " "
-                   << subGraphsOrder.size() << "\n";
-    }
-
-    for (auto &[handler, edges] : graph) {
-      Operation *op = handler;
-      auto funcOp = dyn_cast<FuncOp>(op);
-      llvm::errs() << "Handler " << funcOp.getSymName().str() << " has "
-                   << edges.size() << " edges\n";
-      for (auto &target : edges) {
-        Operation *op = target;
-        auto funcOp = dyn_cast<FuncOp>(op);
-        llvm::errs() << "  " << funcOp.getSymName().str() << "\n";
-      }
-    }
-  }
-
-private:
-  void getConnectedComponents();
-};
 
 // Handler dependency analysis pass
 struct HandlerInOutAnalysis {
@@ -278,37 +313,6 @@ struct TableAnalysis {
   TableAnalysis(Operation* op);
 };
 
-/// Analysis for context
-struct ContextBufferizationAnalysis {
-  using TableT = llvm::StringMap<std::pair<int, mlir::Type>>;
-
-  std::vector<TableT> contextTables;
-  std::map<std::string, TableT&> contextMap;
-  AnalysisManager& am;
-
-  ContextBufferizationAnalysis(Operation* op, AnalysisManager& am);
-  std::pair<int, mlir::Type> getContextType(FunctionOpInterface funcOp, StringRef name);
-  TableT &getContextTable(std::string mangledName);
-  TableT &getContextTable(FunctionOpInterface funcOp);
-  TableT &getContextTable(InitOp initOp);
-  StructType getContextAsStruct(FunctionOpInterface op);
-
-  void invalidate() {
-    AnalysisManager::PreservedAnalyses preserved;
-    preserved.preserve<HandlerDependencyAnalysis>();
-    am.invalidate(preserved);
-  }
-  void dump() {
-    for (auto &[opName, table] : contextMap) {
-      llvm::errs() << "Context table for " << opName << "\n";
-      for (auto &[name, pr] : table) {
-        llvm::errs() << "  " << name << " : ";
-        pr.second.dump();
-      }
-    }
-    llvm::errs() << "\n";
-  }
-};
 
 struct AtomAnalysis {
   llvm::StringMap<size_t> atomToNum;

@@ -20,38 +20,51 @@ namespace ep2 {
 
 namespace {
   void reRefBuffers(FuncOp funcOp) {
-    std::vector<Value> buffers{};
-    for (auto &ba : funcOp.getArguments())
-      if (ba.getType().isa<BufferType>())
-        buffers.push_back(ba);
-    funcOp.walk([&](InitOp initOp) {
-      if (initOp.getType().isa<BufferType>())
-        buffers.push_back(initOp.getResult());
-    });
+    if (funcOp.isExtern())
+      return;
 
+    // insert all buffers from function arugments
     OpBuilder builder(funcOp);
     builder.setInsertionPointToStart(&funcOp.getBody().front());
-    for (auto &buf : buffers) {
-      auto reRefOp = builder.create<ReRefOp>(
-          funcOp.getLoc(), builder.getType<BufferType>(), buf);
-      
+    std::vector<std::pair<Value, Value>> buffers{};
+    for (auto &ba : funcOp.getArguments()) {
+      if (ba.getType().isa<BufferType>()) {
+        auto reRefOp = builder.create<ReRefOp>(
+            funcOp.getLoc(), builder.getType<BufferType>(), ba);
+        buffers.emplace_back(ba, reRefOp);
+      }
+    }
+
+    // insert all buffers from init ops
+    funcOp.walk([&](InitOp initOp) {
+      if (initOp.getType().isa<BufferType>()) {
+        builder.setInsertionPointAfter(initOp);
+        auto reRefOp = builder.create<ReRefOp>(
+            initOp.getLoc(), builder.getType<BufferType>(), initOp);
+        buffers.emplace_back(initOp.getResult(), reRefOp);
+      }
+    });
+
+    // reref all buffers
+    for (auto &[buf, reRef] : buffers) {
+      // collect and rewrite all uses
       std::vector<std::reference_wrapper<OpOperand>> uses;
       for (auto &use : buf.getUses())
         uses.push_back(use);
       for (auto use : uses) {
         auto op = use.get().getOwner();
-        if (op == reRefOp)
+        if (op == reRef.getDefiningOp())
           continue;
         if ((isa<EmitOp>(op) && use.get().getOperandNumber() == 0) ||
             (isa<ExtractOp>(op) && use.get().getOperandNumber() == 0)) {
-          use.get().set(reRefOp.getResult());
+          use.get().set(reRef);
           continue;
         }
         // if its a normal use, use the derefed result
         builder.setInsertionPoint(op);
         auto deRefOp = builder.create<DeRefOp>(
-            funcOp.getLoc(), builder.getType<BufferType>(), reRefOp.getResult());
-        use.get().set(deRefOp.getResult());
+            funcOp.getLoc(), builder.getType<BufferType>(), reRef);
+        use.get().set(deRefOp);
       }
     }
   }

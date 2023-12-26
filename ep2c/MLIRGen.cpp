@@ -363,14 +363,11 @@ private:
 
   mlir::Value toRValue(mlir::Value value,
                        std::optional<mlir::Type> ltype = std::nullopt) {
-    auto op = value.getDefiningOp();
-    if (op == nullptr)
-      return value;
-
-    if (auto contextRefOp = dyn_cast<ContextRefOp>(op)) {
+    if (auto type = dyn_cast<ContextRefType>(value.getType())) {
       // convert contextRef to Load
-      auto resultType = ltype.value_or(contextRefOp.getType().getValueType());
-      return builder.create<LoadOp>(contextRefOp->getLoc(), resultType, value);
+      auto resultType = ltype.value_or(type.getValueType());
+      // TODO(zhiyuang): unknown loc?
+      return builder.create<LoadOp>(builder.getUnknownLoc(), resultType, value);
     }
 
     return value;
@@ -581,9 +578,8 @@ private:
         emitError(location) << "callop: invalid emit";
         return nullptr;
       }
-      // TODO: update variable or add assignment
       auto &target = operands[0];
-      builder.create<EmitOp>(location, caller, target);
+      builder.create<EmitOp>(location, caller, toRValue(target, builder.getType<BufferType>()));
       return builder.create<NopOp>(location);
     } else if(callee == "lookup"){
       if (!caller || !isa<TableType>(caller.getType()) || operands.size() != 1) {
@@ -759,8 +755,11 @@ private:
       return nullptr;
     }
 
+    // TDDO(zhiyuang): get rvalue here
+    // map all to rvalue
     auto values = llvm::map_to_vector(
-        init.getInitVals(), [&](auto &expr) { return mlirGen(*expr); });
+        init.getInitVals(), [&](auto &expr) { return toRValue(mlirGen(*expr)); });
+
     return builder.create<InitOp>(location, type, values);
   }
 

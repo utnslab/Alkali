@@ -67,9 +67,11 @@ void insertContextRefs(FuncOp funcOp, std::map<StringRef, ContextRefOp> &refs,
   }
 }
 
-void rewriteEventInit(InitOp initOp, ContextBufferizationAnalysis &analysis) {
+void rewriteEventInit(InitOp initOp, ContextBufferizationAnalysis &analysis,
+                      HandlerDependencyAnalysis &dependency) {
   OpBuilder builder(initOp);
 
+  // filter out non-event inits
   auto result = initOp.getResult();
   auto type = result.getType().dyn_cast<StructType>();
   if (!type || !type.getIsEvent())
@@ -116,50 +118,51 @@ void removeContextArgument(FuncOp funcOp) {
 }
 } // namespace Patterns
 
+void ContextToArgumentPass::runOnFunction(FuncOp funcOp, ContextBufferizationAnalysis &analysis,
+                   HandlerDependencyAnalysis &dependency) {
+  if (funcOp.isExtern())
+    return;
+
+  // per-function reference map
+  std::map<StringRef, ContextRefOp> topRefs;
+  if (dependency.hasPredecessor(funcOp))
+    insertContextToArguments(funcOp, analysis);
+  insertContextRefs(funcOp, topRefs, analysis);
+
+  // rewrite all return with context read
+  funcOp.walk([&](InitOp initOp) {
+    rewriteEventInit(initOp, analysis, dependency);
+  });
+
+  // rewrite all return with context read
+  funcOp.walk([&](ContextRefOp refOp) {
+    refOp->setAttr("transferToValue",
+                   BoolAttr::get(refOp->getContext(), true));
+    // replace them with top level ops, as all context refs could be global
+    auto topRefOp = topRefs[refOp.getName()];
+    if (topRefOp != refOp)
+      refOp.getResult().replaceAllUsesWith(topRefOp.getResult());
+  });
+
+  // apply per-function pass
+  OpPassManager pm;
+  pm.addPass(createCanonicalizerPass());
+  pm.addPass(createConvertSCFToCFPass());
+  pm.addPass(createMem2Reg());
+  if (failed(runPipeline(pm, funcOp)))
+    return signalPassFailure();
+
+  removeContextArgument(funcOp);
+}
+
 // Conversion Pass
 void ContextToArgumentPass::runOnOperation() {
   ModuleOp moduleOp = getOperation();
   auto &analysis = getAnalysis<ContextBufferizationAnalysis>();
   auto &depency = getAnalysis<HandlerDependencyAnalysis>();
 
-  // insert arguments
-  std::map<StringRef, ContextRefOp> refs;
-  moduleOp.walk([&](FuncOp funcOp){
-    if (depency.hasPredecessor(funcOp))
-      insertContextToArguments(funcOp, analysis);
-    insertContextRefs(funcOp, refs, analysis);
-  });
-
-  // rewrite all return with context read
-  // TODO: remove if its the last op
-  moduleOp.walk([&](InitOp initOp) {
-    rewriteEventInit(initOp, analysis);
-  });
-
-  // mark all ref ops
-  moduleOp.walk([&](ContextRefOp refOp) {
-    refOp->setAttr("transferToValue",
-                   BoolAttr::get(moduleOp.getContext(), true));
-    // replace them with top level ops, as all context refs could be global
-    auto topRefOp = refs[refOp.getName()];
-    if (topRefOp != refOp)
-      refOp.getResult().replaceAllUsesWith(topRefOp.getResult());
-  });
-
-  // TODO()
-  // execute mem2reg on all transformed funcs
-  OpPassManager pm;
-  auto &funcPm = pm.nest<FuncOp>();
-  funcPm.addPass(createCanonicalizerPass());
-  funcPm.addPass(createConvertSCFToCFPass());
-  funcPm.addPass(createMem2Reg());
-
-  if (failed(runPipeline(pm, moduleOp)))
-    return signalPassFailure();
-
-  // rewrite the init and remove
   moduleOp.walk([&](FuncOp funcOp) {
-    removeContextArgument(funcOp);
+    runOnFunction(funcOp, analysis, depency);
   });
 }
 
