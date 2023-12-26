@@ -60,10 +60,10 @@ namespace {
       // following fields only for guard == 1
       llvm::SmallVector<Value> preds;
       llvm::SmallVector<bool> predAttrs;
-      OpAction(Operation *op, bool guard, llvm::SmallVector<Value> &preds,
-               llvm::SmallVector<bool> &predAttrs)
-          : op(op), guard(guard), preds(preds), predAttrs(predAttrs) {}
-      OpAction(Operation *op, bool guard) : op(op), guard(guard) {}
+      OpAction(Operation *op, bool guard, llvm::SmallVector<Value> preds = {},
+               llvm::SmallVector<bool> predAttrs = {})
+          : op(op), guard(guard), preds(std::move(preds)),
+            predAttrs(std::move(predAttrs)) {}
     };
 
     using OpRewritePattern<FuncOp>::OpRewritePattern;
@@ -92,11 +92,11 @@ namespace {
           else if (isa<ReturnOp, UpdateOp>(op)) {
             // We could move (and guard) those non-Pure Ops, as long as it do not have any return value
             // we only need to transfer one level: the blocks connects to the entry block
-            // TODO(zhiyuang): finish
             llvm::SmallVector<Value> preds;
             llvm::SmallVector<bool> predAttrs;
             if (foldPredicates(&block, &entryBlock, preds, predAttrs))
-              toMove.emplace_back(op, true, preds, predAttrs);
+              toMove.emplace_back(op, true, std::move(preds),
+                                  std::move(predAttrs));
           }
         }
 
@@ -132,12 +132,12 @@ void EP2LinearizePass::runOnOperation() {
 
   bool changed = false;
   do {
-    // try to lift some ops
+    // try to lift all ops from the branches
     if (failed(applyPatternsAndFoldGreedily(moduleOp, frozenPatterns,
                                             GreedyRewriteConfig(), &changed)))
       return signalPassFailure();
 
-    // try to fold unused BBs
+    // try to fold unused BBs to arith.select
     if (failed(runPipeline(pm, moduleOp)))
       return signalPassFailure();
   } while (changed);

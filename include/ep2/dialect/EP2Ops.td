@@ -600,6 +600,14 @@ def GuardOp : EP2_Op<"guard", [NoTerminator]> {
   let arguments = (ins Variadic<EP2_Type>:$preds, BoolArrayAttr:$predAttrs);
   let regions = (region SizedRegion<1>:$body);
 
+  let extraClassDeclaration = [{
+    ::mlir::Operation *getGuardingOp() {
+      assert(getBody().hasOneBlock() && "expected one block region");
+      assert(!getBody().front().empty() && "expect to have instructions in the block");
+      return &getBody().front().front();
+    }
+  }];
+
   // TODO(zhiyuang): verifier: the number of preds and predAttrs should match
   // region verifier should check the number (just one block one op)
 }
