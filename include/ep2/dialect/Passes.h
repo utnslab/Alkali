@@ -205,6 +205,16 @@ struct CFToPredPass :
     StringRef getDescription() const final { return "General pass for adding a pred value for every block in the function"; }
 };
 
+struct EP2LinearizePass :
+        public PassWrapper<EP2LinearizePass, OperationPass<ModuleOp>> {
+    void runOnOperation() final;
+    void getDependentDialects(DialectRegistry &registry) const override {
+        registry.insert<EP2Dialect, scf::SCFDialect, cf::ControlFlowDialect, arith::ArithDialect>();
+    }
+    StringRef getArgument() const final { return "ep2-linearize"; }
+    StringRef getDescription() const final { return "Linearize all branches. Do not work with ExtractOp"; }
+};
+
 // Lower to Emitc pass
 struct LowerEmitcPass :
         public PassWrapper<LowerEmitcPass, OperationPass<ModuleOp>> {

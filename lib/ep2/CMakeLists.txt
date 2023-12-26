@@ -24,6 +24,7 @@ add_mlir_dialect_library(MLIREP2
         LowerEmitcPass.cpp
         CollectHeaderPass.cpp
         EmitNetronomePass.cpp
+        EP2LinearizePass.cpp
         LowerMemcpyPass.cpp
         AtomAnalysis.cpp
         LocalAllocAnalysis.cpp

@@ -576,8 +576,9 @@ def NopOp : EP2_Op<"nop", [Pure]> {
   let builders = [
     OpBuilder<(ins), [{ build($_builder, $_state, $_builder.getNoneType()); }]>
   ];
-  // let hasVerifier = 1;
 }
+
+/// Optimization Ops
 
 def SinkOp : EP2_Op<"sink"> {
   let summary = "Value sink to hold a value and prevent it from being optimized away";
@@ -586,6 +587,21 @@ def SinkOp : EP2_Op<"sink"> {
   }];
 
   let arguments = (ins Variadic<EP2_Type>:$args);
+}
+
+def GuardOp : EP2_Op<"guard", [NoTerminator]> {
+  let summary = "Guard a non-pure operation by its predicators";
+  let description = [{
+    Guard a value by a list of predicates
+    If the predicate is false, the value "not be calculated".
+    As it do not change anything other than value itself, it is pure.
+  }];
+
+  let arguments = (ins Variadic<EP2_Type>:$preds, BoolArrayAttr:$predAttrs);
+  let regions = (region SizedRegion<1>:$body);
+
+  // TODO(zhiyuang): verifier: the number of preds and predAttrs should match
+  // region verifier should check the number (just one block one op)
 }
 
 //===----------------------------------------------------------------------===//
