@@ -223,6 +223,10 @@ private:
                       std::list<struct module_port_config> &ports,
                       std::list<struct module_param_config> &params);
 
+ std::vector<mlir::ep2::EmitFPGAPass::wire_config> emitGuardPredModule(std::ofstream &file, ep2::GuardOp gop, int repd_out_num);
+
+  struct wire_config emitGuardModule(std::ofstream &file, struct wire_config inputwire, wire_config predwire);
+
   unsigned getContextTotalSize();
   unsigned getStructTotalSize(ep2::StructType in_struct);
   unsigned getStructValOffset(ep2::StructType in_struct, int index);
@@ -234,7 +238,7 @@ private:
   void emitVariableInit(std::ofstream &file, ep2::InitOp initop);
   void emitTableInit(std::ofstream &file, ep2::InitOp initop);
   void emitLookup(std::ofstream &file, ep2::LookupOp lookupop);
-  void emitUpdate(std::ofstream &file, ep2::UpdateOp updateop);
+  void emitUpdate(std::ofstream &file, ep2::UpdateOp updateop, bool if_guarded = false, ep2::GuardOp gop = nullptr);
   void emitExtract(std::ofstream &file, ep2::ExtractValueOp extractop);
   void emitBBInputDemux(std::ofstream &file, ep2::FuncOp funcOp);
   void emitBBCondBranch(std::ofstream &file, cf::CondBranchOp condbranchop);
@@ -244,13 +248,16 @@ private:
   void emitStructUpdate(std::ofstream &file,
                         ep2::StructUpdateOp structupdateop);
   void emitEmit(std::ofstream &file, ep2::EmitValueOp emitop);
-  void emitReturn(std::ofstream &file, ep2::ReturnOp returnop);
+  void emitReturn(std::ofstream &file, ep2::ReturnOp returnop, bool if_guarded = false, ep2::GuardOp gop = nullptr);
   void emitConst(std::ofstream &file, ep2::ConstantOp constop);
   void emitArithmetic(std::ofstream &file, mlir::Operation *op);
   void emitIfElse(std::ofstream &file, scf::IfOp ifop);
+  void emitBitcast(std::ofstream &file, ep2::BitCastOp bitcastop);
+  void emitSelect(std::ofstream &file, arith::SelectOp selectop);
   void emitSink(std::ofstream &file, ep2::SinkOp sinkop);
   void emitHandler(ep2::FuncOp funcOp);
   void emitController(ep2::FuncOp funcOp);
+  void emitGuard(std::ofstream &file, ep2::GuardOp guardop);
 
   void emitOp(std::ofstream &file, mlir::Operation *op);
 

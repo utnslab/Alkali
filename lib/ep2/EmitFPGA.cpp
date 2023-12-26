@@ -261,7 +261,7 @@ void EmitFPGAPass::emitLookup(std::ofstream &file, ep2::LookupOp lookupop) {
   emitwireassign(file, value_assign);
 }
 
-void EmitFPGAPass::emitUpdate(std::ofstream &file, ep2::UpdateOp updateop) {
+void EmitFPGAPass::emitUpdate(std::ofstream &file, ep2::UpdateOp updateop, bool if_guarded, ep2::GuardOp gop) {
   auto table_port_wire = tableops_to_portwire[updateop];
   auto key_val = updateop.getKey();
   int size;
@@ -275,8 +275,6 @@ void EmitFPGAPass::emitUpdate(std::ofstream &file, ep2::UpdateOp updateop) {
   auto key_val_name = getValName(key_val);
   struct axis_config key_axis =  {0, 0, size};
   struct wire_config key_wire = {AXIS, key_val_name, "", false, -1, true, key_axis};
-  struct wire_assign_config key_assign = {-1, -1, -1, -1, key_wire, table_port_wire};
-  emitwireassign(file, key_assign);
 
   // udpate value:
   auto value_val = updateop.getValue();
@@ -287,10 +285,18 @@ void EmitFPGAPass::emitUpdate(std::ofstream &file, ep2::UpdateOp updateop) {
     value_val.dump();
     assert(false);
   }
-
   auto value_val_name = getValName(value_val);
   struct axis_config value_axis =  {0, 0, size};
   struct wire_config value_wire = {AXIS, value_val_name, "", false, -1, true, value_axis};
+
+  if(if_guarded){
+    auto pred_wires = emitGuardPredModule(file, gop, 2); // for key and value
+    key_wire = emitGuardModule(file, key_wire, pred_wires[0]);
+    value_wire = emitGuardModule(file, value_wire, pred_wires[1]);
+  }
+
+  struct wire_assign_config key_assign = {-1, -1, -1, -1, key_wire, table_port_wire};
+  emitwireassign(file, key_assign);
   struct wire_assign_config value_assign = {-1, -1, -1, -1, table_port_wire, value_wire};
   emitwireassign(file, value_assign);
 }
@@ -612,6 +618,37 @@ void EmitFPGAPass::emitArithmetic(std::ofstream &file,
       rval = andop.getRhs();
       op_id = 2;
       op_name = "AND";
+  }  else if(isa<ep2::CmpOp>(op)){
+      auto cmpop = cast<ep2::CmpOp, mlir::Operation *>(op);
+      result_val = cmpop.getResult();
+      lval = cmpop.getLhs();
+      rval = cmpop.getRhs();
+      int cmpop_id = cmpop.getPredicate();
+      if(cmpop_id == 60){
+        op_id = 4;
+        op_name = "LT";
+      }
+      else if(cmpop_id == 62){
+        op_id = 5;
+        op_name = "GT";
+      }
+      else if(cmpop_id == 40){
+        op_id = 6;
+        op_name = "EQ";
+      }
+      else if(cmpop_id == 41){
+        op_id = 7;
+        op_name = "LE";
+      }
+      else if(cmpop_id == 42){
+        op_id = 8;
+        op_name = "GE";
+      }
+      else{
+        printf("Error: Cannot emitArithmetic's cmpop\n");
+        cmpop.dump();
+        assert(false);
+      }
   } 
 
   auto module_name = assign_name(op_name);
@@ -621,7 +658,7 @@ void EmitFPGAPass::emitArithmetic(std::ofstream &file,
   int size;
 
   auto result_val_type = GetValTypeAndSize(result_val.getType(), &size);
-  if (!(result_val_type == INT || result_val_type == STRUCT)) {
+  if (!(result_val_type == INT )) {
     printf("Error: Cannot emitArithmetic's output val\n");
     result_val.dump();
     assert(false);
@@ -684,7 +721,78 @@ void EmitFPGAPass::emitArithmetic(std::ofstream &file,
   // outval_wire}; emitwireassign(file, wire_assignment);
 }
 
-void EmitFPGAPass::emitReturn(std::ofstream &file, ep2::ReturnOp returnop) {
+
+std::vector<mlir::ep2::EmitFPGAPass::wire_config> EmitFPGAPass::emitGuardPredModule(std::ofstream &file, ep2::GuardOp gop, int repd_out_num){
+
+  std::vector <std::string> in_cond_port_names, out_cond_port_names;
+  std::vector <struct wire_config> out_cond_wires;
+  struct axis_config cond_axis = {0, 0, 1};
+  for(auto cond : gop.getPreds()){
+    auto in_cond_name = getValName(cond);
+    in_cond_port_names.push_back(in_cond_name);
+  }
+
+  for(int i = 0; i < repd_out_num; i ++){
+    auto out_cond_name = assign_name("replicated_guard_cond");
+    struct wire_config out_cond_wire = {AXIS,  out_cond_name, "replicated guard condition", false, -1, true, cond_axis};
+    out_cond_wires.push_back(out_cond_wire);
+    out_cond_port_names.push_back(out_cond_name);
+    emitwire(file, out_cond_wire, 1);
+  }
+
+  struct module_port_config in_cond_port, out_cond_port;
+  in_cond_port = {AXIS, in_cond_port_names, "guard condition", "s_guard_cond", cond_axis};
+  out_cond_port = {AXIS, out_cond_port_names, "replicated guard condition", "m_guard_cond", cond_axis};
+
+  std::list<struct module_port_config> ports;
+  ports.push_back(in_cond_port);
+  ports.push_back(out_cond_port);
+
+  auto pre_attr = gop.getPredAttrs();
+  int ground_truth = 0;
+  assert(pre_attr.size() < 32);
+  for(auto attr : pre_attr){
+    ground_truth = ground_truth << 1;
+    ground_truth += attr.cast<BoolAttr>().getValue();
+  }
+  std::list<struct module_param_config> params;
+  params.push_back({"COND_WIDTH", (int)in_cond_port_names.size()});
+  params.push_back({"REPLICATED_OUT_NUM", repd_out_num});
+  params.push_back({"GROUND_TRUTH", ground_truth}); // TODO: calculate ground truth
+
+  emitModuleCall(file, "guard_pred", "guard_pred", ports, params);
+  return out_cond_wires;
+}
+
+mlir::ep2::EmitFPGAPass::wire_config EmitFPGAPass::emitGuardModule(std::ofstream &file, struct wire_config inputwire, wire_config predwire){
+  auto outputwire = inputwire;
+  outputwire.name = inputwire.name + "_guarded";
+  outputwire.debuginfo = inputwire.debuginfo + "-- guarded";
+
+  emitwire(file, outputwire, 1);
+  printf("Success Enter emitGuardModule\n");
+  auto module_name = assign_name("guard");
+  struct module_port_config input_port, output_port, cond_port;
+  input_port = {AXIS, {inputwire.name}, "input val", "s_guard_axis", inputwire.axis};
+  output_port = {AXIS, {outputwire.name}, "output val", "m_guard_axis", outputwire.axis};
+  cond_port = {AXIS, {predwire.name}, "guard condition", "s_guard_cond", {0, 0, 1}};
+  
+  
+  std::list<struct module_port_config> ports;
+  ports.push_back(input_port);
+  ports.push_back(output_port);
+  ports.push_back(cond_port);
+
+  std::list<struct module_param_config> params;
+  params.push_back({"DATA_WIDTH", inputwire.axis.data_width});
+  params.push_back({"IF_STREAM", inputwire.axis.if_keep});
+
+  emitModuleCall(file, "guard", module_name, ports, params);
+  printf("Success Exit emitGuardModule\n");
+  return outputwire;
+}
+
+void EmitFPGAPass::emitReturn(std::ofstream &file, ep2::ReturnOp returnop, bool if_guarded, ep2::GuardOp gop) {
   if (returnop.getNumOperands() == 0)
     return;
 
@@ -692,6 +800,7 @@ void EmitFPGAPass::emitReturn(std::ofstream &file, ep2::ReturnOp returnop) {
   // get output port struct
   auto out_port = returnop.getOperand(0);
   auto out_port_type = out_port.getType();
+  auto dst_port_base_name = getValName(out_port);
   assert(isa<ep2::StructType>(out_port_type));
   auto out_port_struct = cast<ep2::StructType, Type>(out_port_type);
   auto out_port_fileds = out_port_struct.getElementTypes();
@@ -704,6 +813,22 @@ void EmitFPGAPass::emitReturn(std::ofstream &file, ep2::ReturnOp returnop) {
 
   assert(initop_args.size() == out_port_fileds.size());
 
+  std::vector<struct wire_config> guarded_cond_wires;
+  if(if_guarded){
+    int count = 0;
+    for (int i = 0; i < initop_args.size(); i++) {
+      int size;
+      auto valtype = GetValTypeAndSize(initop_args[i].getType(), &size);
+      if ((valtype == CONTEXT && size == 0) || valtype == ATOM) {
+        continue;
+      }
+      count ++;
+    }
+    printf("Success Enter emitReturn, count %d\n", count);
+    guarded_cond_wires = emitGuardPredModule(file, gop, count);
+  }
+
+  int pred_id = 0;
   for (int i = 0; i < initop_args.size(); i++) {
     // assign wires to output ports
     struct wire_assign_config wire_assignment;
@@ -734,7 +859,10 @@ void EmitFPGAPass::emitReturn(std::ofstream &file, ep2::ReturnOp returnop) {
     value_wire = {AXIS,  src_value_name, "Outport Assign Src Value",
                   false, -1, true,           value_axis};
 
-    auto dst_port_base_name = getValName(out_port);
+    if(if_guarded){
+      value_wire = emitGuardModule(file, value_wire, guarded_cond_wires[pred_id]);
+      pred_id ++;
+    }
     auto dst_port_name = dst_port_base_name + "_" + std::to_string(i);
     outports_axis = value_axis;
     outports_wire = {AXIS,  dst_port_name, "Outport Assign Dst Port",
@@ -865,6 +993,61 @@ void EmitFPGAPass::emitBBBranch(std::ofstream &file,cf::BranchOp branchop){
 
 }
 
+void EmitFPGAPass::emitSelect(std::ofstream &file, arith::SelectOp selectop)
+{
+  auto cond = selectop.getCondition();
+  auto true_val = selectop.getTrueValue();
+  auto false_val = selectop.getFalseValue();
+  auto result = selectop.getResult();
+
+  assert(cond.getType().isInteger(1));
+  assert(true_val.getType() == false_val.getType());
+  assert(true_val.getType() == result.getType());
+
+  auto cond_name = getValName(cond);
+  auto true_val_name = getValName(true_val);
+  auto false_val_name = getValName(false_val);
+
+  auto result_name = assignValNameAndUpdate(result, "select_result");
+  struct axis_config cond_axis, val_axis;
+  struct wire_config result_wire;
+  struct module_port_config cond_port, true_val_port, false_val_port, result_port;
+
+  int val_size, cond_size;  
+  auto cond_type = GetValTypeAndSize(cond.getType(), &cond_size);
+  auto val_type = GetValTypeAndSize(true_val.getType(), &val_size);
+  bool if_stream = if_axis_stream(val_type);
+
+  if (!(val_type == INT || val_type == STRUCT )) {
+    printf("Error: emitSelect's val can only be int or struct\n");
+    selectop.dump();
+    assert(false);
+  }
+
+  val_axis = {if_stream, if_stream, val_size};
+  result_wire = {AXIS, result_name, "", false, -1, has_use(result), val_axis};
+  result_port = {AXIS, {result_name}, "select result", "m_val_axis", val_axis};
+  emitwire(file, result_wire, val_use_count(result));
+
+  cond_axis = {0, 0, cond_size};
+  cond_port = {AXIS, {cond_name}, "select condition", "s_cond_axis", cond_axis};
+
+  true_val_port = {AXIS, {true_val_name}, "select true val", "s_true_val_axis", val_axis};
+  false_val_port = {AXIS, {false_val_name}, "select false val", "s_false_val_axis", val_axis};
+
+  std::list<struct module_port_config> ports;
+  ports.push_back(cond_port);
+  ports.push_back(true_val_port);
+  ports.push_back(false_val_port);
+  ports.push_back(result_port);
+
+  std::list<struct module_param_config> params;
+  params.push_back({"VAL_WIDTH", val_size});
+  params.push_back({"COND_WIDTH", cond_size});
+
+  emitModuleCall(file, "select", "select", ports, params);
+}
+
 void EmitFPGAPass::emitIfElse(std::ofstream &file, scf::IfOp ifop){
       auto &if_region = ifop.getThenRegion();
       std::vector<mlir::Value> then_yields;
@@ -966,6 +1149,18 @@ void EmitFPGAPass::emitIfElse(std::ofstream &file, scf::IfOp ifop){
       }
 }
 
+void EmitFPGAPass::emitGuard(std::ofstream &file, ep2::GuardOp guardop){
+  auto gop = guardop.getGuardingOp();
+   if (isa<ep2::ReturnOp>(gop)) {
+    auto returnop = cast<ep2::ReturnOp, mlir::Operation *>(gop);
+    emitReturn(file, returnop, true, guardop);
+   } else if (isa<ep2::UpdateOp>(gop)) {
+    auto updateop = cast<ep2::UpdateOp, mlir::Operation *>(gop);
+    emitUpdate(file, updateop, true, guardop);
+   }
+
+
+}
 void  EmitFPGAPass::emitSink(std::ofstream &file, ep2::SinkOp sinkop){
   auto val = sinkop.getOperand(0);
   auto val_name = getValName(val);
@@ -1007,7 +1202,7 @@ void EmitFPGAPass::emitOp(std::ofstream &file, mlir::Operation *op){
   } else if (isa<ep2::UpdateOp>(op)){
     auto updateop = cast<ep2::UpdateOp, mlir::Operation *>(op);
     emitUpdate(file, updateop);
-  } else if(isa<ep2::SubOp>(op) || isa<ep2::AddOp>(op) || isa<arith::SubIOp>(op) || isa<arith::AndIOp>(op)){
+  } else if(isa<ep2::SubOp>(op) || isa<ep2::AddOp>(op) || isa<arith::SubIOp>(op) || isa<arith::AndIOp>(op) || isa<ep2::CmpOp>(op)){
     emitArithmetic(file, op);
   } else if (isa<scf::IfOp>(op)){
     auto ifop = cast<scf::IfOp, mlir::Operation *>(op);
@@ -1021,6 +1216,15 @@ void EmitFPGAPass::emitOp(std::ofstream &file, mlir::Operation *op){
   } else if (isa<ep2::SinkOp>(op)){
     auto sinkop = cast<ep2::SinkOp, mlir::Operation *>(op);
     emitSink(file, sinkop);
+  } else if(isa<ep2::BitCastOp>(op)){
+    auto bitcastop = cast<ep2::BitCastOp, mlir::Operation *>(op);
+    emitBitcast(file, bitcastop);
+  } else if(isa<arith::SelectOp>(op)){
+    auto selectop = cast<arith::SelectOp, mlir::Operation *>(op);
+    emitSelect(file, selectop);
+  } else if(isa<ep2::GuardOp>(op)){
+    auto guardop = cast<ep2::GuardOp, mlir::Operation *>(op);
+    emitGuard(file, guardop);
   }
   // TODO: Change STURCT ACCESS IR to generate new stream for each accessed
     // struct
@@ -1124,16 +1328,45 @@ void EmitFPGAPass::emitBBInputDemux(std::ofstream &file, ep2::FuncOp funcOp){
   }
 }
 
+void EmitFPGAPass::emitBitcast(std::ofstream &file, ep2::BitCastOp bitcastop) {
+  auto src_val = bitcastop.getInput();
+  auto dst_val = bitcastop.getOutput();
+  auto src_type = src_val.getType();
+  auto dst_type = dst_val.getType();
+  int src_size, dst_size;
+  auto src_val_type = GetValTypeAndSize(src_type, &src_size);
+  auto dst_val_type = GetValTypeAndSize(dst_type, &dst_size);
+  if (src_val_type != INT || dst_val_type != INT) {
+    printf("Error: emitBitcast's src and dst can only be stream\n");
+    bitcastop.dump();
+    assert(false);
+  }
+
+  auto src_val_name = getValName(src_val);
+  auto dst_val_name = assignValNameAndUpdate(dst_val, "bitcasted");
+  struct axis_config src_axis = {0, 0, src_size};
+  struct axis_config dst_axis = {0, 0, dst_size};
+  struct wire_config src_wire = {AXIS,  src_val_name, "bitcast src", false, -1, true, src_axis};
+  struct wire_config dst_wire = {AXIS,  dst_val_name, "bitcast dst", false, -1, has_use(dst_val), dst_axis};
+  emitwire(file, dst_wire, val_use_count(dst_val));
+  struct wire_assign_config wire_assignment = {-1, -1, -1, -1, src_wire, dst_wire};
+  emitwireassign(file, wire_assignment);
+}
+
 void EmitFPGAPass::emitHandler(ep2::FuncOp funcOp) {
   cur_funcop = &funcOp;
   auto handler_name = funcOp.getName().str();
   std::ofstream fout_stage(handler_name + ".sv");
   emitFuncHeader(fout_stage, funcOp);
   emitBBInputDemux(fout_stage, funcOp);
-  funcOp->walk([&](mlir::Operation *op) {
-    emitOp(fout_stage, op);
-    
-  });
+  // funcOp->walk([&](mlir::Operation *op) {
+  //   emitOp(fout_stage, op);
+  // });
+  for (auto &block : funcOp.getBody().getBlocks()) {
+    for (auto &op : block.getOperations()) {
+      emitOp(fout_stage, &op);
+    }
+  }
   fout_stage << "\nendmodule\n";
 }
 
