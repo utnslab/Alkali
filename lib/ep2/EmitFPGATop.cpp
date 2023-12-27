@@ -43,13 +43,13 @@ void EmitFPGAPass::emitTop() {
             assert(false);
         }
         printf("handler_edge size matches with handlerDependencyAnalysis's result: %ld- %ld\n", handler_edge.size() , edges.size());
+        int eid = 0;
         // first emit edge wires.
         for(auto &e : handler_edge) {
-           
+           int wid = 0;
             // TODO: when supporting global table, type is not AXIS
             for(auto &w : e.event_wires) {
                 if(e.direction == OUT){
-                     printf("HIHIHI");
                     auto target_func = dyn_cast<FuncOp>((Operation *)edges[e.id]);
                     if(!target_func){
                         funcOp.dump();
@@ -60,12 +60,12 @@ void EmitFPGAPass::emitTop() {
                     if(e.if_extern)
                         out_wire_name = w.name;
                     else
-                    {    
-                        out_wire_name = handler_edge_map[target_func][0].event_wires[0].name;
+                    {   
+                        // 0 means target func's incoming event
+                        out_wire_name = handler_edge_map[target_func][0].event_wires[wid].name;
                     }
                     struct module_port_config port_config = {AXIS, {out_wire_name}, "", w.name, .axis = w.axis};
                     ports.push_back(port_config);
-                    printf("NNONON");
                 }
                 else if (e.direction == IN){ // TODO: CHECK extern
                     struct module_port_config port_config = {AXIS, {w.name}, "", w.name, .axis = w.axis};
@@ -73,7 +73,10 @@ void EmitFPGAPass::emitTop() {
                     if(!e.if_extern)
                         emitwire(file, w);
                 }
+
+                wid++;
             }
+            eid++;
         }
 
         // then emit handler's module defination

@@ -135,19 +135,31 @@ HandlerDependencyAnalysis::HandlerDependencyAnalysis(Operation *module) {
     });
 
     if (funcOp.isExtern()) {
-      // TODO(zhiyuang): emplace?
       externForwards.emplace(from.event, std::move(to));
     } else { // this is a full handler
       std::vector<FuncOp> targets;
       for (auto &target : to) {
         eventDeps.emplace(from.event.str(), target.event.str());
 
+        // try to find exact match
         auto it = handlersMap.find(target);
         if (it != handlersMap.end()) {
           targets.push_back(it->second);
           continue;
         }
 
+        // try to find general match: event only and do not have an atom
+        auto it3 = llvm::find_if(handlersMap, [&](auto &pair) {
+          return pair.first.event == target.event && pair.first.atom.empty();
+        });
+        if (it3 != handlersMap.end())
+          targets.push_back(it3->second);
+
+        // If its an extern, we further search for extern forwards
+        if (!it3->second.isExtern())
+          continue;
+
+        // try to find extern forward
         auto it2 = externForwards.find(target.event);
         if (it2 != externForwards.end()) {
           for (auto &target2 : it2->second) {
@@ -160,8 +172,6 @@ HandlerDependencyAnalysis::HandlerDependencyAnalysis(Operation *module) {
             }
           }
         }
-
-        // TODO(zhiyaung): if we cannot find it, its an extern handler
       }
 
       // insert back to graph

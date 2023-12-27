@@ -625,23 +625,23 @@ void EmitFPGAPass::emitArithmetic(std::ofstream &file,
       rval = cmpop.getRhs();
       int cmpop_id = cmpop.getPredicate();
       if(cmpop_id == 60){
-        op_id = 4;
+        op_id = 3;
         op_name = "LT";
       }
       else if(cmpop_id == 62){
-        op_id = 5;
+        op_id = 4;
         op_name = "GT";
       }
       else if(cmpop_id == 40){
-        op_id = 6;
+        op_id = 5;
         op_name = "EQ";
       }
       else if(cmpop_id == 41){
-        op_id = 7;
+        op_id = 6;
         op_name = "LE";
       }
       else if(cmpop_id == 42){
-        op_id = 8;
+        op_id = 7;
         op_name = "GE";
       }
       else{
@@ -760,7 +760,7 @@ std::vector<mlir::ep2::EmitFPGAPass::wire_config> EmitFPGAPass::emitGuardPredMod
   params.push_back({"REPLICATED_OUT_NUM", repd_out_num});
   params.push_back({"GROUND_TRUTH", ground_truth}); // TODO: calculate ground truth
 
-  emitModuleCall(file, "guard_pred", "guard_pred", ports, params);
+  emitModuleCall(file, "guard_pred", assign_name("guard_pred"), ports, params);
   return out_cond_wires;
 }
 
@@ -1045,7 +1045,7 @@ void EmitFPGAPass::emitSelect(std::ofstream &file, arith::SelectOp selectop)
   params.push_back({"VAL_WIDTH", val_size});
   params.push_back({"COND_WIDTH", cond_size});
 
-  emitModuleCall(file, "select", "select", ports, params);
+  emitModuleCall(file, "select", assign_name("select"), ports, params);
 }
 
 void EmitFPGAPass::emitIfElse(std::ofstream &file, scf::IfOp ifop){
@@ -1520,7 +1520,7 @@ void EmitFPGAPass::runOnOperation() {
   });
 
 
-  // emitTop();
+  emitTop();
 }
 
 std::unique_ptr<Pass> createEmitFPGAPass() {

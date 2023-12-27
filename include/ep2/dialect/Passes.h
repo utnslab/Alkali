@@ -65,7 +65,7 @@ struct HandlerDependencyAnalysis {
     friend bool operator<(const HandlerFullName &l, const HandlerFullName &r) {
       return std::tie(l.event, l.atom) < std::tie(r.event, r.atom);
     }
-    std::string mangle() { 
+    std::string mangle() const { 
       auto surffix = atom == "" ? "" : "_" + atom;
       return ("__handler_" + event + surffix).str();
     }
@@ -117,7 +117,12 @@ struct HandlerDependencyAnalysis {
     llvm::errs() << "Found " << subGraphs.size() << " connected components\n";
     for (size_t i = 0; i < subGraphs.size(); ++i) {
       llvm::errs() << "Component " << i << " " << subGraphs[i].size() << " "
-                   << subGraphsOrder.size() << "\n";
+                   << subGraphsOrder[i].size() << "\n";
+    }
+
+    llvm::errs() << "\nFound " << handlersMap.size() << " handlers:\n";
+    for (auto &[handler, funcOp] : handlersMap) {
+      llvm::errs() << "  " << handler.mangle() << "\n";
     }
 
     for (auto &[handler, edges] : graph) {
