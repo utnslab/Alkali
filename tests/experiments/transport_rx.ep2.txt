@@ -25,7 +25,7 @@ struct eth_header_t {
 # Totoal 24 bytes
 struct ip_header_t {
     # Version (4),  IHL (4), DSCP (6), ECN(2)
-    bits<8> misc; 
+    bits<16> misc; 
     bits<16> length;
     bits<16> identification;
     # Flags (3), Fragment Offset (13)
