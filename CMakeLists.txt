@@ -35,6 +35,9 @@ if(MLIR_ENABLE_BINDINGS_PYTHON)
   mlir_configure_python_dev_packages()
 endif()
 
+find_package(Z3 REQUIRED)
+message(STATUS "Found Z3 ${Z3_VERSION_STRING}")
+
 set(STANDALONE_SOURCE_DIR ${PROJECT_SOURCE_DIR})
 set(STANDALONE_BINARY_DIR ${PROJECT_BINARY_DIR})
 include_directories(${LLVM_INCLUDE_DIRS})

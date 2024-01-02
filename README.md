@@ -12,6 +12,13 @@ cmake -G Ninja ../llvm \
 
 ```
 
+## Install the external dependencies
+
+```sh
+# current z3 version is Z3 4.8.7
+sudo apt install libz3-dev
+```
+
 ## Building - Component Build
 
 This setup assumes that you have built LLVM and MLIR in `$BUILD_DIR` and installed them to `$PREFIX`. To build and launch the tests, run

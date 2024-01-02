@@ -87,6 +87,9 @@ struct HandlerDependencyAnalysis {
   std::unordered_map<std::string, std::vector<std::string>> eventDeps;
 
   std::map<HandlerFullName, FuncOp> handlersMap;
+  std::vector<FuncOp> getSuccessors(FuncOp funcOp) { return graph[funcOp]; }
+  std::vector<FuncOp> getPredecessors(FuncOp funcOp);
+
   bool hasSuccessor(llvm::StringRef eventName) {
     auto it = std::find_if(handlersMap.begin(), handlersMap.end(), [&](auto &pr) {
       return pr.first.event == eventName;
@@ -218,6 +221,27 @@ struct EP2LinearizePass :
     }
     StringRef getArgument() const final { return "ep2-linearize"; }
     StringRef getDescription() const final { return "Linearize all branches. Do not work with ExtractOp"; }
+};
+
+/// Mapping. Map from unit values to values
+struct ArchMappingPass :
+        public PassWrapper<ArchMappingPass, OperationPass<ModuleOp>> {
+  // TODO(zhiyuang): copy construction?
+  ArchMappingPass() = default;
+  ArchMappingPass(const ArchMappingPass &pass) {}
+  void runOnOperation() final;
+  void getDependentDialects(DialectRegistry &registry) const override {
+    registry.insert<EP2Dialect, scf::SCFDialect>();
+  }
+  StringRef getArgument() const final { return "ep2-mapping"; }
+  StringRef getDescription() const final { return "Mapping ep2 program to mlir structures"; }
+
+  Option<std::string> archSpecFile{
+      *this, "arch-spec-file", llvm::cl::desc("Filename for arch spec"), llvm::cl::Required};
+  Option<std::string> costModelName{
+      *this, "cost-model", llvm::cl::desc("Name for cost model"), llvm::cl::init("simple")};
+  Option<int> targetThroughput{
+      *this, "target-tput", llvm::cl::desc("Target thoughtput. in unit of unitTick / tick (dimensionless)")};
 };
 
 // Lower to Emitc pass

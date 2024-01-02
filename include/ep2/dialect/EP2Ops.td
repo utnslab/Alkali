@@ -115,6 +115,20 @@ def EP2_StructType : EP2_BaseType<"Struct", "struct"> {
   }];
 }
 
+def EP2_MultiStructType : EP2_BaseType<"MultiStruct", "multi_struct"> {
+  let summary = "EP2 MultiStruct Type";
+  let description = [{
+    "MultiStruct type for EP2. Takes one of the struct as the type. Have a atom showing the actual source"
+    "Illegal to use as a convert target in lower level dialects"
+  }];
+
+  let parameters = (ins ArrayRefParameter<"::mlir::ep2::StructType", "member structs">:$elementTypes, StringRefParameter<>:$name);
+  let assemblyFormat = "`<` $name `:` struct($elementTypes)`>`";
+
+  // TODO: convert this to normal struct and get a mapping from both side
+  // return a struct type and a (index,offset) -> newOffset mapping.
+}
+
 def EP2_BufferType: EP2_BaseType<"Buffer", "buf"> {
   let summary = "Buffer type";
   let description = [{

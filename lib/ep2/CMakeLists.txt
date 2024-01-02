@@ -11,6 +11,7 @@ add_mlir_dialect_library(MLIREP2
         AtomAnalysis.cpp
         
         # Passes
+        ArchMappingPass.cpp
         ContextToArgumentPass.cpp
         CFToPredPass.cpp
         BufferToValuePass.cpp
@@ -41,3 +42,8 @@ add_mlir_dialect_library(MLIREP2
         MLIRTargetCpp
         MLIRFuncDialect
         )
+
+# link to z3 libs
+target_include_directories(MLIREP2 PRIVATE ${Z3_CXX_INCLUDE_DIRS})
+target_link_libraries(MLIREP2 PRIVATE ${Z3_LIBRARIES})
+target_compile_options(MLIREP2 PRIVATE ${Z3_COMPONENT_CXX_FLAGS})
