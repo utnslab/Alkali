@@ -17,6 +17,8 @@ namespace mlir {
 namespace ep2 {
 
 LocalAllocAnalysis::LocalAllocAnalysis(Operation* module, AnalysisManager& am) {
+  // 2 types of local allocs necessary- contexts and buffers.
+  int bufCtr = 0;
   module->walk([&](ep2::ExtractOp op) {
     // perform an escape analyis- 
     // if do a store to "un-ssa" structure with my value - i.e. StoreOp, StructUpdateOp, InitOp return false.
@@ -25,7 +27,6 @@ LocalAllocAnalysis::LocalAllocAnalysis(Operation* module, AnalysisManager& am) {
 
     std::queue<mlir::Operation*> q;
     q.push(op);
-    int bufCtr = 0;
     // TODO should i have a visited set?
     // TODO this is very coarse, right now just ensures safety.
 
@@ -38,7 +39,7 @@ LocalAllocAnalysis::LocalAllocAnalysis(Operation* module, AnalysisManager& am) {
       }
 
       for (mlir::Operation* next : qop->getUsers()) {
-        if (isa<ep2::StoreOp>(next) || isa<ep2::InitOp>(next) || 
+        if (isa<ep2::InitOp>(next) || 
             (isa<ep2::StructUpdateOp>(next) && cast<ep2::StructUpdateOp>(next).getNewValue().getDefiningOp() == qop)) {
           return;
         }
@@ -50,6 +51,19 @@ LocalAllocAnalysis::LocalAllocAnalysis(Operation* module, AnalysisManager& am) {
 
     localAllocs.emplace(op, "_loc_buf_" + std::to_string(bufCtr++));
     return;
+  });
+  module->walk([&](ep2::LoadOp op) {
+    if (isa<ep2::StructType>(op->getResult(0).getType())) {
+      localAllocs.emplace(op, "_loc_buf_" + std::to_string(bufCtr++));
+    }
+  });
+  module->walk([&](ep2::InitOp op) {
+    if (isa<ep2::StructType>(op->getResult(0).getType()) &&
+        !cast<ep2::StructType>(op->getResult(0).getType()).getIsEvent()) {
+      localAllocs.emplace(op, "_loc_buf_" + std::to_string(bufCtr++));
+    } else if (isa<ep2::TableType>(op->getResult(0).getType())) {
+      localAllocs.emplace(op, "table_" + std::to_string(bufCtr++));
+    }
   });
 }
 

@@ -27,6 +27,7 @@ add_mlir_dialect_library(MLIREP2
         EP2LinearizePass.cpp
         LowerMemcpyPass.cpp
         AtomAnalysis.cpp
+        StructUpdatePropagationPass.cpp
         LocalAllocAnalysis.cpp
 
         DEPENDS

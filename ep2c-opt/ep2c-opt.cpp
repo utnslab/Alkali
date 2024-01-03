@@ -45,6 +45,7 @@ int main(int argc, char **argv) {
   mlir::PassRegistration<mlir::ep2::EP2LinearizePass>();
   mlir::PassRegistration<mlir::ep2::LowerEmitcPass>();
   mlir::PassRegistration<mlir::ep2::LowerMemcpyPass>();
+  mlir::PassRegistration<mlir::ep2::StructUpdatePropagationPass>();
   mlir::PassRegistration<mlir::ep2::EmitNetronomePass>();
   mlir::PassRegistration<mlir::ep2::EmitFPGAPass>();
 

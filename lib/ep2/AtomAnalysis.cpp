@@ -20,8 +20,9 @@ AtomAnalysis::AtomAnalysis(Operation* module, AnalysisManager& am) {
   module->walk([&](FuncOp op) {
     if (op->hasAttr("atom")) {
       llvm::StringRef k = op->getAttr("atom").cast<StringAttr>().getValue();
+      llvm::StringRef event = op->getAttr("event").cast<StringAttr>().getValue();
       if (m.find(k) == m.end()) {
-        m.try_emplace(k, atomCtr++);
+        m.try_emplace(k, std::pair<std::string, size_t>{event.str(), atomCtr++});
       }
     }
   });

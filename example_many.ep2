@@ -12,6 +12,12 @@ event USER_EVENT1 {
     int val;
 }
 
+event USER_EVENT2 {
+    atom at;
+    context ctx;
+    int val;
+}
+
 event DMA_RECV_CMPL {
     atom at;
     context ctx;
@@ -28,16 +34,31 @@ controller USER_EVENT1() {
     Queue(256, 1, 1);
 }
 
+controller USER_EVENT2() {
+    # queue_length=100, batch=1, qos_class_num=1
+    Queue(256, 1, 1);
+}
+
 # constrian -- only one handler can handle extern event
 handler DMA_RECV_CMPL:receive_desc (context ctx, buf data) {
     recv_desc_t desc;
     data.extract(desc);
-    ctx.desc = desc;
-    generate USER_EVENT1:process_desc {ctx, 100}; 
+    ctx.flow_id = desc.flow_id;
+    ctx.bump_seq = desc.bump_seq;
+    ctx.flags = desc.flags;
+    ctx.flow_grp = desc.flow_grp;
+
+    if (desc.flags == 1) {
+      generate USER_EVENT1:process_desc {ctx, 100}; 
+    } else {
+      generate USER_EVENT2:process_desc2 {ctx, 100}; 
+    }
 }
 
 handler USER_EVENT1:process_desc (context ctx, int param) {
     ctx.flow_grp = param;
 }
 
-
+handler USER_EVENT2:process_desc2 (context ctx, int param) {
+    ctx.flow_grp = param;
+}

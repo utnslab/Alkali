@@ -84,7 +84,7 @@ struct HandlerDependencyAnalysis {
   GraphType graph;
   std::vector<GraphType> subGraphs;
   std::vector<std::vector<FuncOp>> subGraphsOrder;
-  std::unordered_map<std::string, std::string> eventDeps;
+  std::unordered_map<std::string, std::vector<std::string>> eventDeps;
 
   std::map<HandlerFullName, FuncOp> handlersMap;
   bool hasSuccessor(llvm::StringRef eventName) {
@@ -249,12 +249,21 @@ enum class MemType {
   EMEM,
 };
 
+struct TableInfo {
+  std::string tableType;
+  std::string keyType;
+  std::string valType;
+  int size;
+  std::string tableId;
+};
+
 struct CollectInfoAnalysis {
   std::unordered_set<unsigned> typeBitWidths;
   std::vector<std::pair<std::string, mlir::LLVM::LLVMStructType>> structDefs;
   std::unordered_map<std::string, std::pair<MemType, int>> eventQueues;
-  std::unordered_map<std::string, std::string> eventDeps;
+  std::unordered_map<std::string, std::vector<std::string>> eventDeps;
   std::unordered_map<std::string, std::vector<std::pair<std::string, std::string>>> eventAllocs;
+  std::vector<TableInfo> tableInfos;
 
   CollectInfoAnalysis(Operation* op, AnalysisManager& am);
 
@@ -285,6 +294,16 @@ struct LowerMemcpyPass :
     StringRef getDescription() const final { return "Lower memcpy file"; }
 };
 
+struct StructUpdatePropagationPass :
+        public PassWrapper<StructUpdatePropagationPass, OperationPass<ModuleOp>> {
+    void runOnOperation() final;
+    void getDependentDialects(DialectRegistry &registry) const override {
+        registry.insert<EP2Dialect, func::FuncDialect, LLVM::LLVMDialect, emitc::EmitCDialect>();
+    }
+    StringRef getArgument() const final { return "ep2-update-ppg"; }
+    StringRef getDescription() const final { return "Struct update propagation file"; }
+};
+
 struct EmitNetronomePass :
         public PassWrapper<EmitNetronomePass, OperationPass<ModuleOp>> {
   // TODO(zhiyuang): copy construction?
@@ -301,7 +320,6 @@ struct EmitNetronomePass :
   Option<std::string> basePathOpt{
       *this, "basePath", llvm::cl::desc("Base path for generated files")};
 };
-
 
 // Handler dependency analysis pass
 struct HandlerInOutAnalysis {
@@ -326,19 +344,31 @@ struct TableAnalysis {
   mlir::DenseMap<mlir::Operation *, int> access_index;
 
   TableAnalysis(Operation* op);
+
+  bool isInvalidated(const AnalysisManager::PreservedAnalyses &pa) {
+    return false;
+  }
 };
 
 
 struct AtomAnalysis {
-  llvm::StringMap<size_t> atomToNum;
+  llvm::StringMap<std::pair<std::string, size_t>> atomToNum;
 
   AtomAnalysis(Operation* op, AnalysisManager& am);
+
+  bool isInvalidated(const AnalysisManager::PreservedAnalyses &pa) {
+    return false;
+  }
 };
 
 struct LocalAllocAnalysis {
   std::unordered_map<mlir::Operation*, std::string> localAllocs;
 
   LocalAllocAnalysis(Operation* op, AnalysisManager& am);
+
+  bool isInvalidated(const AnalysisManager::PreservedAnalyses &pa) {
+    return false;
+  }
 };
 
 } // namespace ep2

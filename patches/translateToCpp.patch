@@ -1,16 +1,8 @@
 diff --git a/mlir/lib/Target/Cpp/TranslateToCpp.cpp b/mlir/lib/Target/Cpp/TranslateToCpp.cpp
-index 4645ca4b2..bf7838ebe 100644
+index 4645ca4b206e..cbf6396fd6d9 100644
 --- a/mlir/lib/Target/Cpp/TranslateToCpp.cpp
 +++ b/mlir/lib/Target/Cpp/TranslateToCpp.cpp
-@@ -24,6 +24,7 @@
- #include "llvm/Support/Debug.h"
- #include "llvm/Support/FormatVariadic.h"
- #include <utility>
-+#include <cassert>
- 
- #define DEBUG_TYPE "translate-to-cpp"
- 
-@@ -417,9 +418,98 @@ static LogicalResult printOperation(CppEmitter &emitter, emitc::CallOp callOp) {
+@@ -417,9 +417,137 @@ static LogicalResult printOperation(CppEmitter &emitter, emitc::CallOp callOp) {
    raw_ostream &os = emitter.ostream();
    Operation &op = *callOp.getOperation();
  
@@ -23,6 +15,7 @@ index 4645ca4b2..bf7838ebe 100644
 +  }
 +
 +  if (callOp.getCallee() == "__ep2_intrin_struct_access") {
++    os << ((*callOp.getArgs()).size() > 1 && (*callOp.getArgs())[1].cast<IntegerAttr>().getValue().getSExtValue() ? "&" : "");
 +    os << emitter.getOrCreateName(op.getOperand(0)) << "->";
 +    if (isa<IntegerAttr>((*callOp.getArgs())[0])) {
 +      os << "f" << (*callOp.getArgs())[0].cast<IntegerAttr>().getValue();
@@ -31,21 +24,15 @@ index 4645ca4b2..bf7838ebe 100644
 +    }
 +    return success();
 +  } else if (callOp.getCallee() == "__ep2_intrin_struct_write") {
-+    mlir::Operation* opp = &op;
-+    while (opp != nullptr && isa<emitc::CallOp>(opp) && cast<emitc::CallOp>(opp).getCallee() == "__ep2_intrin_struct_write") {
-+      opp = opp->getOperand(1).getDefiningOp();
-+    }
-+    if (opp == nullptr) {
-+      os << emitter.getOrCreateName(op.getOperand(1)) << "->";
-+    } else {
-+      os << emitter.getOrCreateName(opp->getResult(0)) << "->";
-+    }
++    os << emitter.getOrCreateName(op.getOperand(1)) << "->";
 +    if (isa<IntegerAttr>((*callOp.getArgs())[0])) {
 +      os << "f" << (*callOp.getArgs())[0].cast<IntegerAttr>().getValue();
 +    } else {
 +      os << (*callOp.getArgs())[0].cast<StringAttr>().getValue();
 +    }
-+    os << " = " << emitter.getOrCreateName(op.getOperand(0));
++    os << " = ";
++    os << ((*callOp.getArgs()).size() > 1 && (*callOp.getArgs())[1].cast<IntegerAttr>().getValue().getSExtValue() ? "*" : "");
++    os << emitter.getOrCreateName(op.getOperand(0));
 +    return success();
 +  } else if (callOp.getCallee() == "__ep2_intrin_ctx_write") {
 +    os << emitter.getOrCreateName(op.getOperand(1)) << "->";
@@ -54,7 +41,42 @@ index 4645ca4b2..bf7838ebe 100644
 +    } else {
 +      os << (*callOp.getArgs())[0].cast<StringAttr>().getValue();
 +    }
-+    os << " = " << emitter.getOrCreateName(op.getOperand(0));
++    os << " = ";
++    os << ((*callOp.getArgs()).size() > 1 && (*callOp.getArgs())[1].cast<IntegerAttr>().getValue().getSExtValue() ? "*" : "");
++    os << emitter.getOrCreateName(op.getOperand(0));
++    return success();
++  } else if (callOp.getCallee() == "__ep2_intrin_incr_ptr") {
++    os << emitter.getOrCreateName(op.getOperand(0)) << " += ";
++    os << (*callOp.getArgs())[0].cast<IntegerAttr>().getValue();
++    return success();
++  } else if (callOp.getCallee() == "__ep2_intrin_ctx_read") {
++    os << ((*callOp.getArgs())[1].cast<IntegerAttr>().getValue().getSExtValue() ? "&" : "");
++    os << emitter.getOrCreateName(op.getOperand(0)) << "->";
++    if (isa<IntegerAttr>((*callOp.getArgs())[0])) {
++      os << "f" << (*callOp.getArgs())[0].cast<IntegerAttr>().getValue();
++    } else {
++      os << (*callOp.getArgs())[0].cast<StringAttr>().getValue();
++    }
++    return success();
++  } else if (callOp.getCallee() == "__ep2_intrin_pkt_size_set") {
++    os << "next_work_NET_SEND.meta.len = next_work_NET_SEND.f0.offs";
++    return success();
++  } else if (callOp.getCallee() == "__ep2_intrin_table_lookup") {
++    os << ((*callOp.getArgs())[0].cast<IntegerAttr>().getValue().getSExtValue() ? "&" : "");
++    os << emitter.getOrCreateName(op.getOperand(0)) << "->table[";
++    os << "me_cam_lookup(" << emitter.getOrCreateName(op.getOperand(1)) << ")]";
++    return success();
++  } else if (callOp.getCallee() == "__ep2_intrin_table_update") {
++    os << emitter.getOrCreateName(op.getOperand(0)) << "->table[";
++    os << "me_cam_update(" << emitter.getOrCreateName(op.getOperand(1)) << ")]";
++    os << " = ";
++    os << ((*callOp.getArgs())[0].cast<IntegerAttr>().getValue().getSExtValue() ? "*" : "");
++    os << emitter.getOrCreateName(op.getOperand(2));
++    return success();
++  } else if (callOp.getCallee() == "__ep2_intrin_ternary") {
++    os << "(" << emitter.getOrCreateName(op.getOperand(0)) << " ? ";
++    os << emitter.getOrCreateName(op.getOperand(1)) << " : ";
++    os << emitter.getOrCreateName(op.getOperand(2)) << ")";
 +    return success();
 +  } else if (callOp.getCallee().starts_with("__ep2_intrin_memcpy_")) {
 +    // extract real name
@@ -82,12 +104,26 @@ index 4645ca4b2..bf7838ebe 100644
 +    if (tag != 2) {
 +      os << sz;
 +    } else {
-+      os << "work.meta.len - " << emitter.getOrCreateName(op.getOperand(1)) << ".offs";
++      os << emitter.getOrCreateName(op.getOperand(1)) << ".sz - " << emitter.getOrCreateName(op.getOperand(1)) << ".offs";
 +    }
 +    os << ")";
 +    return success();
++  } else if (callOp.getCallee() == "__ep2_intrin_deq_work") {
++    auto event = (*callOp.getArgs())[0].cast<StringAttr>().getValue();
++    os << "cls_workq_add_thread(WORKQ_ID_" << event << ", ";
++    os << emitter.getOrCreateName(op.getOperand(0)) << ", ";
++    os << "sizeof(*" << emitter.getOrCreateName(op.getOperand(0)) << "))";
++    return success();
++  } else if (callOp.getCallee() == "__ep2_intrin_enq_work") {
++    auto event = (*callOp.getArgs())[0].cast<StringAttr>().getValue();
++    os << "cls_workq_add_work(WORKQ_ID_" << event << ", ";
++    os << emitter.getOrCreateName(op.getOperand(0)) << ", ";
++    os << "sizeof(*" << emitter.getOrCreateName(op.getOperand(0)) << "))";
++    return success();
 +  } else if (callOp.getCallee() == "__ep2_intrin_xfer2gpr" ||
-+             callOp.getCallee() == "__ep2_intrin_gpr2xfer") {
++             callOp.getCallee() == "__ep2_intrin_gpr2xfer" ||
++             callOp.getCallee() == "__ep2_intrin_mem2gpr" ||
++             callOp.getCallee() == "__ep2_intrin_gpr2mem") {
 +    os << "*(" << emitter.getOrCreateName(op.getOperand(1)) << ") = *(";
 +    os << emitter.getOrCreateName(op.getOperand(0)) << ")";
 +    return success();
@@ -98,13 +134,8 @@ index 4645ca4b2..bf7838ebe 100644
 +    if (tag != 2) {
 +      os << sz;
 +    } else {
-+      os << "work.meta.len - " << emitter.getOrCreateName(op.getOperand(1)) << ".offs";
++      os << emitter.getOrCreateName(op.getOperand(1)) << ".sz - " << emitter.getOrCreateName(op.getOperand(1)) << ".offs";
 +    }
-+    return success();
-+  } else if (callOp.getCallee() == "__ep2_intrin_ternary") {
-+    os << "(" << emitter.getOrCreateName(op.getOperand(0)) << " ? ";
-+    os << emitter.getOrCreateName(op.getOperand(1)) << " : ";
-+    os << emitter.getOrCreateName(op.getOperand(2)) << ")";
 +    return success();
 +  } else {
 +    os << callOp.getCallee();
@@ -112,7 +143,7 @@ index 4645ca4b2..bf7838ebe 100644
  
    auto emitArgs = [&](Attribute attr) -> LogicalResult {
      if (auto t = dyn_cast<IntegerAttr>(attr)) {
-@@ -451,10 +541,15 @@ static LogicalResult printOperation(CppEmitter &emitter, emitc::CallOp callOp) {
+@@ -451,10 +579,15 @@ static LogicalResult printOperation(CppEmitter &emitter, emitc::CallOp callOp) {
  
    os << "(";
  
@@ -132,7 +163,12 @@ index 4645ca4b2..bf7838ebe 100644
    if (failed(emittedArgs))
      return failure();
    os << ")";
-@@ -1050,6 +1145,7 @@ LogicalResult CppEmitter::emitType(Location loc, Type type) {
+@@ -1046,10 +1179,11 @@ LogicalResult CppEmitter::emitType(Location loc, Type type) {
+   if (auto iType = dyn_cast<IntegerType>(type)) {
+     switch (iType.getWidth()) {
+     case 1:
+-      return (os << "bool"), success();
++      return (os << "char"), success();
      case 8:
      case 16:
      case 32:

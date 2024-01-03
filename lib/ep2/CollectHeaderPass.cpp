@@ -12,46 +12,66 @@
 
 #include <cassert>
 
+#include "Utils.h"
+
 using namespace mlir;
 
 namespace mlir {
 namespace ep2 {
 
+static mlir::Operation* getParentFunction(mlir::Operation* op) {
+  while (!isa<FunctionOpInterface>(op)) {
+    op = op->getParentOp();
+    assert(op != nullptr);
+  }
+  return op;
+}
+
 CollectInfoAnalysis::CollectInfoAnalysis(Operation* module, AnalysisManager& am) {
   auto builder = OpBuilder(module);
 
-  auto &contextAnalysis = am.getAnalysis<ContextBufferizationAnalysis>();
+  auto charType = builder.getI8Type();
+  auto charPtrType = LLVM::LLVMPointerType::get(charType);
+  auto u32Type = builder.getI32Type();
+  auto bufType = LLVM::LLVMStructType::getIdentified(module->getContext(), "__buf_t");
+  llvm::SmallVector<mlir::Type> sTypes = {charPtrType, u32Type};
+  auto bRes = bufType.setBody(sTypes, true);
+  assert(bRes.succeeded());
+
   mlir::LLVMTypeConverter llvmConv(module->getContext());
-  std::string context_prefix = "context_chain_";
-  std::string context_suffix = "_t";
-  unsigned ctx_id = 1;
-  for (const auto& ctx : contextAnalysis.contextTables) {
-    std::string name = context_prefix + std::to_string(ctx_id) + context_suffix;
-    auto contextTy = mlir::LLVM::LLVMStructType::getIdentified(module->getContext(), name);
-    llvm::SmallVector<mlir::Type> contextTypes(ctx.size());
-    for (const auto& field : ctx) {
-      mlir::Type ty = field.second.second;
-      assert(ty.isSignlessInteger());
-      typeBitWidths.insert(ty.getIntOrFloatBitWidth());
-      contextTypes[field.second.first] = llvmConv.convertType(ty);
+  auto makeLLVMStruct = [&](mlir::Type ty) {
+    auto sTy = mlir::LLVM::LLVMStructType::getIdentified(module->getContext(), cast<ep2::StructType>(ty).getName());
+    llvm::SmallVector<mlir::Type> sTypes;
+    for (const auto& eTy : cast<ep2::StructType>(ty).getElementTypes()) {
+      sTypes.push_back(llvmConv.convertType(eTy));
     }
-    contextTy.setBody(contextTypes, true);
-    this->structDefs.emplace_back(name, contextTy);
-    ctx_id += 1;
-  }
+    auto sRes = sTy.setBody(sTypes, true);
+    assert(sRes.succeeded());
+    return sTy;
+  };
 
   std::vector<ep2::StructType> realStructTypes;
-  module->walk([&](StructAccessOp op){
-    assert(isa<ep2::StructType>(op.getInput().getType()));
-    ep2::StructType strTy = op.getInput().getType();
+  auto appendToStructTypes = [&](ep2::StructType strTy) {
     if (strTy.getIsEvent()) return;
-
     for (ep2::StructType ty : realStructTypes) {
       if (ty == strTy) {
         return;
       }
     }
-    realStructTypes.push_back(op.getInput().getType());
+    realStructTypes.push_back(strTy);
+  };
+
+  module->walk([&](mlir::Operation* op){
+    for (const auto& v : op->getOperands()) {
+      if (isa<ep2::StructType>(v.getType())) {
+        appendToStructTypes(cast<ep2::StructType>(v.getType()));
+      }
+    }
+    for (const auto& v : op->getResults()) {
+      if (isa<ep2::StructType>(v.getType())) {
+        appendToStructTypes(cast<ep2::StructType>(v.getType()));
+      }
+    }
   });
 
   for (ep2::StructType ty : realStructTypes) {
@@ -66,6 +86,33 @@ CollectInfoAnalysis::CollectInfoAnalysis(Operation* module, AnalysisManager& am)
     }
     lty.setBody(types, true);
     this->structDefs.emplace_back(ty.getName().str(), lty);
+  }
+
+
+  auto &contextAnalysis = am.getAnalysis<ContextBufferizationAnalysis>();
+  std::string context_prefix = "context_chain_";
+  std::string context_suffix = "_t";
+  unsigned ctx_id = 1;
+  for (const auto& ctx : contextAnalysis.contextTables) {
+    std::string name = context_prefix + std::to_string(ctx_id) + context_suffix;
+    auto contextTy = mlir::LLVM::LLVMStructType::getIdentified(module->getContext(), name);
+    llvm::SmallVector<mlir::Type> contextTypes(ctx.size());
+    for (const auto& field : ctx) {
+      mlir::Type ty = field.second.second;
+      if (isa<ep2::BufferType>(ty)) {
+        contextTypes[field.second.first] = bufType;
+      } else if (isa<ep2::StructType>(ty)) {
+        LLVM::LLVMStructType sTy = makeLLVMStruct(ty);
+        contextTypes[field.second.first] = sTy;
+      } else {
+        assert(ty.isSignlessInteger());
+        typeBitWidths.insert(ty.getIntOrFloatBitWidth());
+        contextTypes[field.second.first] = llvmConv.convertType(ty);
+      }
+    }
+    contextTy.setBody(contextTypes, true);
+    this->structDefs.emplace_back(name, contextTy);
+    ctx_id += 1;
   }
 
   auto lowerStructAnalysis = am.getAnalysis<LowerStructAnalysis>();
@@ -89,14 +136,6 @@ CollectInfoAnalysis::CollectInfoAnalysis(Operation* module, AnalysisManager& am)
         }
       }
       if (doInsert) {
-        auto charType = builder.getI8Type();
-        auto charPtrType = LLVM::LLVMPointerType::get(charType);
-        auto u32Type = builder.getI32Type();
-        auto bufType = LLVM::LLVMStructType::getIdentified(module->getContext(), "__buf_t");
-        llvm::SmallVector<mlir::Type> sTypes = {charPtrType, u32Type};
-        auto bRes = bufType.setBody(sTypes, true);
-        assert(bRes.succeeded());
-
         std::string name = "event_param_" + wrapType.getName().str();
 
         llvm::SmallVector<mlir::Type> types;
@@ -105,6 +144,8 @@ CollectInfoAnalysis::CollectInfoAnalysis(Operation* module, AnalysisManager& am)
         for (mlir::Type ty : wrapType.getBody()) {
           if (isa<ep2::BufferType>(ty)) {
             types.push_back(bufType);
+          } else if (isa<ep2::StructType>(ty)) {
+            types.push_back(makeLLVMStruct(ty));
           } else {
             if (ty.isIntOrFloat()) {
               typeBitWidths.insert(ty.getIntOrFloatBitWidth());
@@ -150,15 +191,31 @@ CollectInfoAnalysis::CollectInfoAnalysis(Operation* module, AnalysisManager& am)
 
   LocalAllocAnalysis& laa = am.getAnalysis<LocalAllocAnalysis>();
   for (const auto& pr : laa.localAllocs) {
-    mlir::Operation* funcOp = pr.first->getParentOp();
+    mlir::Operation* funcOp = getParentFunction(pr.first->getParentOp());
     std::string eventName = funcOp->getAttr("event").cast<StringAttr>().getValue().str();
     std::string stageName = funcOp->hasAttr("atom") ? funcOp->getAttr("atom").cast<StringAttr>().getValue().str() : funcOp->getAttr("event").cast<StringAttr>().getValue().str();
 
-    std::pair<std::string, std::string> prOut;
-    prOut.first = cast<ep2::StructType>(cast<ep2::ExtractOp>(pr.first).getOutput().getType()).getName().str();
-    prOut.second = pr.second;
-    this->eventAllocs[eventName + "_a_" + stageName].push_back(prOut);
+    if (isa<ep2::StructType>(pr.first->getResult(0).getType())) {
+      std::pair<std::string, std::string> prOut;
+      prOut.first = cast<ep2::StructType>(pr.first->getResult(0).getType()).getName().str();
+      prOut.second = pr.second;
+      this->eventAllocs[eventName + "_a_" + stageName].push_back(prOut);
+    }
   }
+
+  // tables
+  module->walk([&](ep2::InitOp initOp){
+    if (isa<ep2::TableType>(initOp->getResult(0).getType())) {
+      TableInfo ti = getTableStr(cast<ep2::TableType>(initOp->getResult(0).getType()));
+      for (const TableInfo& t : this->tableInfos) {
+        if (t.tableType == ti.tableType) {
+          return;
+        }
+      }
+      ti.tableId = laa.localAllocs[initOp];
+      this->tableInfos.push_back(ti);
+    }
+  });
 }
 
 void CollectHeaderPass::runOnOperation() {

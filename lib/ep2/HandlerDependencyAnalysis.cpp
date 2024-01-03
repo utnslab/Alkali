@@ -139,7 +139,7 @@ HandlerDependencyAnalysis::HandlerDependencyAnalysis(Operation *module) {
     } else { // this is a full handler
       std::vector<FuncOp> targets;
       for (auto &target : to) {
-        eventDeps.emplace(from.event.str(), target.event.str());
+        eventDeps[from.event.str()].push_back(target.event.str());
 
         // try to find exact match
         auto it = handlersMap.find(target);

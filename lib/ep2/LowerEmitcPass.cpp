@@ -1,5 +1,6 @@
 #include "mlir/IR/BuiltinDialect.h"
 
+#include "ep2/lang/Lexer.h"
 #include "ep2/dialect/Dialect.h"
 #include "ep2/dialect/Passes.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
@@ -13,6 +14,11 @@
 #include "mlir/Transforms/GreedyPatternRewriteDriver.h"
 
 #include "llvm/ADT/SmallSet.h"
+#include "llvm/Support/raw_ostream.h"
+
+#include <string>
+
+#include "Utils.h"
 
 // TODO support nested struct/context read/write, e.g. ctx.s.v1 = 1;
 
@@ -20,6 +26,14 @@ namespace mlir {
 namespace ep2 {
 
 namespace {
+
+static mlir::Operation* getParentFunction(mlir::Operation* op) {
+  while (!isa<FunctionOpInterface>(op)) {
+    op = op->getParentOp();
+    assert(op != nullptr);
+  }
+  return op;
+}
 
 static unsigned calcSize(mlir::Type ty) {
   if (isa<mlir::IntegerType>(ty)) {
@@ -53,7 +67,7 @@ struct ConstPattern : public OpConversionPattern<ep2::ConstantOp> {
     auto resType = typeConverter->convertType(fromType);
     auto value = adaptor.getValue();
     if (fromType.isa<ep2::AtomType>()) {
-      size_t v = analyzer.atomToNum[initOp.getValue().cast<mlir::StringAttr>().getValue()];
+      size_t v = analyzer.atomToNum[initOp.getValue().cast<mlir::StringAttr>().getValue()].second;
       value = rewriter.getI32IntegerAttr({v});
     }
 
@@ -85,6 +99,54 @@ struct ContextRefPattern : public OpConversionPattern<ep2::ContextRefOp> {
   }
 };
 
+struct LoadPattern : public OpConversionPattern<ep2::LoadOp> {
+  ContextBufferizationAnalysis &analyzer;
+  LocalAllocAnalysis &allocAnalyzer;
+
+  LoadPattern(TypeConverter &converter, MLIRContext *context,
+                  ContextBufferizationAnalysis &analyzer, LocalAllocAnalysis &allocAnalysis)
+      : OpConversionPattern<ep2::LoadOp>(converter, context),
+        analyzer(analyzer), allocAnalyzer(allocAnalysis) {}
+
+  LogicalResult matchAndRewrite(ep2::LoadOp loadOp, OpAdaptor adaptor,
+                  ConversionPatternRewriter &rewriter) const final {
+    auto loc = loadOp->getLoc();
+    auto refOp = dyn_cast<ep2::ContextRefOp>(loadOp->getOperand(0).getDefiningOp());
+    auto contextId = rewriter.getRemappedValue(refOp.getOperand());
+
+    llvm::SmallVector<Type> resTypes = {typeConverter->convertType(loadOp->getResult(0).getType())};
+    int pos = analyzer.getContextType(cast<func::FuncOp>(getParentFunction(loadOp)), refOp.getName()).first;
+    mlir::ArrayAttr args = rewriter.getI32ArrayAttr({pos, isa<ep2::StructType>(loadOp->getResult(0).getType())});
+    mlir::ArrayAttr templ_args;
+
+    auto ctxV = rewriter.create<emitc::CallOp>(loc, resTypes, rewriter.getStringAttr("__ep2_intrin_ctx_read"), args, templ_args, ValueRange{contextId});
+
+    if (isa<ep2::StructType>(loadOp->getResult(0).getType())) {
+      // get reference to allocated buffer
+      // generate memcpy into it.
+      
+      auto resType = loadOp->getResult(0).getType();
+
+      // TODO support dynamically allocated structs too
+      assert(allocAnalyzer.localAllocs.find(loadOp) != allocAnalyzer.localAllocs.end());
+
+      int memcpySize = calcSize(resType);
+      auto varOp = rewriter.create<emitc::VariableOp>(loc, typeConverter->convertType(resType), emitc::OpaqueAttr::get(getContext(), std::string{"&"} + allocAnalyzer.localAllocs[loadOp]));
+      rewriter.replaceOp(loadOp, varOp);
+
+      llvm::SmallVector<Type> resTypes2 = {};
+      // xferOffs, size
+      mlir::ArrayAttr args2 = rewriter.getI32ArrayAttr({0, memcpySize, 0});
+      mlir::ArrayAttr templ_args2;
+      rewriter.create<emitc::CallOp>(loc, resTypes2, rewriter.getStringAttr("__ep2_intrin_memcpy"), args2, templ_args2, ValueRange{varOp, ctxV.getResult(0)});
+    } else {
+      rewriter.replaceOp(loadOp, ctxV);
+    }
+    return success();
+  }
+};
+
+
 struct StorePattern : public OpConversionPattern<ep2::StoreOp> {
 
   ContextBufferizationAnalysis &analyzer;
@@ -99,8 +161,8 @@ struct StorePattern : public OpConversionPattern<ep2::StoreOp> {
     auto contextId = rewriter.getRemappedValue(refOp.getOperand());
 
     llvm::SmallVector<Type> resTypes = {};
-    int pos = analyzer.getContextType(cast<func::FuncOp>(storeOp->getParentOp()), refOp.getName()).first;
-    mlir::ArrayAttr args = rewriter.getI32ArrayAttr({pos});
+    int pos = analyzer.getContextType(cast<func::FuncOp>(getParentFunction(storeOp)), refOp.getName()).first;
+    mlir::ArrayAttr args = rewriter.getI32ArrayAttr({pos, isa<ep2::StructType>(storeOp->getOperand(1).getType())});
     mlir::ArrayAttr templ_args;
 
     rewriter.replaceOpWithNewOp<emitc::CallOp>(storeOp, resTypes, rewriter.getStringAttr("__ep2_intrin_ctx_write"), args, templ_args, ValueRange{adaptor.getValue(), contextId});
@@ -114,7 +176,7 @@ struct ReturnPattern : public OpConversionPattern<ep2::ReturnOp> {
   LogicalResult
   matchAndRewrite(ep2::ReturnOp returnOp, OpAdaptor adaptor,
                   ConversionPatternRewriter &rewriter) const final {
-    if (!isa<func::FuncOp>(returnOp->getParentOp()))
+    if (!isa<func::FuncOp>(getParentFunction(returnOp)))
       return rewriter.notifyMatchFailure(returnOp,
                                          "Not a valid return in func::FuncOp");
 
@@ -137,7 +199,7 @@ struct StructAccessPattern : public OpConversionPattern<ep2::StructAccessOp> {
     }
 
     llvm::SmallVector<Type> resTypes = {typeConverter->convertType(accessOp.getResult().getType())};
-    mlir::ArrayAttr args = rewriter.getI32ArrayAttr({(uint32_t) accessOp.getIndex()});
+    mlir::ArrayAttr args = rewriter.getI32ArrayAttr({(uint32_t) accessOp.getIndex(), isa<ep2::StructType>(accessOp->getResult(0).getType())});
     mlir::ArrayAttr templ_args;
     auto load = rewriter.create<emitc::CallOp>(loc, resTypes, rewriter.getStringAttr("__ep2_intrin_struct_access"), args, templ_args, ValueRange{adaptor.getOperands()[0]});
     rewriter.replaceOp(accessOp, load);
@@ -213,7 +275,7 @@ struct StructUpdatePattern : public OpConversionPattern<ep2::StructUpdateOp> {
     auto loc = updateOp->getLoc();
     llvm::SmallVector<Type> resTypes2 = {typeConverter->convertType(updateOp.getOperand(0).getType())};
     // todo
-    mlir::ArrayAttr args2 = rewriter.getI32ArrayAttr({updateOp.getIndex()});
+    mlir::ArrayAttr args2 = rewriter.getI32ArrayAttr({updateOp.getIndex(), isa<ep2::StructType>(updateOp->getOperand(1).getType())});
     mlir::ArrayAttr templ_args2;
     auto callOp = rewriter.create<emitc::CallOp>(loc, resTypes2, rewriter.getStringAttr("__ep2_intrin_struct_write"), args2, templ_args2, ValueRange{adaptor.getNewValue(), adaptor.getInput()});
 
@@ -224,7 +286,11 @@ struct StructUpdatePattern : public OpConversionPattern<ep2::StructUpdateOp> {
 
 // convert init op
 struct InitPattern : public OpConversionPattern<ep2::InitOp> {
-  using OpConversionPattern<ep2::InitOp>::OpConversionPattern;
+  LocalAllocAnalysis &allocAnalyzer;
+
+  InitPattern(TypeConverter &converter, MLIRContext *context, LocalAllocAnalysis& analysis)
+      : OpConversionPattern<ep2::InitOp>(converter, context), allocAnalyzer(analysis) {}
+
   LogicalResult
   matchAndRewrite(ep2::InitOp initOp, OpAdaptor adaptor,
                   ConversionPatternRewriter &rewriter) const final {
@@ -242,20 +308,17 @@ struct InitPattern : public OpConversionPattern<ep2::InitOp> {
 
     if (resType.isa<ep2::StructType>()) {
       auto newType = typeConverter->convertType(resType);
+      std::string eventName = resType.cast<ep2::StructType>().getName().str();
 
-      auto alloc = rewriter.create<emitc::VariableOp>(loc, newType, emitc::OpaqueAttr::get(getContext(), "&next_work"));
-      rewriter.replaceOp(initOp, alloc);
-
-      if (isGenerate) {
-        auto outputStructPtr = cast<func::FuncOp>(alloc->getParentOp()).getArgument(1);
-        llvm::SmallVector<Type> resTypes4 = {};
-        mlir::ArrayAttr args40 = rewriter.getI32ArrayAttr({0});
-        mlir::ArrayAttr args41 = rewriter.getI32ArrayAttr({1});
-        mlir::ArrayAttr templ_args4;
-        rewriter.create<emitc::CallOp>(loc, resTypes4, rewriter.getStringAttr("__ep2_intrin_struct_write"), args40, templ_args4, ValueRange{adaptor.getOperands()[0], outputStructPtr});
-        rewriter.create<emitc::CallOp>(loc, resTypes4, rewriter.getStringAttr("__ep2_intrin_struct_write"), args41, templ_args4, ValueRange{alloc, outputStructPtr});
+      if (!cast<ep2::StructType>(resType).getIsEvent()) {
+        auto alloc = rewriter.create<emitc::VariableOp>(loc, newType, emitc::OpaqueAttr::get(getContext(), std::string{"&"} + allocAnalyzer.localAllocs[initOp]));
+        rewriter.replaceOp(initOp, alloc);
+        return success();
       }
-      
+
+      auto newTypeAligned =
+          rewriter.getType<emitc::PointerType>(rewriter.getType<emitc::OpaqueType>(std::string{"__declspec(aligned(4)) struct event_param_" + eventName}));
+      auto alloc = rewriter.create<emitc::VariableOp>(loc, newTypeAligned, emitc::OpaqueAttr::get(getContext(), "&next_work_" + eventName));
       unsigned p = 0;
       for (const auto& opd : adaptor.getOperands()) {
         if (p == 0) {
@@ -267,15 +330,57 @@ struct InitPattern : public OpConversionPattern<ep2::InitOp> {
         if (p == 1) {
           args2 = rewriter.getStrArrayAttr({"ctx"});
         } else {
-          args2 = rewriter.getI32ArrayAttr({p-2});
+          args2 = rewriter.getI32ArrayAttr({p-2, isa<ep2::StructType>(initOp->getOperand(p).getType())});
         }
         mlir::ArrayAttr templ_args2;
         rewriter.create<emitc::CallOp>(loc, resTypes2, rewriter.getStringAttr("__ep2_intrin_struct_write"), args2, templ_args2, ValueRange{opd, alloc});
         p += 1;
       }
+
+      // copy next_work into an xfer register, and add it to appropriate workQ- OR
+      // do inlined_net_send.
+
+      mlir::Type retType = initOp->getResult(0).getType();
+      if (isa<ep2::StructType>(retType) && cast<ep2::StructType>(retType).getIsEvent()) {
+        ep2::StructType structTy = cast<ep2::StructType>(retType);
+        // an event generation.
+        if (structTy.getName() == "NET_SEND") {
+          llvm::SmallVector<Type> resTypes3 = {};
+          mlir::ArrayAttr args3;
+          mlir::ArrayAttr templ_args3;
+
+          rewriter.create<emitc::CallOp>(loc, resTypes3, rewriter.getStringAttr("__ep2_intrin_pkt_size_set"), args3, templ_args3, ValueRange{});
+          rewriter.create<emitc::CallOp>(loc, resTypes3, rewriter.getStringAttr("inlined_net_send"), args3, templ_args3, ValueRange{alloc});
+        } else {
+          auto xferType =
+              rewriter.getType<emitc::PointerType>(rewriter.getType<emitc::OpaqueType>(std::string{"__xrw struct event_param_" + eventName}));
+
+          // two commands
+          auto eventXfer = rewriter.create<emitc::VariableOp>(loc, xferType, emitc::OpaqueAttr::get(getContext(), std::string{"&next_work_ref_"} + eventName));
+
+          llvm::SmallVector<Type> resTypes = {};
+          mlir::ArrayAttr args;
+          mlir::ArrayAttr templ_args;
+          auto copy = rewriter.create<emitc::CallOp>(loc, resTypes, rewriter.getStringAttr("__ep2_intrin_gpr2xfer"), args, templ_args, ValueRange{alloc, eventXfer});
+
+          {
+            llvm::SmallVector<Type> resTypes3 = {};
+            mlir::ArrayAttr args3 = rewriter.getStrArrayAttr({eventName});
+            mlir::ArrayAttr templ_args3;
+            rewriter.create<emitc::CallOp>(loc, resTypes3, rewriter.getStringAttr("__ep2_intrin_enq_work"), args3, templ_args3, ValueRange{eventXfer.getResult()});
+          }
+        }
+      }
+
+      rewriter.replaceOp(initOp, alloc);
     } else if (resType.isa<ep2::BufferType>()) {
       auto newType = typeConverter->convertType(resType);
       auto varOp = rewriter.create<emitc::VariableOp>(loc, newType, emitc::OpaqueAttr::get(getContext(), std::string{"alloc_packet_buf()"}));
+      rewriter.replaceOp(initOp, varOp);
+    } else if (resType.isa<ep2::TableType>()) {
+      // init_me_cam(capacity)
+      auto newType = typeConverter->convertType(resType);
+      auto varOp = rewriter.create<emitc::VariableOp>(loc, newType, emitc::OpaqueAttr::get(getContext(), std::string{"&"} + allocAnalyzer.localAllocs[initOp]));
       rewriter.replaceOp(initOp, varOp);
     } else {
       return rewriter.notifyMatchFailure(initOp, "Currently only support init op on struct");
@@ -317,6 +422,159 @@ struct TerminatePattern : public OpConversionPattern<ep2::TerminateOp> {
   }
 };
 
+struct BitCastPattern : public OpConversionPattern<ep2::BitCastOp> {
+  using OpConversionPattern<ep2::BitCastOp>::OpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(ep2::BitCastOp op, OpAdaptor adaptor,
+                  ConversionPatternRewriter &rewriter) const final {
+    rewriter.replaceOpWithNewOp<emitc::CastOp>(op, typeConverter->convertType(op->getResult(0).getType()), adaptor.getOperands());
+    return success();
+  }
+};
+
+struct SubPattern : public OpConversionPattern<ep2::SubOp> {
+  using OpConversionPattern<ep2::SubOp>::OpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(ep2::SubOp op, OpAdaptor adaptor,
+                  ConversionPatternRewriter &rewriter) const final {
+    rewriter.replaceOpWithNewOp<emitc::SubOp>(op, typeConverter->convertType(op->getResult(0).getType()), adaptor.getLhs(), adaptor.getRhs());
+    return success();
+  }
+};
+
+struct AddPattern : public OpConversionPattern<ep2::AddOp> {
+  using OpConversionPattern<ep2::AddOp>::OpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(ep2::AddOp op, OpAdaptor adaptor,
+                  ConversionPatternRewriter &rewriter) const final {
+    rewriter.replaceOpWithNewOp<emitc::AddOp>(op, typeConverter->convertType(op->getResult(0).getType()), adaptor.getLhs(), adaptor.getRhs());
+    return success();
+  }
+};
+
+struct MulPattern : public OpConversionPattern<ep2::MulOp> {
+  using OpConversionPattern<ep2::MulOp>::OpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(ep2::MulOp op, OpAdaptor adaptor,
+                  ConversionPatternRewriter &rewriter) const final {
+    rewriter.replaceOpWithNewOp<emitc::MulOp>(op, typeConverter->convertType(op->getResult(0).getType()), adaptor.getLhs(), adaptor.getRhs());
+    return success();
+  }
+};
+
+struct CmpPattern : public OpConversionPattern<ep2::CmpOp> {
+  using OpConversionPattern<ep2::CmpOp>::OpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(ep2::CmpOp op, OpAdaptor adaptor,
+                  ConversionPatternRewriter &rewriter) const final {
+    emitc::CmpPredicate cmpType;
+    switch (op.getPredicate()) {
+      case -::ep2::tok_cmp_eq:
+        cmpType = emitc::CmpPredicate::eq;
+        break;
+      case -::ep2::tok_cmp_le:
+        cmpType = emitc::CmpPredicate::le;
+        break;
+      case -::ep2::tok_cmp_ge:
+        cmpType = emitc::CmpPredicate::ge;
+        break;
+      case '<':
+        cmpType = emitc::CmpPredicate::lt;
+        break;
+      case '>':
+        cmpType = emitc::CmpPredicate::gt;
+        break;
+      default: {
+        assert(false && "Unsupported comparison");
+        break;
+      }
+    }
+    auto attr = emitc::CmpPredicateAttr::get(getContext(), cmpType);
+    rewriter.replaceOpWithNewOp<emitc::CmpOp>(op, typeConverter->convertType(op->getResult(0).getType()), attr, adaptor.getLhs(), adaptor.getRhs());
+    return success();
+  }
+};
+
+struct SelectPattern : public OpConversionPattern<arith::SelectOp> {
+  using OpConversionPattern<arith::SelectOp>::OpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(arith::SelectOp op, OpAdaptor adaptor,
+                  ConversionPatternRewriter &rewriter) const final {
+    llvm::SmallVector<Type> resTypes = {typeConverter->convertType(op->getResult(0).getType())};
+    mlir::ArrayAttr args;
+    mlir::ArrayAttr templ_args;
+    rewriter.replaceOpWithNewOp<emitc::CallOp>(op, resTypes, rewriter.getStringAttr("__ep2_intrin_ternary"), args, templ_args, adaptor.getOperands());
+    return success();
+  }
+};
+
+struct YieldPattern : public OpConversionPattern<scf::YieldOp> {
+  using OpConversionPattern<scf::YieldOp>::OpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(scf::YieldOp op, OpAdaptor adaptor,
+                  ConversionPatternRewriter &rewriter) const final {
+    rewriter.replaceOpWithNewOp<scf::YieldOp>(op, adaptor.getResults());
+    return success();
+  }
+};
+
+struct IfPattern : public OpConversionPattern<scf::IfOp> {
+  using OpConversionPattern<scf::IfOp>::OpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(scf::IfOp op, OpAdaptor adaptor,
+                  ConversionPatternRewriter &rewriter) const final {
+
+    llvm::SmallVector<mlir::Type> adaptedTypes;
+    auto res = typeConverter->convertTypes(op->getResultTypes(), adaptedTypes);
+    assert(res.succeeded());
+
+    auto newOp = rewriter.create<scf::IfOp>(op->getLoc(), adaptedTypes, adaptor.getCondition(), adaptor.getElseRegion().getBlocks().size() == 1);
+    newOp.getThenRegion().takeBody(adaptor.getThenRegion());
+    newOp.getElseRegion().takeBody(adaptor.getElseRegion());
+    rewriter.replaceOp(op, newOp);
+    return success();
+  }
+};
+
+
+struct TableLookupPattern : public OpConversionPattern<ep2::LookupOp> {
+  using OpConversionPattern<ep2::LookupOp>::OpConversionPattern;
+
+  // T[me_cam_lookup(k)]
+  LogicalResult
+  matchAndRewrite(ep2::LookupOp op, OpAdaptor adaptor,
+                  ConversionPatternRewriter &rewriter) const final {
+    llvm::SmallVector<Type> resTypes = {typeConverter->convertType(op.getValue().getType())};
+    mlir::ArrayAttr args = rewriter.getI32ArrayAttr({isa<ep2::StructType>(op.getValue().getType())});
+    mlir::ArrayAttr templ_args;
+    rewriter.replaceOpWithNewOp<emitc::CallOp>(op, resTypes, rewriter.getStringAttr("__ep2_intrin_table_lookup"), args, templ_args, adaptor.getOperands());
+    return success();
+  }
+};
+
+struct TableUpdatePattern : public OpConversionPattern<ep2::UpdateOp> {
+  using OpConversionPattern<ep2::UpdateOp>::OpConversionPattern;
+  // T[me_cam_update(k)] = v
+
+  LogicalResult
+  matchAndRewrite(ep2::UpdateOp op, OpAdaptor adaptor,
+                  ConversionPatternRewriter &rewriter) const final {
+    llvm::SmallVector<Type> resTypes = {};
+    mlir::ArrayAttr args = rewriter.getI32ArrayAttr({isa<ep2::StructType>(op.getValue().getType())});
+    mlir::ArrayAttr templ_args;
+    rewriter.replaceOpWithNewOp<emitc::CallOp>(op, resTypes, rewriter.getStringAttr("__ep2_intrin_table_update"), args, templ_args, adaptor.getOperands());
+    return success();
+  }
+};
+
 // convert function
 struct FunctionPattern : public OpConversionPattern<ep2::FuncOp> {
 
@@ -333,6 +591,8 @@ struct FunctionPattern : public OpConversionPattern<ep2::FuncOp> {
   matchAndRewrite(ep2::FuncOp funcOp, OpAdaptor adaptor,
                   ConversionPatternRewriter &rewriter) const final {
     auto loc = funcOp->getLoc();
+    std::string eventName = funcOp->getAttr("event").cast<StringAttr>().getValue().str();
+
     if (funcOp->getAttr("type").cast<StringAttr>().getValue() != "handler")
       return rewriter.notifyMatchFailure(funcOp, "Not a handler");
 
@@ -343,7 +603,8 @@ struct FunctionPattern : public OpConversionPattern<ep2::FuncOp> {
       return failure();
     }
 
-    auto newArgTypes = getArgumentTypes(rewriter, funcOp.getName(), wrapperTypes.size());
+    // empty
+    llvm::SmallVector<mlir::Type> newArgTypes;
     TypeConverter::SignatureConversion signatureConversion(
         funcOp.getNumArguments());
 
@@ -354,24 +615,63 @@ struct FunctionPattern : public OpConversionPattern<ep2::FuncOp> {
     auto entryBlock = newFuncOp.addEntryBlock();
     rewriter.setInsertionPointToStart(entryBlock);
 
-    std::string eventName = funcOp->getAttr("event").cast<StringAttr>().getValue().str();
-
     // construct body and replace parameter
+    auto inputWrapperXferType =
+        rewriter.getType<emitc::PointerType>(rewriter.getType<emitc::OpaqueType>(std::string{"__xrw struct event_param_" + eventName}));
     auto inputWrapperType =
-        rewriter.getType<emitc::PointerType>(rewriter.getType<emitc::OpaqueType>(std::string{"struct event_param_" + eventName}));
+        rewriter.getType<emitc::PointerType>(rewriter.getType<emitc::OpaqueType>(std::string{"__declspec(aligned(4)) struct event_param_" + eventName}));
     auto contextType =
         rewriter.getType<emitc::PointerType>(rewriter.getType<emitc::OpaqueType>(std::string{"struct context_chain_1_t"}));
-    auto inputStructPtr = newFuncOp.getArgument(0);
 
-    llvm::SmallVector<Type> resTypes = {inputWrapperType};
-    mlir::ArrayAttr args = rewriter.getI32ArrayAttr({1});
-    mlir::ArrayAttr templ_args;
-    auto eventPtr = rewriter.create<emitc::CallOp>(loc, resTypes, rewriter.getStringAttr("__ep2_intrin_struct_access"), args, templ_args, ValueRange{inputStructPtr});
+    auto eventPtr = rewriter.create<emitc::VariableOp>(loc, inputWrapperType, emitc::OpaqueAttr::get(getContext(), std::string{"&work"}));
+    if (eventName != "NET_RECV") {
+      auto eventXfer = rewriter.create<emitc::VariableOp>(loc, inputWrapperXferType, emitc::OpaqueAttr::get(getContext(), std::string{"&work_ref"}));
+
+      {
+        llvm::SmallVector<Type> resTypes3 = {};
+        mlir::ArrayAttr args3 = rewriter.getStrArrayAttr({eventName});
+        mlir::ArrayAttr templ_args3;
+        rewriter.create<emitc::CallOp>(loc, resTypes3, rewriter.getStringAttr("__ep2_intrin_deq_work"), args3, templ_args3, ValueRange{eventXfer.getResult()});
+      }
+      {
+        llvm::SmallVector<Type> resTypes3 = {};
+        mlir::ArrayAttr args3 = rewriter.getStrArrayAttr({eventName});
+        mlir::ArrayAttr templ_args3;
+        rewriter.create<emitc::CallOp>(loc, resTypes3, rewriter.getStringAttr("__ep2_intrin_xfer2gpr"), args3, templ_args3, ValueRange{eventXfer.getResult(), eventPtr.getResult()});
+      }
+    } else {
+      llvm::SmallVector<Type> resTypes3 = {};
+      mlir::ArrayAttr args3;
+      mlir::ArrayAttr templ_args3;
+      rewriter.create<emitc::CallOp>(loc, resTypes3, rewriter.getStringAttr("inlined_net_recv"), args3, templ_args3, ValueRange{eventPtr.getResult()});
+    }
+
+    bool isFirstStage = true;
+    for (const auto& pr : handAnalyzer.eventDeps) {
+      for (const auto& s : pr.second) {
+        if (s == eventName) {
+          isFirstStage = false;
+        }
+      }
+    }
+    if (isFirstStage) {
+      {
+        llvm::SmallVector<Type> resTypes3 = {contextType};
+        mlir::ArrayAttr args3;
+        mlir::ArrayAttr templ_args3;
+        auto ctxAlloc = rewriter.create<emitc::CallOp>(loc, resTypes3, rewriter.getStringAttr("alloc_context_chain_ring_entry"), args3, templ_args3, ValueRange{});
+
+        llvm::SmallVector<Type> resTypes4 = {};
+        mlir::ArrayAttr args4 = rewriter.getStrArrayAttr({"ctx"});
+        mlir::ArrayAttr templ_args4;
+        rewriter.create<emitc::CallOp>(loc, resTypes4, rewriter.getStringAttr("__ep2_intrin_struct_write"), args4, templ_args4, ValueRange{ctxAlloc->getResult(0), eventPtr.getResult()});
+      }
+    }
 
     llvm::SmallVector<Type> resTypes3 = {contextType};
     mlir::ArrayAttr args3 = rewriter.getStrArrayAttr({"ctx"});
     mlir::ArrayAttr templ_args3;
-    auto structPtr = rewriter.create<emitc::CallOp>(loc, resTypes3, rewriter.getStringAttr("__ep2_intrin_struct_access"), args3, templ_args3, ValueRange{eventPtr.getResult(0)});
+    auto structPtr = rewriter.create<emitc::CallOp>(loc, resTypes3, rewriter.getStringAttr("__ep2_intrin_struct_access"), args3, templ_args3, ValueRange{eventPtr.getResult()});
     signatureConversion.remapInput(0, structPtr.getResult(0));
 
     auto sourceIdx = 1;
@@ -382,9 +682,9 @@ struct FunctionPattern : public OpConversionPattern<ep2::FuncOp> {
           rewriter.getType<emitc::PointerType>(convertedType);
       // materialize block type
       llvm::SmallVector<Type> resTypes2 = {convertedType};
-      mlir::ArrayAttr args2 = rewriter.getI32ArrayAttr({i});
+      mlir::ArrayAttr args2 = rewriter.getI32ArrayAttr({i, isa<ep2::StructType>(wrapperTypes[0].getBody()[i])});
       mlir::ArrayAttr templ_args2;
-      auto param = rewriter.create<emitc::CallOp>(loc, resTypes2, rewriter.getStringAttr("__ep2_intrin_struct_access"), args2, templ_args2, ValueRange{eventPtr.getResult(0)});
+      auto param = rewriter.create<emitc::CallOp>(loc, resTypes2, rewriter.getStringAttr("__ep2_intrin_struct_access"), args2, templ_args2, ValueRange{eventPtr.getResult()});
       signatureConversion.remapInput(i + sourceIdx, param.getResult(0));
     }
 
@@ -400,20 +700,6 @@ struct FunctionPattern : public OpConversionPattern<ep2::FuncOp> {
 
     return success();
   }
-
-  llvm::SmallVector<mlir::Type> getArgumentTypes(PatternRewriter &rewriter,
-                                                 llvm::StringRef funcName,
-                                                 int num) const {
-    auto context = rewriter.getContext();
-
-    // insert if not done
-    llvm::SmallVector<mlir::Type> types;
-    for (int i = 0; i < num; i++) {
-      auto argType = rewriter.getType<emitc::OpaqueType>("struct __wrapper_arg_t");
-      types.push_back(rewriter.getType<emitc::PointerType>(argType));
-    }
-    return types;
-  }
 };
 
 } // namespace
@@ -425,6 +711,9 @@ void LowerEmitcPass::runOnOperation() {
   HandlerDependencyAnalysis &handlerDepAnalysis = getAnalysis<HandlerDependencyAnalysis>();
   AtomAnalysis &atomAnalysis = getAnalysis<AtomAnalysis>();
   LocalAllocAnalysis &allocAnalysis = getAnalysis<LocalAllocAnalysis>();
+  TableAnalysis &tableAnalysis = getAnalysis<TableAnalysis>();
+
+  markAnalysesPreserved<LocalAllocAnalysis>();
 
   // install functions
   auto builder = OpBuilder(getOperation());
@@ -440,6 +729,11 @@ void LowerEmitcPass::runOnOperation() {
   });
   typeConverter.addConversion([&](ep2::BufferType type) {
     return builder.getType<emitc::OpaqueType>("struct __buf_t");
+  });
+
+  typeConverter.addConversion([&](ep2::TableType type) {
+    TableInfo tInfo = getTableStr(type);
+    return builder.getType<emitc::PointerType>(builder.getType<emitc::OpaqueType>(tInfo.tableType));
   });
   typeConverter.addConversion([&](ep2::AtomType type) {
     return mlir::IntegerType::get(type.getContext(), 32);
@@ -481,21 +775,28 @@ void LowerEmitcPass::runOnOperation() {
   target.addLegalDialect<ep2::EP2Dialect, func::FuncDialect, LLVM::LLVMDialect, emitc::EmitCDialect,
                          BuiltinDialect>();
 
-  // TODO add a pass to handle loads.
-  target
-      .addIllegalOp<ep2::ConstantOp, ep2::StoreOp, ep2::ContextRefOp, ep2::TerminateOp,
-                    ep2::CallOp, ep2::FuncOp, ep2::ReturnOp, ep2::StructUpdateOp, ep2::NopOp,
-                    ep2::InitOp, ep2::StructAccessOp, ep2::ExtractOp, ep2::EmitOp>();
+  target.addIllegalOp<ep2::ConstantOp, ep2::StoreOp, ep2::ContextRefOp, ep2::TerminateOp, 
+    ep2::CallOp, ep2::FuncOp, ep2::ReturnOp, ep2::StructUpdateOp, ep2::NopOp, ep2::InitOp,
+    ep2::StructAccessOp, ep2::ExtractOp, ep2::EmitOp, ep2::BitCastOp, ep2::SubOp, ep2::AddOp,
+    ep2::CmpOp, ep2::MulOp, arith::SelectOp, ep2::LookupOp, ep2::UpdateOp, ep2::LoadOp>();
+  target.addDynamicallyLegalDialect<scf::SCFDialect>([&](mlir::Operation* op){
+    return typeConverter.isLegal(op);
+  });
 
   // apply rules
   mlir::RewritePatternSet patterns(&getContext());
   patterns.add<CallPattern, ReturnPattern, ControllerPattern, StructUpdatePattern, EmitPattern,
-               ContextRefPattern, InitPattern, StructAccessPattern, TerminatePattern, NopPattern>(
-      typeConverter, &getContext());
+               ContextRefPattern, StructAccessPattern, TerminatePattern, NopPattern, BitCastPattern,
+               SubPattern, AddPattern, MulPattern, CmpPattern, SelectPattern, TableLookupPattern,
+               TableUpdatePattern, YieldPattern, IfPattern>(typeConverter, &getContext());
   patterns.add<ExtractPattern>(typeConverter, &getContext(),
                                 allocAnalysis);
   patterns.add<ConstPattern>(typeConverter, &getContext(),
                                 atomAnalysis);
+  patterns.add<InitPattern>(typeConverter, &getContext(),
+                                allocAnalysis);
+  patterns.add<LoadPattern>(typeConverter, &getContext(),
+                                contextAnalysis, allocAnalysis);
   patterns.add<StorePattern>(typeConverter, &getContext(),
                                 contextAnalysis);
   patterns.add<FunctionPattern>(typeConverter, &getContext(),

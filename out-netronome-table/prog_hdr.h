@@ -15,33 +15,14 @@ __packed struct __buf_t {
 	unsigned offs;
 };
 
-__packed struct recv_desc_t {
-	int32_t f0;
-	int32_t f1;
-	int32_t f2;
-	int32_t f3;
-};
-
 __packed struct context_chain_1_t {
-	struct recv_desc_t f0;
-	int32_t f1;
+	int32_t f0;
 	int32_t ctx_id;
 };
 
-__packed struct event_param_DMA_RECV_CMPL {
-	struct __buf_t f0;
+__packed struct event_param_LOAD_TABLE {
 	struct context_chain_1_t* ctx;
 };
-
-__packed struct event_param_USER_EVENT1 {
-	int32_t f0;
-	struct context_chain_1_t* ctx;
-};
-
-#define WORKQ_SIZE_USER_EVENT1 256
-#define WORKQ_ID_USER_EVENT1 10
-#define WORKQ_TYPE_USER_EVENT1 MEM_TYEP_CLS
-CLS_WORKQ_DECLARE(workq_USER_EVENT1, WORKQ_SIZE_USER_EVENT1);
 
 EMEM_CONTEXTQ_DECLARE(context_chain_1_t, context_chain_pool, 2048);
 MEM_RING_INIT(context_chain_ring, 2048);

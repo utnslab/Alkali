@@ -13,14 +13,17 @@
 #include <fstream>
 #include <string>
 #include <cassert>
+#include <algorithm>
 #include <optional>
+
+#include "Utils.h"
 
 using namespace mlir;
 
 namespace mlir {
 namespace ep2 {
 
-const char* toString(MemType ty) {
+static const char* toString(MemType ty) {
   switch (ty) {
     case MemType::LMEM: return "LMEM";
     case MemType::CLS: return "CLS";
@@ -32,6 +35,65 @@ const char* toString(MemType ty) {
       return nullptr;
     }
   }
+}
+
+
+static unsigned calcSize(mlir::Type ty) {
+  if (isa<mlir::IntegerType>(ty)) {
+    return cast<mlir::IntegerType>(ty).getWidth()/8;
+  } else if (isa<LLVM::LLVMPointerType>(ty)) {
+    return 8;
+  } else if (isa<LLVM::LLVMStructType>(ty)) {
+    unsigned width = 0;
+    for (mlir::Type eTy : cast<LLVM::LLVMStructType>(ty).getBody()) { 
+      width += calcSize(eTy);
+    }
+    return width;
+  }
+};
+
+// for now, no rearranging elements.
+static std::vector<std::pair<int, unsigned>> calcPadding(const mlir::LLVM::LLVMStructType& ty, bool canOptimizeLayout) {
+  std::vector<std::pair<int, unsigned>> paddingInfo;
+  unsigned sz = calcSize(ty);
+
+  auto moduloUp = [](unsigned v, unsigned m) {
+    return (m - (v % m)) % m;
+  };
+
+  auto naturalAlign = [](unsigned sz) {
+    if (sz <= 1) {
+      return 1;
+    } else if (sz == 2) {
+      return 2;
+    } else if (sz >= 3 || sz <= 4) {
+      return 4;
+    } else {
+      return 8;
+    }
+  };
+
+  if (canOptimizeLayout) {
+    // space out members to ensure they are aligned naturally.
+    // max out at 8-byte alignment.
+    unsigned pos = 0;
+    for (int i = 0; i<ty.getBody().size(); ++i) {
+      auto ety = ty.getBody()[i];
+      unsigned memberSz = calcSize(ety);
+      unsigned align = naturalAlign(memberSz);
+      if (pos % align != 0) {
+        unsigned pad = moduloUp(pos, align);
+        pos += pad;
+        paddingInfo.emplace_back(i-1, pad);
+      }
+      pos += memberSz;
+    }
+    sz = pos;
+  }
+  if (sz % 4 != 0) {
+    paddingInfo.emplace_back(ty.getBody().size()-1, sz % 4);
+  }
+  return paddingInfo;
 }
 
 void EmitNetronomePass::runOnOperation() {
@@ -72,36 +134,42 @@ void EmitNetronomePass::runOnOperation() {
     fout_prog_hdr << "__packed struct __buf_t {\n";
     fout_prog_hdr << "\tchar* buf;\n";
     fout_prog_hdr << "\tunsigned offs;\n";
+    fout_prog_hdr << "\tunsigned sz;\n";
     fout_prog_hdr << "};\n\n";
     
     // emit structs
     for (const auto& pr : info.structDefs) {
       fout_prog_hdr << (pr.second.isPacked() ? "__packed " : "") << "struct " << pr.first << " {\n";
-      // to check if struct size is a multiple of 4 bytes.
-      unsigned width = 0;
+
+      bool isContext = pr.first.find("context_chain") != std::string::npos;
+      bool isEvent = pr.first.find("event_param") != std::string::npos;
+
+      std::vector<std::pair<int, unsigned>> padding = calcPadding(pr.second, isContext || isEvent);
+      unsigned padPos = 0;
       for (int i = 0; i<pr.second.getBody().size(); ++i) {
         mlir::Type ty = pr.second.getBody()[i];
         if (isa<LLVM::LLVMStructType>(ty)) {
-          // TODO assume buffer is the only ptr for now.
-          if (pr.first.find("NET_SEND") != std::string::npos) recvBufOffs = i;
-          fout_prog_hdr << "\tstruct __buf_t" << " f" << i << ";\n";
+          if (cast<LLVM::LLVMStructType>(ty).getName() == "__buf_t") {
+            if (pr.first.find("NET_SEND") != std::string::npos) recvBufOffs = i;
+            fout_prog_hdr << "\tstruct __buf_t" << " f" << i << ";\n";
+          } else {
+            fout_prog_hdr << "\tstruct " << cast<LLVM::LLVMStructType>(ty).getName().str() << " f" << i << ";\n";
+          }
         } else if (isa<mlir::IntegerType>(ty)) {
           fout_prog_hdr << "\tint" << cast<mlir::IntegerType>(ty).getWidth() << "_t f" << i << ";\n";
-          // only add here, ptrs are guaranteed to be modulo 4.
-          width += cast<mlir::IntegerType>(ty).getWidth()/8;
+        }
+        if (padPos < padding.size() && padding[padPos].first == i) {
+          fout_prog_hdr << "\tint8_t pad" << padPos << "[" << padding[padPos].second << "];\n";
+          padPos += 1;
         }
       }
-      if (pr.first.find("context_chain") != std::string::npos) {
+      if (isContext) {
         fout_prog_hdr << "\tint32_t ctx_id;\n";
-      } else if (pr.first.find("event_param") != std::string::npos) {
+      } else if (isEvent) {
         if (pr.first == "event_param_NET_RECV") fout_prog_hdr << "\tstruct recv_meta_t meta;\n";
         if (pr.first == "event_param_NET_SEND") fout_prog_hdr << "\tstruct send_meta_t meta;\n";
         fout_prog_hdr << "\tstruct context_chain_1_t* ctx;\n";
       }
-      if (width % 4 != 0) {
-        fout_prog_hdr << "\tint8_t padding[" << (width % 4) << "];\n";
-      }
-
       fout_prog_hdr << "};\n\n";
     }
 
@@ -114,6 +182,15 @@ void EmitNetronomePass::runOnOperation() {
       fout_prog_hdr << "#define WORKQ_ID_" << eventName << " " << (workq_id_incr++) << '\n';
       fout_prog_hdr << "#define WORKQ_TYPE_" << eventName << " " << "MEM_TYEP_" << toString(q.second.first) << '\n';
       fout_prog_hdr << toString(q.second.first) << "_WORKQ_DECLARE(workq_" << eventName << ", WORKQ_SIZE_" << eventName << ");\n\n";
+    }
+
+    unsigned tableCtr = 0;
+    for (const auto& tInfo : info.tableInfos) {
+      fout_prog_hdr << "__packed " << tInfo.tableType << " {\n";
+      fout_prog_hdr << "\t" << tInfo.valType << " table[" << tInfo.size << "];\n";
+      fout_prog_hdr << "};\n";
+      // TODO not lmem always
+      fout_prog_hdr << "__shared " << tInfo.tableType << " " << tInfo.tableId << ";\n\n";
     }
 
     // emit context allocation code
@@ -147,6 +224,7 @@ void EmitNetronomePass::runOnOperation() {
     fout_prog_hdr << "\tstruct __buf_t buf;\n";
     fout_prog_hdr << "\tbuf.buf = alloc_packet_buffer();\n";
     fout_prog_hdr << "\tbuf.offs = 0;\n";
+    fout_prog_hdr << "\tbuf.sz = 0;\n";
     fout_prog_hdr << "\treturn buf;\n";
     fout_prog_hdr << "}\n\n";
     fout_prog_hdr << "#endif\n";
@@ -178,20 +256,20 @@ void EmitNetronomePass::runOnOperation() {
 
       fout_stage << "__declspec(aligned(4)) struct event_param_" << eventName << " work;\n";
       fout_stage << "__xrw struct event_param_" << eventName << " work_ref;\n";
-      fout_stage << "struct __wrapper_arg_t wrap_in;\n";
 
       bool isLastStage = info.eventDeps.find(eventName) == info.eventDeps.end();
 
       if (!isLastStage) {
-        std::string nextEventName = info.eventDeps.find(eventName)->second;
-        fout_stage << "__declspec(aligned(4)) struct event_param_" << nextEventName << " next_work;\n";
-        fout_stage << "__xrw struct event_param_" << nextEventName << " next_work_ref;\n";
-        fout_stage << "struct __wrapper_arg_t wrap_out;\n\n";
+        const std::vector<std::string>& nextEventNames = info.eventDeps.find(eventName)->second;
+        for (const std::string& nextEventName : nextEventNames) {
+          fout_stage << "__declspec(aligned(4)) struct event_param_" << nextEventName << " next_work_" << nextEventName << ";\n";
+          fout_stage << "__xrw struct event_param_" << nextEventName << " next_work_ref_" << nextEventName << ";\n";
+        }
       }
 
       {
         llvm::raw_os_ostream func_stage(fout_stage);
-        fout_stage << "__forceinline\n";
+        fout_stage << "\n__forceinline\n";
         auto tRes = emitc::translateToCpp(nameToFunc[funcName], func_stage, true);
         assert(tRes.succeeded());
       }
@@ -200,11 +278,14 @@ void EmitNetronomePass::runOnOperation() {
 
       bool isFirstStage = true;
       for (const auto& pr : info.eventDeps) {
-        if (pr.second == eventName) {
-          isFirstStage = false;
+        for (const auto& s : pr.second) {
+          if (s == eventName) {
+            isFirstStage = false;
+          }
         }
       }
 
+      fout_stage << "\tinit_me_cam(16);\n";
       if (isFirstStage) {
         fout_stage << "\tinit_context_chain_ring();\n";
       }
@@ -212,40 +293,10 @@ void EmitNetronomePass::runOnOperation() {
       if (eventName != "NET_RECV") {
         fout_stage << "\tinit_recv_event_workq(WORKQ_ID_" << eventName << ", workq_" << eventName << ", WORKQ_TYPE_" << eventName << ", WORKQ_SIZE_" << eventName << ", 8);\n";
       }
+      fout_stage << "\twait_global_start_();\n";
+
       fout_stage << "\tfor (;;) {\n";
-      
-      // most events are handled on a separate core, requiring work queues. network events are handled on same core.
-      if (eventName != "NET_RECV") {
-        fout_stage << "\t\tcls_workq_add_thread(" << "WORKQ_ID_" << eventName << ", &work_ref, sizeof(work_ref));\n";
-        fout_stage << "\t\twork = work_ref;\n";
-      } else {
-        fout_stage << "\t\tinlined_net_recv(&work);\n";
-      }
-
-      fout_stage << "\t\twrap_in.f1 = &work;\n";
-
-      if (isFirstStage) {
-        fout_stage << "\t\twork.ctx = alloc_context_chain_ring_entry();\n";
-      }
-
-      fout_stage << "\t\t" << funcName << "(&wrap_in";
-      if (!isLastStage) {
-        fout_stage << ", &wrap_out";
-      }
-      fout_stage << ");\n";
-
-      // rely on invariant one event type can only EVER flow to one other (many atom types possibly).
-      if (!isLastStage) {
-        std::string nextEventName = info.eventDeps.find(eventName)->second;
-        if (eventName != "NET_RECV") {
-          fout_stage << "\t\tnext_work_ref = next_work;\n";
-          fout_stage << "\t\tcls_workq_add_work(WORKQ_ID_" << nextEventName << ", &next_work_ref, sizeof(next_work_ref));\n";
-        } else {
-          assert(recvBufOffs.has_value());
-          fout_stage << "\t\tnext_work.meta.len = next_work.f" << recvBufOffs.value() << ".offs;\n";
-          fout_stage << "\t\tinlined_net_send(&next_work);\n";
-        }
-      }
+      fout_stage << "\t\t" << funcName << "();\n";
       fout_stage << "\t}\n";
       fout_stage << "}\n";
     }

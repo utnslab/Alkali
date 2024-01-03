@@ -27,9 +27,9 @@ LowerStructAnalysis::LowerStructAnalysis(Operation *op) {
             return WalkResult::advance();
 
         auto argTypes = funcOp.getArgumentTypes();
-        if (argTypes.size() > 0)
-            while (isa<ep2::AtomType>(argTypes.front()) || isa<ep2::ContextType>(argTypes.front()))
-                argTypes = argTypes.slice(1);
+        while (argTypes.size() > 0 && (isa<ep2::AtomType>(argTypes.front()) || isa<ep2::ContextType>(argTypes.front()))) {
+            argTypes = argTypes.slice(1);
+        }
 
         // TODO: checks
         auto eventName = funcOp->getAttr("event").dyn_cast<StringAttr>().getValue().str();
