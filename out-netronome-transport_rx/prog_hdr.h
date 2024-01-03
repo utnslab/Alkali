@@ -9,11 +9,6 @@ typedef __packed struct __int48 {
 	int8_t storage[6];
 } int48_t;
 
-__packed struct __wrapper_arg_t {
-	int32_t f0;
-	char* f1;
-};
-
 __packed struct __buf_t {
 	char* buf;
 	unsigned offs;
@@ -82,7 +77,6 @@ __packed struct ack_info_t {
 
 __packed struct context_chain_1_t {
 	struct eth_header_t f0;
-	int8_t pad0[2];
 	struct ip_header_t f1;
 	struct tcp_header_t f2;
 	struct __buf_t f3;

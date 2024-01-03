@@ -37,7 +37,6 @@ static const char* toString(MemType ty) {
   }
 }
 
-
 static unsigned calcSize(mlir::Type ty) {
   if (isa<mlir::IntegerType>(ty)) {
     return cast<mlir::IntegerType>(ty).getWidth()/8;
@@ -80,6 +79,9 @@ static std::vector<std::pair<int, unsigned>> calcPadding(const mlir::LLVM::LLVMS
     for (int i = 0; i<ty.getBody().size(); ++i) {
       auto ety = ty.getBody()[i];
       unsigned memberSz = calcSize(ety);
+      if (memberSz % 4 != 0) {
+        memberSz += moduloUp(memberSz, 4);
+      }
       unsigned align = naturalAlign(memberSz);
       if (pos % align != 0) {
         unsigned pad = moduloUp(pos, align);
@@ -91,7 +93,7 @@ static std::vector<std::pair<int, unsigned>> calcPadding(const mlir::LLVM::LLVMS
     sz = pos;
   }
   if (sz % 4 != 0) {
-    paddingInfo.emplace_back(ty.getBody().size()-1, sz % 4);
+    paddingInfo.emplace_back(ty.getBody().size()-1, moduloUp(sz, 4));
   }
   return paddingInfo;
 }
@@ -125,11 +127,6 @@ void EmitNetronomePass::runOnOperation() {
       fout_prog_hdr << "\tint8_t storage[" << (width/8) << "];\n";
       fout_prog_hdr << "} int48_t;\n\n";
     }
-
-    fout_prog_hdr << "__packed struct __wrapper_arg_t {\n";
-    fout_prog_hdr << "\tint32_t f0;\n"; // atom
-    fout_prog_hdr << "\tchar* f1;\n"; // ptr to event
-    fout_prog_hdr << "};\n\n";
 
     fout_prog_hdr << "__packed struct __buf_t {\n";
     fout_prog_hdr << "\tchar* buf;\n";
