@@ -73,7 +73,12 @@ def ScopeAttr : EP2_Attr<"Scope", "scope"> {
     Given the accessing handlers and the partition key
   }];
 
-  let parameters = (ins ArrayRefParameter<"std::string">:$handlers, OptionalParameter<"std::string">:$partitionKey);
+  let parameters = (ins ArrayRefParameter<"StringAttr">:$handlers, OptionalParameter<"StringAttr">:$partitionKey);
+  // let builders = [
+  //   AttrBuilder<(ins "ArrayRef<std::string>":$handlers), 
+  //   [{ auto vec = llvm::map_to_vector(handlers, [&](auto &str){ return StringAttr::get($_ctxt, str); });
+  //      return Base::get($_ctxt, vec, std::nullopt); }]>,
+  // ];
 
   let assemblyFormat = "`<` $handlers `>` `[` $partitionKey `]`";
 }
@@ -624,6 +629,36 @@ def GuardOp : EP2_Op<"guard", [NoTerminator]> {
 
   // TODO(zhiyuang): verifier: the number of preds and predAttrs should match
   // region verifier should check the number (just one block one op)
+}
+
+//===----------------------------------------------------------------------===//
+// GlobalOp
+//===----------------------------------------------------------------------===//
+
+def GlobalOp : EP2_Op<"global", [
+    Pure, HasParent<"ModuleOp">]> {
+  let summary = "define a global op by symbol name";
+  let description = [{
+    Creation of a global veriable.
+    The global variable could be refered by reference or value inside a function by its name.
+  }];
+
+  let arguments = (ins StrAttr:$name);
+  let results = (outs EP2_Type:$output);
+  // let builders = [
+  //   OpBuilder<(ins "Type":$type, "StringRef":$name),
+  //   [{ build($_builder, $_state, type, $_builder.getStringAttr(name)); }]>
+  // ];
+}
+
+def GlobalImportOp : EP2_Op<"global_import", [Pure]> {
+  let summary = "import the global variable by symbol name as a value";
+  let description = [{
+    import a global operator as a value
+  }];
+
+  let arguments = (ins StrAttr:$name);
+  let results = (outs EP2_Type:$output);
 }
 
 //===----------------------------------------------------------------------===//

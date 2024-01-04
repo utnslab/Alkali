@@ -107,13 +107,13 @@ handler NET_RECV:process_packet (context ctx, buf packet) {
     generate OoO_DETECT:OoO_detection{ctx, pkt_info};
 }
 
-# scope scope_1 <OoO_DETECT:OoO_detection>[flow_id];
+scope table_sc <OoO_DETECT:OoO_detection>[flow_id];
 
 # key: flow_id, value: state, size: 1;
 # this global variable currently only used in OoO_detection handler. In more complexed example, it can be shared across multiple handlers.
+[sync=table_sc] global table <bits<16>, flow_state_t, 16> flow_table;
 
-handler OoO_DETECT:OoO_detection (context ctx, pkt_info_t pkt_info) {
-    table <bits<16>, flow_state_t, 16> flow_table;
+[sync=table_sc] handler OoO_DETECT:OoO_detection (context ctx, pkt_info_t pkt_info) {
     flow_state_t flow_state;
     flow_state = flow_table.lookup(pkt_info.flow_id);
 

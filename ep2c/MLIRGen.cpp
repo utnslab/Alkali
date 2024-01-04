@@ -94,19 +94,23 @@ public:
           return nullptr;
 
       } else if (ScopeAST *scope = llvm::dyn_cast<ScopeAST>(record.get())) {
-        auto scopeAttr = builder.getAttr<ScopeAttr>(
-            scope->getHandlers(), scope->getPartitionKey().str());
+        auto arrayAttr = llvm::map_to_vector(
+            scope->getHandlers(), [&](auto &handler) {
+              return builder.getStringAttr(handler);
+            });
+        auto strAttr = builder.getStringAttr(scope->getPartitionKey());
+        auto scopeAttr = builder.getAttr<ScopeAttr>(arrayAttr, strAttr);
         scopes.insert_or_assign(scope->getName().str(), scopeAttr);
 
       } else if (GlobalAST *globalAST = llvm::dyn_cast<GlobalAST>(record.get())) {
         auto &decl = globalAST->getDecl();
 
         builder.setInsertionPointToEnd(theModule.getBody());
-        auto initOp = builder.create<InitOp>(
-            loc(decl.loc()), getVarType(decl.getType(), decl.loc()));
-        op = initOp;
+        auto globalOp = builder.create<GlobalOp>(
+            loc(decl.loc()), getVarType(decl.getType(), decl.loc()), builder.getStringAttr(decl.getName()));
+        op = globalOp;
         // ok to just insert at top most level, as a global ref
-        if (declare(decl, initOp).failed()) {
+        if (declare(decl, globalOp).failed()) {
           emitError(loc(decl.loc())) << "error: global variable with name `"
                                      << decl.getName() << "' already exists";
           return nullptr;
@@ -363,6 +367,13 @@ private:
 
   mlir::Value toRValue(mlir::Value value,
                        std::optional<mlir::Type> ltype = std::nullopt) {
+    // materialize global op
+    if (value.getDefiningOp() && isa<GlobalOp>(value.getDefiningOp())) {
+      auto globalOp = dyn_cast<GlobalOp>(value.getDefiningOp());
+      auto resultType = ltype.value_or(globalOp.getType());
+      return builder.create<GlobalImportOp>(builder.getUnknownLoc(), resultType, globalOp.getNameAttr());
+    }
+
     if (auto type = dyn_cast<ContextRefType>(value.getType())) {
       // convert contextRef to Load
       auto resultType = ltype.value_or(type.getValueType());
