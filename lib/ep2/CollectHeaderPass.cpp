@@ -221,6 +221,9 @@ CollectInfoAnalysis::CollectInfoAnalysis(Operation* module, AnalysisManager& am)
 void CollectHeaderPass::runOnOperation() {
   getAnalysis<CollectInfoAnalysis>();
   markAnalysesPreserved<CollectInfoAnalysis>();
+
+  getAnalysis<NetronomePlacementAnalysis>();
+  markAnalysesPreserved<NetronomePlacementAnalysis>();
 }
 
 }

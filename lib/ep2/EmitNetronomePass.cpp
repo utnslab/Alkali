@@ -110,6 +110,7 @@ void EmitNetronomePass::runOnOperation() {
   std::optional<int> recvBufOffs;
   std::string basePath = basePathOpt.getValue();
   const CollectInfoAnalysis& info = getCachedAnalysis<CollectInfoAnalysis>().value();
+  const NetronomePlacementAnalysis& placementInfo = getCachedAnalysis<NetronomePlacementAnalysis>().value();
 
   {
     std::ofstream fout_prog_hdr(basePath + "/prog_hdr.h");
@@ -225,6 +226,52 @@ void EmitNetronomePass::runOnOperation() {
     fout_prog_hdr << "\treturn buf;\n";
     fout_prog_hdr << "}\n\n";
     fout_prog_hdr << "#endif\n";
+  }
+  {
+    std::ofstream fout_makefile(basePath + "/Makefile");
+
+    std::ifstream fin_prefix("./lib/ep2/MakefileHelpers/netronome.prefix");
+    fout_makefile << fin_prefix.rdbuf() << "\n\n";
+
+    unsigned ctr = 1;
+    std::unordered_map<std::string, unsigned> atomToCtr;
+    std::unordered_map<std::string, std::string> atomToEvent;
+
+    for (const auto& pr : info.eventAllocs) {
+      std::string atomName = pr.first.substr(pr.first.find("_a_") + 3);
+
+      fout_makefile << "S" << ctr << "_SRCS := $(app_src_dir)/" << atomName << ".c\n";
+      fout_makefile << "S" << ctr << "_LIST := " << atomName << ".list\n";
+      fout_makefile << "S" << ctr << "_DEFS := $(mlir_NFCCFLAGS)\n";
+      fout_makefile << "$(S" << ctr << "_LIST): $(mlir_NFCCSRCS) $(S" << ctr << "_SRCS)\n";
+      fout_makefile << "\t@echo \"--- Building #@\"\n";
+      fout_makefile << "\t$(Q) $(NFCC) $(S" << ctr << "_DEFS) -Fe$@ $(S" << ctr << "_SRCS) $(mlir_NFCCSRCS)\n";
+      fout_makefile << "global_LIST_FILES += $(S" << ctr << "_LIST)\n";
+
+      atomToCtr.emplace(atomName, ctr);
+      ctr += 1;
+    }
+
+    fout_makefile << "core.fw: $(global_LIST_FILES)\n";
+    fout_makefile << "\t@echo \"--- Linking $@\"\n";
+    fout_makefile << "\t$(NFLD) $(mlir_NFLDFLAGS) \\\n";
+    fout_makefile << "\t-elf $@ \\\n";
+
+    for (const auto& pr : placementInfo.placementMap) {
+      fout_makefile << "\t-u mei" << pr.second.first << ".me" << pr.second.second << " -l $(";
+      // TODO assumes all separate-file externs are DMA's, and only one use of DMA.
+      if (atomToCtr.find(pr.first) == atomToCtr.end()) {
+        fout_makefile << "DMA_LIST) \\\n";
+      } else {
+        fout_makefile << "S" << atomToCtr[pr.first] << "_LIST) \\\n";
+      }
+    }
+
+    fout_makefile << "\t-u ila0.me0 -l $(ME_BLM_LIST) \\\n";
+    fout_makefile << "\t-i i8 -e $(PICO_CODE)\n";
+
+    std::ifstream fin_suffix("./lib/ep2/MakefileHelpers/netronome.suffix");
+    fout_makefile << "\n\n" << fin_suffix.rdbuf();
   }
   {
     std::unordered_map<std::string, func::FuncOp> nameToFunc;

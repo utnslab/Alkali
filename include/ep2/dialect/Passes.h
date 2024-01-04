@@ -382,6 +382,16 @@ struct LocalAllocAnalysis {
   }
 };
 
+struct NetronomePlacementAnalysis {
+  std::unordered_map<std::string, std::pair<unsigned, unsigned>> placementMap;
+
+  NetronomePlacementAnalysis(Operation* op, AnalysisManager& am);
+
+  bool isInvalidated(const AnalysisManager::PreservedAnalyses &pa) {
+    return false;
+  }
+};
+
 } // namespace ep2
 } // namespace mlir
 

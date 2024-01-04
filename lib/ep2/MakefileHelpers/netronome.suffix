@@ -1,0 +1,30 @@
+
+#
+# Help
+#
+.PHONY : app_mlir_help
+app_mlir_help:
+	@echo "Build Options:"
+	@echo "   Q                unset to print compiler output"
+	@echo ""
+	@echo "Path Settings:"
+	@echo "   NFP_SDK_DIR      SDK installation directory"
+	@echo ""
+	@echo "Targets:"
+	@echo "   help             this text"
+	@echo "   clean            removes compiled binaries"
+	@echo ""
+	@echo "   wire.fw          wire application (default)"
+	@echo "   mlir_dbg.fw      wire application with single app ME"
+	@echo ""
+
+all: core.fw
+
+clean:
+	rm -f *.list
+	rm -f *.uci
+	rm -f *.ucp
+	rm -f *.obj
+	rm -f *.fw
+
+distclean: clean
