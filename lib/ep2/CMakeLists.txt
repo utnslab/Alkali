@@ -9,6 +9,7 @@ add_mlir_dialect_library(MLIREP2
         HandlerInOutAnalysis.cpp
         TableAnalysis.cpp
         AtomAnalysis.cpp
+        BufferAnalysis.cpp
         
         # Passes
         ArchMappingPass.cpp

@@ -145,6 +145,10 @@ private:
   void getConnectedComponents();
 };
 
+struct BufferAnalysis {
+  BufferAnalysis(Operation* op);
+};
+
 /// Analysis for context
 struct ContextBufferizationAnalysis {
   using TableT = llvm::StringMap<std::pair<int, mlir::Type>>;
