@@ -6,12 +6,12 @@ struct dma_write_cmd_t {
 extern event NET_RECV {context ctx; buf packet;}
 extern event NET_SEND{context ctx; buf packet;}
 
-extern event DMA_WRITE{context ctx; buf data; dma_write_cmd_t desc;}
+extern event DMA_WRITE_REQ{context ctx; buf data; dma_write_cmd_t desc;}
 
-extern handler NET_SEND (context ctx, buf packet) {
+extern handler NET_SEND:net_send (context ctx, buf packet) {
 }
 
-extern handler DMA_WRITE (context ctx, buf data, dma_write_cmd_t desc) {
+extern handler DMA_WRITE_REQ:dma_write (context ctx, buf data, dma_write_cmd_t desc) {
 }
 
 ############## main program ###########
@@ -107,6 +107,15 @@ event ACK_GEN {context ctx; ack_info_t ack;}
     generate OoO_DETECT:OoO_detection{ctx, pkt_info};
 }
 
+controller ACK_GEN() {
+    # queue_length=100, batch=1, qos_class_num=1
+    Queue(256, 1, 1);
+}
+
+extern controller DMA_WRITE_REQ() {
+    # queue_length=100, batch=1, qos_class_num=1
+    Queue(256, 1, 1);
+}
 scope table_sc <OoO_DETECT:OoO_detection>[flow_id];
 
 # key: flow_id, value: state, size: 1;
@@ -159,7 +168,7 @@ controller OoO_DETECT() {
             dma_cmd.addr = dma_pos;
             dma_cmd.size = payload_bytes;
             # DMA WRITE this packet to host
-            generate DMA_WRITE:dma_wirte{ctx, ctx.packet, dma_cmd};
+            generate DMA_WRITE_REQ:dma_write{ctx, ctx.packet, dma_cmd};
         }
         flow_table.update(pkt_info.flow_id, flow_state);
         
@@ -208,5 +217,5 @@ handler ACK_GEN:ack_gen (context ctx, ack_info_t ack){
     packet_out.emit(ack_tcp_header);
     packet_out.emit(ctx.packet);
 
-    generate NET_SEND{ctx, packet_out};
+    generate NET_SEND:net_send{ctx, packet_out};
 }
