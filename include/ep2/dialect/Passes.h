@@ -88,7 +88,9 @@ struct HandlerDependencyAnalysis {
 
   std::map<HandlerFullName, FuncOp> handlersMap;
   FuncOp lookupHandler(HandlerFullName fullname);
-  std::vector<FuncOp> getSuccessors(FuncOp funcOp) { return graph[funcOp]; }
+  std::vector<FuncOp> getSuccessors(FuncOp funcOp, bool includeExtern = true) {
+    return graph[funcOp];
+  }
   std::vector<FuncOp> getPredecessors(FuncOp funcOp);
 
   bool hasSuccessor(llvm::StringRef eventName) {
@@ -126,7 +128,7 @@ struct HandlerDependencyAnalysis {
 
     llvm::errs() << "\nFound " << handlersMap.size() << " handlers:\n";
     for (auto &[handler, funcOp] : handlersMap) {
-      llvm::errs() << "  " << handler.mangle() << " | " << funcOp.isHandler() << "\n";
+      llvm::errs() << "  " << handler.mangle() << " | " << funcOp.isHandler() << funcOp.isExtern() << "\n";
     }
 
     for (auto &[handler, edges] : graph) {

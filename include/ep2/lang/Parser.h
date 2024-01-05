@@ -91,7 +91,7 @@ public:
 
       // modifiers or attritibutes
       case tok_extern:
-        attributes.insert_or_assign("extern", std::string{});
+        attributes.insert_or_assign("extern", true);
         lexer.consume(tok_extern);
         continue;
       case tok_sbracket_open:
