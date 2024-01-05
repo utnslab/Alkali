@@ -130,14 +130,30 @@ FuncOp HandlerDependencyAnalysis::lookupHandler(HandlerFullName fullname) {
   return nullptr;
 }
 
+FuncOp HandlerDependencyAnalysis::lookupController(HandlerFullName fullname) {
+  auto it = llvm::find_if(controllersMap, [&](auto &pair) {
+    return pair.first.event == fullname.event;
+  });
+  if (it != controllersMap.end())
+    return it->second;
+  return nullptr;
+}
+
 HandlerDependencyAnalysis::HandlerDependencyAnalysis(Operation *module) {
   auto moduleOp = dyn_cast<ModuleOp>(module);
   
   std::map<StringRef, std::vector<HandlerFullName>> externForwards;
+  std::vector<FuncOp> controllerOps;
+  llvm::copy_if(moduleOp.getOps<FuncOp>(), std::back_inserter(controllerOps),
+                [](auto funcOp) { return funcOp.isController(); });
+  // for coontrollers
+  for (auto funcOp : controllerOps)
+    controllersMap.emplace(funcOp, funcOp);
+
+  // for handlers, insert handlers
   std::vector<FuncOp> funcOps;
   llvm::copy_if(moduleOp.getOps<FuncOp>(), std::back_inserter(funcOps),
                 [](auto funcOp) { return funcOp.isHandler(); });
-
   for (auto funcOp : funcOps)
     handlersMap.emplace(funcOp, funcOp);
 
@@ -198,6 +214,38 @@ HandlerDependencyAnalysis::HandlerDependencyAnalysis(Operation *module) {
   }
 
   getConnectedComponents();
+}
+
+void HandlerDependencyAnalysis::dump() {
+  llvm::errs() << "Found " << subGraphs.size() << " connected components\n";
+  for (size_t i = 0; i < subGraphs.size(); ++i) {
+    llvm::errs() << "Component " << i << " " << subGraphs[i].size() << " "
+                 << subGraphsOrder[i].size() << "\n";
+  }
+
+  llvm::errs() << "\nFound " << handlersMap.size() << " handlers:\n";
+  for (auto &[handler, funcOp] : handlersMap) {
+    llvm::errs() << "  " << handler.mangle() << " | " << funcOp.isHandler()
+                 << funcOp.isExtern() << "\n";
+  }
+  llvm::errs() << "\nFound " << controllersMap.size() << " controllers:\n";
+  for (auto &[controller, funcOp] : controllersMap) {
+    llvm::errs() << "  " << controller.mangle() << " | " << funcOp.isHandler()
+                 << funcOp.isExtern() << "\n";
+  }
+
+  llvm::errs() << "\n";
+  for (auto &[handler, edges] : graph) {
+    Operation *op = handler;
+    auto funcOp = dyn_cast<FuncOp>(op);
+    llvm::errs() << "Handler " << funcOp.getSymName().str() << " has "
+                 << edges.size() << " edges\n";
+    for (auto &target : edges) {
+      Operation *op = target;
+      auto funcOp = dyn_cast<FuncOp>(op);
+      llvm::errs() << "  " << funcOp.getSymName().str() << "\n";
+    }
+  }
 }
 
 } // end namespace ep2

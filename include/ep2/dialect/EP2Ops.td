@@ -127,6 +127,7 @@ def EP2_StructType : EP2_BaseType<"Struct", "struct"> {
   let assemblyFormat = "`<` $name `:` struct($isEvent, $elementTypes)`>`";
   let extraClassDeclaration = [{
     size_t getNumElementTypes() { return getElementTypes().size(); }
+    size_t getSize() { return getNumElementTypes(); }
   }];
 }
 
@@ -396,6 +397,9 @@ def FuncOp : EP2_Op<"func", [
     /// Returns if the function is a handler
     bool isHandler() {
       return getOperation()->getAttrOfType<StringAttr>("type").getValue() == "handler";
+    }
+    bool isController() {
+      return getOperation()->getAttrOfType<StringAttr>("type").getValue() == "controller";
     }
 
     bool isExtern() {

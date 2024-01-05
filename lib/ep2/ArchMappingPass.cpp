@@ -239,6 +239,19 @@ class MappingSolver {
 void ArchMappingPass::runOnOperation() {
   auto &dependency = getAnalysis<HandlerDependencyAnalysis>();
   dependency.dump();
+
+  ModuleOp moduleOp = getOperation();
+  moduleOp->walk([&](ReturnOp returnOp){
+    auto func = dependency.lookupController(returnOp);
+    llvm::errs() << "for return op:";
+    returnOp->dump();
+
+    if (func != nullptr)
+      llvm::errs() << "Found Controller: " << func.getName() << "\n";
+    else
+      llvm::errs() << "Not found Controller\n";
+  });
+
   return signalPassFailure();
 
   // prepare the models
