@@ -114,18 +114,34 @@ HandlerDependencyAnalysis::HandlerFullName::HandlerFullName(ReturnOp returnOp) {
   setWithInit(this, cast<InitOp>(inputOp));
 }
 
+FuncOp HandlerDependencyAnalysis::lookupHandler(HandlerFullName fullname) {
+  // try to find exact match
+  auto it = handlersMap.find(fullname);
+  if (it != handlersMap.end())
+    return it->second;
+
+  // try to find general match: event only and do not have an atom
+  auto it2 = llvm::find_if(handlersMap, [&](auto &pair) {
+    return pair.first.event == fullname.event && pair.first.atom.empty();
+  });
+  if (it2 != handlersMap.end())
+    return it2->second;
+
+  return nullptr;
+}
+
 HandlerDependencyAnalysis::HandlerDependencyAnalysis(Operation *module) {
   auto moduleOp = dyn_cast<ModuleOp>(module);
   
   std::map<StringRef, std::vector<HandlerFullName>> externForwards;
+  std::vector<FuncOp> funcOps;
+  llvm::copy_if(moduleOp.getOps<FuncOp>(), std::back_inserter(funcOps),
+                [](auto funcOp) { return funcOp.isHandler(); });
 
-  for (auto funcOp : moduleOp.getOps<FuncOp>())
+  for (auto funcOp : funcOps)
     handlersMap.emplace(funcOp, funcOp);
 
-  for (auto funcOp : moduleOp.getOps<FuncOp>()) {
-    if (!funcOp.isHandler())
-      continue;
-
+  for (auto funcOp : funcOps) {
     HandlerFullName from(funcOp);
 
     std::vector<HandlerFullName> to;

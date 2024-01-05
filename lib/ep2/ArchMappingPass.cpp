@@ -237,6 +237,10 @@ class MappingSolver {
 } // local namespace
 
 void ArchMappingPass::runOnOperation() {
+  auto &dependency = getAnalysis<HandlerDependencyAnalysis>();
+  dependency.dump();
+  return signalPassFailure();
+
   // prepare the models
   AnalysisManager am = getAnalysisManager();
   ArchSpec spec(archSpecFile.getValue());

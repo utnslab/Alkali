@@ -87,6 +87,7 @@ struct HandlerDependencyAnalysis {
   std::unordered_map<std::string, std::vector<std::string>> eventDeps;
 
   std::map<HandlerFullName, FuncOp> handlersMap;
+  FuncOp lookupHandler(HandlerFullName fullname);
   std::vector<FuncOp> getSuccessors(FuncOp funcOp) { return graph[funcOp]; }
   std::vector<FuncOp> getPredecessors(FuncOp funcOp);
 
@@ -125,7 +126,7 @@ struct HandlerDependencyAnalysis {
 
     llvm::errs() << "\nFound " << handlersMap.size() << " handlers:\n";
     for (auto &[handler, funcOp] : handlersMap) {
-      llvm::errs() << "  " << handler.mangle() << "\n";
+      llvm::errs() << "  " << handler.mangle() << " | " << funcOp.isHandler() << "\n";
     }
 
     for (auto &[handler, edges] : graph) {
