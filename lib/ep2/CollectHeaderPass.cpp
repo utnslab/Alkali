@@ -170,14 +170,18 @@ CollectInfoAnalysis::CollectInfoAnalysis(Operation* module, AnalysisManager& am)
       return;
     }
     if (funcOp->getAttr("type").cast<StringAttr>().getValue() == "controller" && !funcOp.isExtern()) {
-      funcOp->walk([&](ep2::CallOp op){
-        assert(op.getInputs().size() == 3);
-        assert(getOpd(op.getOperand(1)) == 1);
-        assert(getOpd(op.getOperand(2)) == 1);
+      funcOp->walk([&](ep2::ConnectOp op) {
+        assert(op.getMethod() == "Queue");
+        std::vector<int> replicas;
+        for (mlir::Value arg : op.getOuts()) {
+          auto port = cast<ep2::ConstantOp>(arg.getDefiningOp()).getValue().cast<ep2::PortAttr>();
+          replicas.push_back(port.getInstance());
+        }
 
+        // TODO do not hardcode queue size=100
         std::string eventName = funcOp->getAttr("event").cast<mlir::StringAttr>().getValue().str();
-        std::pair<MemType, int> pr = {MemType::CLS, getOpd(op.getOperand(0))};
-        this->eventQueues.emplace(eventName, pr); 
+        QueueInfo qInfo(MemType::CLS, 100, replicas);
+        this->eventQueues.emplace(eventName, qInfo); 
       });
     } else {
       std::string eventName = funcOp->getAttr("event").cast<StringAttr>().getValue().str();
@@ -221,9 +225,6 @@ CollectInfoAnalysis::CollectInfoAnalysis(Operation* module, AnalysisManager& am)
 void CollectHeaderPass::runOnOperation() {
   getAnalysis<CollectInfoAnalysis>();
   markAnalysesPreserved<CollectInfoAnalysis>();
-
-  getAnalysis<NetronomePlacementAnalysis>();
-  markAnalysesPreserved<NetronomePlacementAnalysis>();
 }
 
 }

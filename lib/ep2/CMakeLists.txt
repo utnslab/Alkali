@@ -31,7 +31,7 @@ add_mlir_dialect_library(MLIREP2
         AtomAnalysis.cpp
         StructUpdatePropagationPass.cpp
         LocalAllocAnalysis.cpp
-        NetronomePlacementAnalysis.cpp
+        HandlerReplicationPass.cpp
 
         DEPENDS
         MLIREP2OpsIncGen

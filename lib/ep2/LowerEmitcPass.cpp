@@ -611,6 +611,13 @@ struct FunctionPattern : public OpConversionPattern<ep2::FuncOp> {
     auto newFuncOp = rewriter.create<func::FuncOp>(
         loc, std::string{"__event_" + funcOp.getName().str()},
         rewriter.getFunctionType(TypeRange(newArgTypes), TypeRange{}));
+
+    if (funcOp->hasAttr("instances")) {
+      newFuncOp->setAttr("instances", funcOp->getAttr("instances"));
+    }
+    if (funcOp->hasAttr("atom")) {
+      newFuncOp->setAttr("atom", funcOp->getAttr("atom"));
+    }
     
     auto entryBlock = newFuncOp.addEntryBlock();
     rewriter.setInsertionPointToStart(entryBlock);

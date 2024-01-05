@@ -150,15 +150,25 @@ $(S3_LIST): $(mlir_NFCCSRCS) $(S3_SRCS)
 	@echo "--- Building #@"
 	$(Q) $(NFCC) $(S3_DEFS) -Fe$@ $(S3_SRCS) $(mlir_NFCCSRCS)
 global_LIST_FILES += $(S3_LIST)
+S4_SRCS := $(app_src_dir)/dma_write.c
+S4_LIST := dma_write.list
+S4_DEFS := $(mlir_NFCCFLAGS)
+$(S4_LIST): $(mlir_NFCCSRCS) $(S4_SRCS)
+	@echo "--- Building #@"
+	$(Q) $(NFCC) $(S4_DEFS) -Fe$@ $(S4_SRCS) $(mlir_NFCCSRCS)
+global_LIST_FILES += $(S4_LIST)
+S5_SRCS := $(app_src_dir)/net_send.c
+S5_LIST := net_send.list
+S5_DEFS := $(mlir_NFCCFLAGS)
+$(S5_LIST): $(mlir_NFCCSRCS) $(S5_SRCS)
+	@echo "--- Building #@"
+	$(Q) $(NFCC) $(S5_DEFS) -Fe$@ $(S5_SRCS) $(mlir_NFCCSRCS)
+global_LIST_FILES += $(S5_LIST)
 core.fw: $(global_LIST_FILES)
 	@echo "--- Linking $@"
 	$(NFLD) $(mlir_NFLDFLAGS) \
 	-elf $@ \
-	-u mei0.me3 -l $(S2_LIST) \
-	-u mei0.me2 -l $(DMA_LIST) \
-	-u mei0.me1 -l $(S1_LIST) \
-	-u mei0.me0 -l $(S3_LIST) \
-	-u ila0.me0 -l $(ME_BLM_LIST) \
+	-u mei1.me1 -l $(	-u mei1.me2 -l $(	-u mei2.me1 -l $(	-u mei2.me2 -l $(	-u mei1.me3 -l $(	-u mei2.me3 -l $(	-u mei1.me4 -l $(	-u mei2.me4 -l $(	-u ila0.me0 -l $(ME_BLM_LIST) \
 	-i i8 -e $(PICO_CODE)
 
 

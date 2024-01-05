@@ -107,20 +107,11 @@ event ACK_GEN {context ctx; ack_info_t ack;}
     generate OoO_DETECT:OoO_detection{ctx, pkt_info};
 }
 
-controller ACK_GEN() {
-    # queue_length=100, batch=1, qos_class_num=1
-    Queue(256, 1, 1);
-}
-
 extern controller DMA_WRITE_REQ() {
     # queue_length=100, batch=1, qos_class_num=1
     Queue(256, 1, 1);
 }
 scope table_sc <OoO_DETECT:OoO_detection>[flow_id];
-
-# key: flow_id, value: state, size: 1;
-# this global variable currently only used in OoO_detection handler. In more complexed example, it can be shared across multiple handlers.
-[sync=table_sc] global table <bits<16>, flow_state_t, 16> flow_table;
 
 controller OoO_DETECT() {
     In in1 = [NET_RECV:process_packet, 0];
@@ -136,6 +127,7 @@ controller OoO_DETECT() {
 }
 
 [sync=table_sc, instances=(i1cu3,i2cu3)] handler OoO_DETECT:OoO_detection (context ctx, pkt_info_t pkt_info) {
+    table <bits<16>, flow_state_t, 16> flow_table;
     flow_state_t flow_state;
     flow_state = flow_table.lookup(pkt_info.flow_id);
 
@@ -181,7 +173,18 @@ controller OoO_DETECT() {
     
 }
 
-handler ACK_GEN:ack_gen (context ctx, ack_info_t ack){
+controller ACK_GEN() {
+    In in1 = [OoO_DETECT:OoO_detection, 0];
+    In in2 = [OoO_DETECT:OoO_detection, 1];
+    Out out1 = [ACK_GEN:ack_gen, 0];
+    Out out2 = [ACK_GEN:ack_gen, 1];
+
+    # connects
+    Queue(100)[in1][out1];
+    Queue(100)[in2][out2];
+}
+
+[instances=(i1cu4,i2cu4)] handler ACK_GEN:ack_gen (context ctx, ack_info_t ack){
     eth_header_t ack_eth_header;
     ip_header_t ack_ip_header;
     tcp_header_t ack_tcp_header;

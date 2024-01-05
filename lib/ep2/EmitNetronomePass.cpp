@@ -110,7 +110,6 @@ void EmitNetronomePass::runOnOperation() {
   std::optional<int> recvBufOffs;
   std::string basePath = basePathOpt.getValue();
   const CollectInfoAnalysis& info = getCachedAnalysis<CollectInfoAnalysis>().value();
-  const NetronomePlacementAnalysis& placementInfo = getCachedAnalysis<NetronomePlacementAnalysis>().value();
 
   {
     std::ofstream fout_prog_hdr(basePath + "/prog_hdr.h");
@@ -176,10 +175,10 @@ void EmitNetronomePass::runOnOperation() {
     for (const auto& q : info.eventQueues) {
       std::string eventName = q.first;
 
-      fout_prog_hdr << "#define WORKQ_SIZE_" << eventName << " " << q.second.second << '\n';
+      fout_prog_hdr << "#define WORKQ_SIZE_" << eventName << " " << q.second.size << '\n';
       fout_prog_hdr << "#define WORKQ_ID_" << eventName << " " << (workq_id_incr++) << '\n';
-      fout_prog_hdr << "#define WORKQ_TYPE_" << eventName << " " << "MEM_TYEP_" << toString(q.second.first) << '\n';
-      fout_prog_hdr << toString(q.second.first) << "_WORKQ_DECLARE(workq_" << eventName << ", WORKQ_SIZE_" << eventName << ");\n\n";
+      fout_prog_hdr << "#define WORKQ_TYPE_" << eventName << " " << "MEM_TYEP_" << toString(q.second.memType) << '\n';
+      fout_prog_hdr << toString(q.second.memType) << "_WORKQ_DECLARE(workq_" << eventName << ", WORKQ_SIZE_" << eventName << ");\n\n";
     }
 
     unsigned tableCtr = 0;
@@ -235,7 +234,6 @@ void EmitNetronomePass::runOnOperation() {
 
     unsigned ctr = 1;
     std::unordered_map<std::string, unsigned> atomToCtr;
-    std::unordered_map<std::string, std::string> atomToEvent;
 
     for (const auto& pr : info.eventAllocs) {
       std::string atomName = pr.first.substr(pr.first.find("_a_") + 3);
@@ -257,6 +255,22 @@ void EmitNetronomePass::runOnOperation() {
     fout_makefile << "\t$(NFLD) $(mlir_NFLDFLAGS) \\\n";
     fout_makefile << "\t-elf $@ \\\n";
 
+    getOperation()->walk([&](func::FuncOp fop) {
+      auto getIslandMEStr = [](std::string instance) {
+        std::string island = instance.substr(1, instance.find("cu")-1);
+        std::string microEngine = instance.substr(instance.find("cu") + 2);
+        return "mei" + island + ".me" + microEngine;
+      };
+
+      if (fop->hasAttr("instances")) {
+        //atomToCtr[fop->getAttr("atom").cast<mlir::StringAttr>().getValue().str()]
+        for (const auto& inst : cast<mlir::ArrayAttr>(fop->getAttr("instances")).getValue()) {
+          fout_makefile << "\t-u " << getIslandMEStr(cast<mlir::StringAttr>(inst).getValue().str()) << " -l $(";
+        }
+      }
+    });
+
+    /*
     for (const auto& pr : placementInfo.placementMap) {
       fout_makefile << "\t-u mei" << pr.second.first << ".me" << pr.second.second << " -l $(";
       // TODO assumes all separate-file externs are DMA's, and only one use of DMA.
@@ -266,6 +280,7 @@ void EmitNetronomePass::runOnOperation() {
         fout_makefile << "S" << atomToCtr[pr.first] << "_LIST) \\\n";
       }
     }
+    */
 
     fout_makefile << "\t-u ila0.me0 -l $(ME_BLM_LIST) \\\n";
     fout_makefile << "\t-i i8 -e $(PICO_CODE)\n";

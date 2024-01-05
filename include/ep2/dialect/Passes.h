@@ -269,9 +269,18 @@ struct TableInfo {
 };
 
 struct CollectInfoAnalysis {
+  struct QueueInfo {
+    MemType memType;
+    int size;
+    std::vector<int> replicas;
+
+    QueueInfo() {}
+    QueueInfo(MemType mt, int s, std::vector<int> r) : memType(mt), size(s), replicas(r) {}
+  };
+
   std::unordered_set<unsigned> typeBitWidths;
   std::vector<std::pair<std::string, mlir::LLVM::LLVMStructType>> structDefs;
-  std::unordered_map<std::string, std::pair<MemType, int>> eventQueues;
+  std::unordered_map<std::string, QueueInfo> eventQueues;
   std::unordered_map<std::string, std::vector<std::string>> eventDeps;
   std::unordered_map<std::string, std::vector<std::pair<std::string, std::string>>> eventAllocs;
   std::vector<TableInfo> tableInfos;
@@ -313,6 +322,16 @@ struct StructUpdatePropagationPass :
     }
     StringRef getArgument() const final { return "ep2-update-ppg"; }
     StringRef getDescription() const final { return "Struct update propagation file"; }
+};
+
+struct HandlerReplicationPass :
+        public PassWrapper<HandlerReplicationPass, OperationPass<ModuleOp>> {
+    void runOnOperation() final;
+    void getDependentDialects(DialectRegistry &registry) const override {
+        registry.insert<EP2Dialect, func::FuncDialect, LLVM::LLVMDialect, emitc::EmitCDialect>();
+    }
+    StringRef getArgument() const final { return "ep2-handler-repl"; }
+    StringRef getDescription() const final { return "Handler replication pass file"; }
 };
 
 struct EmitNetronomePass :
@@ -376,16 +395,6 @@ struct LocalAllocAnalysis {
   std::unordered_map<mlir::Operation*, std::string> localAllocs;
 
   LocalAllocAnalysis(Operation* op, AnalysisManager& am);
-
-  bool isInvalidated(const AnalysisManager::PreservedAnalyses &pa) {
-    return false;
-  }
-};
-
-struct NetronomePlacementAnalysis {
-  std::unordered_map<std::string, std::pair<unsigned, unsigned>> placementMap;
-
-  NetronomePlacementAnalysis(Operation* op, AnalysisManager& am);
 
   bool isInvalidated(const AnalysisManager::PreservedAnalyses &pa) {
     return false;
