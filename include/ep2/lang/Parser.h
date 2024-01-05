@@ -27,6 +27,7 @@
 #include <utility>
 #include <vector>
 #include <optional>
+#include <variant>
 
 namespace ep2 {
 
@@ -40,6 +41,22 @@ public:
   /// Create a Parser for the supplied lexer.
   Parser(Lexer &lexer) : lexer(lexer) {}
 
+  /// Parser Combinators
+  template <typename T, typename F>
+  std::unique_ptr<T> separateBy(Token open, Token close, Token sep, F f) {
+    if (lexer.getCurToken() != open)
+      return parseError<T>("[", "to close attribute list");
+    do {
+      auto tok = lexer.getNextToken();
+      if (auto ret = f(tok))
+        return ret;
+    } while (lexer.getCurToken() == sep);
+    if (lexer.getCurToken() != close)
+      return parseError<T>("]", "to close attribute list");
+    lexer.consume(close);
+    return nullptr;
+  }
+
   /// Parse a full Module. A module is a list of function definitions.
   std::unique_ptr<ModuleAST> parseModule() {
     lexer.getNextToken(); // prime the lexer
@@ -49,7 +66,7 @@ public:
     std::vector<std::unique_ptr<RecordAST>> records;
 
     // clear after we emit a record
-    std::map<std::string, std::string> attributes;
+    RecordAST::AttributesType attributes;
     // TODO(zhiyuang): clean up modifer parsing
     while (true) {
       std::unique_ptr<RecordAST> record;
@@ -78,28 +95,40 @@ public:
         lexer.consume(tok_extern);
         continue;
       case tok_sbracket_open:
-        do {
-          // eat either '[' or ','
-          if (lexer.getNextToken() != tok_identifier)
-            return parseError<ModuleAST>("identifier", "in attribute key");
-          std::string attrKey(lexer.getId()), attrValue{};
-          lexer.consume(tok_identifier);
+        if(auto ptr = separateBy<ModuleAST>(
+            tok_sbracket_open, tok_sbracket_close, Token(','), [&](Token tok) {
+              if (lexer.getCurToken() != tok_identifier)
+                return parseError<ModuleAST>("identifier", "in attribute key");
+              std::string attrKey(lexer.getId());
+              decltype(attributes)::mapped_type attrValue;
+              lexer.consume(tok_identifier);
 
-          if (lexer.getCurToken() == '=') {
-            lexer.consume(Token('='));
+              if (lexer.getCurToken() == '=') {
+                lexer.consume(Token('='));
 
-            if (lexer.getCurToken() != tok_identifier)
-              return parseError<ModuleAST>("identifier", "in attribute value");
-            attrValue = std::string(lexer.getId());
-            lexer.consume(tok_identifier);
-          }
+                if (lexer.getCurToken() == tok_identifier) {
+                  attrValue = std::string(lexer.getId());
+                  lexer.consume(tok_identifier);
+                } else if (lexer.getCurToken() == '(') { // list attr
+                  attrValue.emplace<std::vector<std::string>>();
+                  auto ret = separateBy<ModuleAST>(Token('('), Token(')'), Token(','), [&](Token tok) {
+                    if (tok != tok_identifier)
+                      return parseError<ModuleAST>("identifier", "in attribute tuple");
+                    std::get<std::vector<std::string>>(attrValue).emplace_back(lexer.getId());
+                    lexer.consume(tok_identifier);
+                    return std::unique_ptr<ModuleAST>(nullptr);
+                  });
+                  if (ret) return ret;
+                }
+              } else {
+                // By default we give this a true value
+                attrValue = true;
+              }
 
-          attributes.insert_or_assign(attrKey, attrValue);
-        } while (lexer.getCurToken() == ',');
-
-        if (lexer.getCurToken() != tok_sbracket_close)
-          return parseError<ModuleAST>("]", "to close attribute list");
-        lexer.consume(tok_sbracket_close);
+              attributes.insert_or_assign(std::move(attrKey), std::move(attrValue));
+              return std::unique_ptr<ModuleAST>(nullptr);
+            }))
+          return ptr;
         continue;
 
       // Global variables and scope
@@ -287,6 +316,32 @@ private:
     return v;
   }
 
+  /// portLiteral ::= '[' event ':' atom, instance ']'
+  std::unique_ptr<ExprAST> parsePortLiteralExpr() {
+    lexer.consume(Token('['));
+    if (lexer.getCurToken() != tok_identifier)
+      return parseError<ExprAST>("identifier", "of event name");
+    std::string event = lexer.getId().str(), atom{};
+    lexer.consume(tok_identifier);
+
+    if (lexer.getCurToken() == ':') {
+      if (lexer.getNextToken() != tok_identifier)
+        return parseError<ExprAST>("identifier", "of atom name");
+      atom = lexer.getId().str();
+      lexer.consume(tok_identifier);
+    }
+
+    lexer.checkConsume(Token(','));
+    if (lexer.getCurToken() != tok_number)
+      return parseError<ExprAST>("number", "of instance number");
+    int instance = lexer.getValue();
+    lexer.consume(tok_number);
+
+    lexer.checkConsume(Token(']'));
+    return std::make_unique<PortLiteralExprAST>(lexer.getLastLocation(),
+                                                event, atom, instance);
+  }
+
   /// Parse a call expression.
   std::unique_ptr<ExprAST> parseCallExpr(std::unique_ptr<PathExprAST> path,
                                          const Location &loc) {
@@ -309,12 +364,39 @@ private:
     }
     lexer.consume(Token(')'));
 
-    // It can be a builtin call to print
-    // TODO: extract here?
+    // It could have addition parameter, to mark it as a "connect instruction"
+    auto callExpr = std::make_unique<CallExprAST>(loc, std::move(path),
+                                         std::move(args));
+    if (lexer.getCurToken() == '[') {
+      do {
+        auto next = lexer.getNextToken();
+        if (next == tok_identifier) {
+          callExpr->ins.push_back(lexer.getId().str());
+          lexer.consume(tok_identifier);
+        } else if (next == '*') {
+          callExpr->ins.push_back("*");
+          lexer.consume(Token('*'));
+        }
+      } while (lexer.getCurToken() == ',');
+      lexer.consume(Token(']'));
+      // expect output groups
+      if (lexer.getCurToken() != '[')
+        return parseError<ExprAST>("[", "in output port list");
+      do {
+        auto next = lexer.getNextToken();
+        if (next == tok_identifier) {
+          callExpr->outs.push_back(lexer.getId().str());
+          lexer.consume(tok_identifier);
+        } else if (next == '*') {
+          callExpr->outs.push_back("*");
+          lexer.consume(Token('*'));
+        }
+      } while (lexer.getCurToken() == ',');
+      lexer.consume(Token(']'));
+    }
 
     // Call to a user-defined function
-    return std::make_unique<CallExprAST>(loc, std::move(path),
-                                         std::move(args));
+    return callExpr;
   }
 
   /// identifierexpr
@@ -405,6 +487,8 @@ private:
       return parseNumberExpr();
     case '(':
       return parseParenExpr();
+    case '[':
+      return parsePortLiteralExpr();
     case '{':
       return parseStructLiteralExpr();
     case ';':
@@ -479,6 +563,9 @@ private:
       if (lexer.getCurToken() != '=')
         return parseError<VarDeclExprAST>("initializer",
                                           "in variable declaration");
+    }
+
+    if (lexer.getCurToken() == '=') {
       lexer.consume(Token('='));
       expr = parseExpression();
     }

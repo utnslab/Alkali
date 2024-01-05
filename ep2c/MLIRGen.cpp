@@ -121,18 +121,25 @@ public:
 
       if (op)
         for (auto &[k, v]: record->getAttributes()) {
-          if (v.empty())
-            op->setAttr(k, builder.getBoolAttr(true));
-          else if (k == "sync") { // process scope attribute
-            auto scopeAttr = scopes.find(v);
-            if (scopeAttr == scopes.end()) {
-              emitError(op->getLoc()) << "error: scope with name `"
-                                            << v << "' does not exist";
-              return nullptr;
-            }
-            op->setAttr("scope", scopeAttr->second);
-          } else
-            op->setAttr(k, builder.getStringAttr(v));
+          if (auto *b = std::get_if<bool>(&v))
+            op->setAttr(k, builder.getBoolAttr(*b));
+          else if (auto *s = std::get_if<std::string>(&v)) { // process string attribute
+            if (k == "sync") { // process scope attribute
+              auto scopeAttr = scopes.find(*s);
+              if (scopeAttr == scopes.end()) {
+                emitError(op->getLoc()) << "error: scope with name `"
+                                              << *s << "' does not exist";
+                return nullptr;
+              }
+              op->setAttr("scope", scopeAttr->second);
+            } else
+              op->setAttr(k, builder.getStringAttr(*s));
+          } else if (auto *vec = std::get_if<std::vector<std::string>>(&v)) {
+            // insert an string array attr
+            auto strArrayAttr = llvm::map_to_vector(
+                *vec, [&](auto &str) { return StringRef(str); });
+            op->setAttr(k, builder.getStrArrayAttr(strArrayAttr));
+          }
         }
     }
 
@@ -374,6 +381,7 @@ private:
       return builder.create<GlobalImportOp>(builder.getUnknownLoc(), resultType, globalOp.getNameAttr());
     }
 
+    // materialze a context refop
     if (auto type = dyn_cast<ContextRefType>(value.getType())) {
       // convert contextRef to Load
       auto resultType = ltype.value_or(type.getValueType());
@@ -570,6 +578,20 @@ private:
       operands.push_back(arg);
     }
 
+    // if its a command, emit a Control
+    if (call.isCommand()) {
+      auto ins = llvm::map_to_vector(call.ins, [&](auto &k) {
+        auto [value, _, _d] = symbolTable.lookup(k);
+        return value;
+      });
+      auto outs = llvm::map_to_vector(call.outs, [&](auto &k) {
+        auto [value, _, _d] = symbolTable.lookup(k);
+        return value;
+      });
+      builder.create<ConnectOp>(location, callee, ins, outs);
+      return builder.create<NopOp>(location);
+    }
+
     // generate struct access
     if (callee == "extract") {
       if (!caller || operands.size() != 1) {
@@ -598,7 +620,7 @@ private:
         return nullptr;
       }
       auto table = dyn_cast<TableType>(caller.getType());
-      return builder.create<LookupOp>(location, table.getValueType(), caller, operands[0]);
+      return builder.create<LookupOp>(location, table.getValueType(), toRValue(caller), toRValue(operands[0]));
     } else if(callee == "update"){
       if (!caller || operands.size() != 2) {
         emitError(location) << "callop: invalid update";
@@ -607,7 +629,7 @@ private:
       // TODO: update variable or add assignment
       auto &key = operands[0];
       auto &value = operands[1];
-      builder.create<UpdateOp>(location, caller, key, value);
+      builder.create<UpdateOp>(location, toRValue(caller), toRValue(key), toRValue(value));
       return builder.create<NopOp>(location);
     }
     // Otherwise this is a call to a user-defined function. Calls to
@@ -692,6 +714,8 @@ private:
       return mlirGen(cast<AtomLiteralExprAST>(expr));
     case ep2::ExprAST::Expr_StructLiteral:
       return mlirGen(cast<StructLiteralExprAST>(expr));
+    case ep2::ExprAST::Expr_PortLiteral:
+      return mlirGen(cast<PortLiteralExprAST>(expr));
     case ep2::ExprAST::Expr_Call:
       return mlirGen(cast<CallExprAST>(expr));
     case ep2::ExprAST::Expr_Num:
@@ -741,6 +765,10 @@ private:
       mlir::Type type = getVarType(varType, vardecl.loc());
       if (!type)
         return nullptr;
+      
+      if (value.getType().isa<PortType>() && type.isa<PortType>())
+        value.setType(type);
+
       if (type != value.getType()) {
         emitError(loc(vardecl.loc()))
             << "struct type of initializer is different than the variable "
@@ -776,6 +804,11 @@ private:
 
   mlir::Value mlirGen(AtomLiteralExprAST &atom) {
     return builder.create<ConstantOp>(loc(atom.loc()), atom.getAtom());
+  }
+
+  mlir::Value mlirGen(PortLiteralExprAST &port) {
+    auto attr = builder.getAttr<PortAttr>(port.getEvent(), port.getAtom(), port.getInstance());
+    return builder.create<ConstantOp>(loc(port.loc()), builder.getType<PortType>(false, false), attr);
   }
 
   mlir::LogicalResult mlirGen(IfElseExprAST &ifelse, bool rootScope) {
@@ -921,6 +954,10 @@ private:
         auto kt = getVarType(*type.params[0].type, location);
         auto vt = getVarType(*type.params[1].type, location);
         return builder.getType<TableType>(kt, vt, type.params[2].value);
+      } else if (type.name == "In" || type.name == "Out" || type.name == "InOut") { // controller types
+        bool in = type.name == "In" || type.name == "InOut";
+        bool out = type.name == "Out" || type.name == "InOut";
+        return builder.getType<PortType>(in, out);
       }
 
       auto it = structMap.find(type.name);

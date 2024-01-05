@@ -83,6 +83,16 @@ def ScopeAttr : EP2_Attr<"Scope", "scope"> {
   let assemblyFormat = "`<` $handlers `>` `[` $partitionKey `]`";
 }
 
+def PortAttr : EP2_Attr<"Port", "port"> {
+  let summary = "An Attribute containing the port information";
+  let description = [{
+    show if the port connects to a handler and on specific event
+  }];
+
+  let parameters = (ins StringRefParameter<>:$handler, StringRefParameter<>:$atom, "int":$instance);
+  let assemblyFormat = "`<` $handler `:` $atom `,` $instance `>`";
+}
+
 //===----------------------------------------------------------------------===//
 // Types
 //===----------------------------------------------------------------------===//
@@ -178,6 +188,17 @@ def EP2_ContextRefType: EP2_BaseType<"ContextRef", "conref"> {
   let assemblyFormat = "`<` $valueType `>`";
 }
 
+// References
+def EP2_PortType: EP2_BaseType<"Port", "port"> {
+  let summary = "Controller Port Type";
+  let description = [{
+    The Port Type of Controoler. Could be in,out,inout
+  }];
+
+  let parameters = (ins AttrParameter<"bool", "">:$in, AttrParameter<"bool", "">:$out);
+  let assemblyFormat = "`<` $in `,` $out `>`";
+}
+
 // Type collections
 // Provide a definition of the types that are used within the EP2 dialect.
 def EP2_Type : AnyTypeOf<[AnyInteger, EP2_AnyType, EP2_StructType, EP2_BufferType, EP2_TableType,
@@ -229,10 +250,10 @@ def ConstantOp : EP2_Op<"constant",
   }];
 
   // The constant operation takes an attribute as the only input.
-  let arguments = (ins AnyAttrOf<[APIntAttr,StrAttr]>:$value);
+  let arguments = (ins AnyAttrOf<[APIntAttr,StrAttr,PortAttr]>:$value);
 
   // The constant operation returns a single value of TensorType.
-  let results = (outs AnyTypeOf<[AnyInteger,EP2_AtomType]>:$output);
+  let results = (outs AnyTypeOf<[AnyInteger,EP2_AtomType,EP2_PortType]>:$output);
 
   // Indicate that the operation has a custom parser and printer method.
   // let hasCustomAssemblyFormat = 1;
@@ -813,6 +834,18 @@ def StructConstantOp : EP2_Op<"struct_constant", [ConstantLike, Pure]> {
   // Indicate that additional verification for this operation is necessary.
   let hasVerifier = 1;
   // let hasFolder = 1;
+}
+
+// Control Op for controller
+
+def ConnectOp : EP2_Op<"connect", [AttrSizedOperandSegments]> {
+  let summary = "ConnectOp, connecting two set of ports in the controller";
+  let description = [{
+    The connect operation connects two set of ports in the controller.
+    ports could be in names or in "*", stands for all valid variables in the context
+  }];
+
+  let arguments = (ins StrAttr:$method, Variadic<EP2_PortType>:$ins, Variadic<EP2_PortType>:$outs);
 }
 
 #endif // TOY_OPS

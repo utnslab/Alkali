@@ -27,6 +27,7 @@
 #include <map>
 #include <optional>
 #include <string>
+#include <variant>
 
 namespace ep2 {
 
@@ -88,6 +89,7 @@ public:
     Expr_Literal,
     Expr_StructLiteral,
     Expr_AtomLiteral,
+    Expr_PortLiteral,
     Expr_Var,
     Expr_Path, // Var connected by dots
     Expr_BinOp,
@@ -173,6 +175,22 @@ public:
   static bool classof(const ExprAST *c) {
     return c->getKind() == Expr_StructLiteral;
   }
+};
+
+class PortLiteralExprAST : public ExprAST {
+  std::string event;
+  std::string atom;
+  int instance;
+
+public:
+  PortLiteralExprAST(Location loc, llvm::StringRef event, llvm::StringRef atom, int instance)
+      : ExprAST(Expr_PortLiteral, std::move(loc)), event(event), atom(atom), instance(instance) {}
+
+  llvm::StringRef getAtom() const { return atom; }
+  llvm::StringRef getEvent() const { return event; }
+  int getInstance() const { return instance; }
+  /// LLVM style RTTI
+  static bool classof(const ExprAST *c) { return c->getKind() == Expr_PortLiteral; }
 };
 
 /// Expression class for referencing a variable, like "a".
@@ -308,6 +326,10 @@ public:
   std::string printCallee() { return callee->print(); }
   llvm::ArrayRef<std::unique_ptr<ExprAST>> getArgs() { return args; }
 
+  std::vector<std::string> ins{};
+  std::vector<std::string> outs{};
+  bool isCommand() { return !ins.empty() || !outs.empty(); }
+
   /// LLVM style RTTI
   static bool classof(const ExprAST *c) { return c->getKind() == Expr_Call; }
 };
@@ -391,15 +413,17 @@ public:
   RecordAST(RecordASTKind kind) : kind(kind) {}
   virtual ~RecordAST() = default;
 
+  using AttributesType = std::map<std::string, std::variant<std::string, bool, std::vector<std::string>>>;
+
   RecordASTKind getKind() const { return kind; }
-  void setAttributes(std::map<std::string, std::string> &&attributes) {
+  void setAttributes(AttributesType &&attributes) {
     this->attributes = attributes;
   }
-  std::map<std::string, std::string> &getAttributes() { return attributes; }
+  AttributesType &getAttributes() { return attributes; }
 
 private:
   const RecordASTKind kind;
-  std::map<std::string, std::string> attributes;
+  AttributesType attributes;
 };
 
 /// This class represents a function definition itself.
