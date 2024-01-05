@@ -85,7 +85,7 @@ struct ack_info_t
 event OoO_DETECT {context ctx; pkt_info_t pkt_info;}
 event ACK_GEN {context ctx; ack_info_t ack;}
 
-handler NET_RECV:process_packet (context ctx, buf packet) {
+[instances=(i1cu1,i1cu2,i2cu1,i2cu2)] handler NET_RECV:process_packet (context ctx, buf packet) {
     eth_header_t eth_header;
     ip_header_t ip_header;
     tcp_header_t tcp_header;
@@ -114,17 +114,19 @@ scope table_sc <OoO_DETECT:OoO_detection>[flow_id];
 [sync=table_sc] global table <bits<16>, flow_state_t, 16> flow_table;
 
 controller OoO_DETECT() {
-    In in = [NET_RECV:process_packet, 0];
-    In in2 = [NET_RECV:process_packet,1];
+    In in1 = [NET_RECV:process_packet, 0];
+    In in2 = [NET_RECV:process_packet, 1];
+    In in3 = [NET_RECV:process_packet, 2];
+    In in4 = [NET_RECV:process_packet, 3];
     Out out1 = [OoO_DETECT:OoO_detection, 0];
     Out out2 = [OoO_DETECT:OoO_detection, 1];
 
     # connects
-    PartitionBy()[in][out1];
-    PartitionBy()[in2][out2];
+    Queue(100)[in1,in2][out1];
+    Queue(100)[in3,in4][out2];
 }
 
-[sync=table_sc, instances=(cu1,cu2,cu3)] handler OoO_DETECT:OoO_detection (context ctx, pkt_info_t pkt_info) {
+[sync=table_sc, instances=(i1cu3,i2cu3)] handler OoO_DETECT:OoO_detection (context ctx, pkt_info_t pkt_info) {
     flow_state_t flow_state;
     flow_state = flow_table.lookup(pkt_info.flow_id);
 
