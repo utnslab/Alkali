@@ -499,7 +499,11 @@ EmitFPGAPass::VAL_TYPE EmitFPGAPass::GetValTypeAndSize(mlir::Type type,
   } else if (isa<ep2::AtomType>(type)) {
     enum_type = ATOM;
     size = -1;
-  } else {
+  } else if (isa<ep2::TableType>(type)){
+    enum_type = TABLE;
+    size = -1;
+  } 
+  else {
     enum_type = UNKNOWN;
     size = -1;
   }

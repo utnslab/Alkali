@@ -17,6 +17,7 @@ add_mlir_dialect_library(MLIREP2
         CFToPredPass.cpp
         BufferToValuePass.cpp
         EmitFPGAHelper.cpp
+        EmitFPGAController.cpp
         EmitFPGA.cpp
         EmitFPGATop.cpp
         HandlerInOutAnalysis.cpp

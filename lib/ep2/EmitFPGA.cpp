@@ -25,9 +25,13 @@ void EmitFPGAPass::emitFuncHeader(std::ofstream &file, ep2::FuncOp funcOp) {
   // push input parameter wire
   auto args = handlerInOutAnalysis->handler_in_arg_list[funcOp];
   std::string in_event_name = funcOp->getAttr("event").cast<StringAttr>().getValue().str();
-  bool if_in_extern_event = !handlerDependencyAnalysis->hasPredecessor(funcOp);
+  bool if_in_extern_event = false;
+  if (!handlerDependencyAnalysis->hasPredecessor(funcOp)){
+    if_in_extern_event = true;
+  }
 
   std::vector<std::pair<struct wire_config, int>> replica_args;
+  int index = 0;
   for (auto arg : args) {
     auto arg_type = arg.getType();
     bool if_stream;
@@ -49,7 +53,7 @@ void EmitFPGAPass::emitFuncHeader(std::ofstream &file, ep2::FuncOp funcOp) {
     }
 
     if(if_in_extern_event) // extern event's val name is determined by its unique name
-      name = assignValNameAndUpdate(arg, in_event_name + "_" + std::to_string(arg.getArgNumber()), false);
+      name = assignValNameAndUpdate(arg, getExternArgName(in_event_name, index), false);
     else
       name = assignValNameAndUpdate(arg, "arg");
     if (!if_stream) {
@@ -64,15 +68,16 @@ void EmitFPGAPass::emitFuncHeader(std::ofstream &file, ep2::FuncOp funcOp) {
     in_event_wires.push_back(event_wire);
     
     if(if_in_extern_event)
-      extern_inouts.push_back(in_if);
+      extern_inouts[name] = in_if;
 
     // save temp info for replication
     if(val_use_count(arg) > 1){
       event_wire.if_use = has_use(arg);
       replica_args.push_back({event_wire, val_use_count(arg)});
     }
+    index ++;
   }
-  handler_edge_map[*cur_funcop].push_back({IN, 0, if_in_extern_event, in_event_wires});
+  handler_in_edge_map[*cur_funcop].push_back({IN, in_event_name, if_in_extern_event, in_event_wires});
 
   // push output parameter wires
   auto returnvals = handlerInOutAnalysis->handler_returnop_list[funcOp];
@@ -87,7 +92,20 @@ void EmitFPGAPass::emitFuncHeader(std::ofstream &file, ep2::FuncOp funcOp) {
     assert(isa<ep2::StructType>(returned_event_type));
     auto return_event_struct = cast<ep2::StructType, Type>(returned_event_type);
     auto return_event_name = return_event_struct.getName().str();
-    auto if_out_extern_event = !handlerDependencyAnalysis->hasSuccessor(return_event_name);
+    auto if_out_extern_event = false;
+    if(!handlerDependencyAnalysis->hasSuccessor(return_event_name)){
+      if_out_extern_event = true;
+      // ReturnOp returnOp = dyn_cast<ReturnOp>(returned_event.getDefiningOp());
+      // if(handlerDependencyAnalysis->lookupController(returnOp)) {
+      //   if_out_extern_event = false;
+      // }
+      // auto next_extern_handler = handlerDependencyAnalysis->getSuccessors(funcOp, true);
+      // if(next_extern_handler.size() > 0){ // has an extern event
+      //   auto extern_handler = next_extern_handler.front();
+      //   if(controllerAnalysis->target_handler_to_ctrl_func.find(extern_handler) != controllerAnalysis->target_handler_to_ctrl_func.end())
+      //     if_out_extern_event = false;
+      // }
+    }
     auto field_types = return_event_struct.getElementTypes();
 
     
@@ -96,6 +114,7 @@ void EmitFPGAPass::emitFuncHeader(std::ofstream &file, ep2::FuncOp funcOp) {
     else
       name = assignValNameAndUpdate(returned_event, "outport");
 
+    int index = 0;
     for (int i = 0; i < field_types.size(); i++) {
       int size;
       std::string portname;
@@ -112,7 +131,9 @@ void EmitFPGAPass::emitFuncHeader(std::ofstream &file, ep2::FuncOp funcOp) {
       }
 
     
-      portname = name + "_" + std::to_string(i);
+      portname = name + "_" + std::to_string(index);
+      if(if_out_extern_event) // extern event's val name is determined by its unique name
+        portname = getExternArgName(return_event_name, index);
 
       struct axis_config wire = {if_stream, if_stream, size};
       struct wire_config event_wire = {AXIS, portname, "", false, -1, true, wire};
@@ -121,9 +142,10 @@ void EmitFPGAPass::emitFuncHeader(std::ofstream &file, ep2::FuncOp funcOp) {
       out_event_wires.push_back(event_wire);
 
       if(if_out_extern_event)
-        extern_inouts.push_back(out_if);
+        extern_inouts[portname] = out_if;
+      index ++;
     }
-    handler_edge_map[*cur_funcop].push_back({OUT, out_event_id++, if_out_extern_event, out_event_wires});
+    handler_out_edge_map[*cur_funcop].push_back({OUT, return_event_name, if_out_extern_event, out_event_wires});
   }
 
   emitModuleParameter(file, inout_wires);
@@ -770,7 +792,6 @@ mlir::ep2::EmitFPGAPass::wire_config EmitFPGAPass::emitGuardModule(std::ofstream
   outputwire.debuginfo = inputwire.debuginfo + "-- guarded";
 
   emitwire(file, outputwire, 1);
-  printf("Success Enter emitGuardModule\n");
   auto module_name = assign_name("guard");
   struct module_port_config input_port, output_port, cond_port;
   input_port = {AXIS, {inputwire.name}, "input val", "s_guard_axis", inputwire.axis};
@@ -788,7 +809,6 @@ mlir::ep2::EmitFPGAPass::wire_config EmitFPGAPass::emitGuardModule(std::ofstream
   params.push_back({"IF_STREAM", inputwire.axis.if_keep});
 
   emitModuleCall(file, "guard", module_name, ports, params);
-  printf("Success Exit emitGuardModule\n");
   return outputwire;
 }
 
@@ -824,7 +844,6 @@ void EmitFPGAPass::emitReturn(std::ofstream &file, ep2::ReturnOp returnop, bool 
       }
       count ++;
     }
-    printf("Success Enter emitReturn, count %d\n", count);
     guarded_cond_wires = emitGuardPredModule(file, gop, count);
   }
 
@@ -835,8 +854,6 @@ void EmitFPGAPass::emitReturn(std::ofstream &file, ep2::ReturnOp returnop, bool 
     struct axis_config value_axis, outports_axis;
     struct wire_config value_wire, outports_wire;
 
-    initop_args[i].getType().dump();
-    out_port_fileds[i].dump();
     assert(initop_args[i].getType() == out_port_fileds[i]);
 
     int size = 0;
@@ -1053,16 +1070,13 @@ void EmitFPGAPass::emitIfElse(std::ofstream &file, scf::IfOp ifop){
       std::vector<mlir::Value> then_yields;
       std::vector<mlir::Value> else_yields;
       auto &else_region = ifop.getElseRegion();
-      printf("///////////If region Start//////////////\n");
       if_region.walk([&](mlir::Operation *op) {
         if(isa<scf::YieldOp>(op)){
           auto yieldop = cast<scf::YieldOp, mlir::Operation *>(op);
           auto oprands = yieldop.getOperands()[0];
-          oprands.dump();
           then_yields.push_back(oprands);
         }
       });
-      printf("///////////If region End//////////////\n");
 
       file << "///////////Else region Start//////////////\n";
       else_region.walk([&](mlir::Operation *op) {
@@ -1070,10 +1084,8 @@ void EmitFPGAPass::emitIfElse(std::ofstream &file, scf::IfOp ifop){
           auto yieldop = cast<scf::YieldOp, mlir::Operation *>(op);
           auto oprands = yieldop.getOperands()[0];
           else_yields.push_back(oprands);
-          oprands.dump();
         }
       });
-      printf("///////////Else region End//////////////\n");
 
       // generate demux slecetor
       auto if_cond = ifop.getCondition();
@@ -1158,9 +1170,12 @@ void EmitFPGAPass::emitGuard(std::ofstream &file, ep2::GuardOp guardop){
     auto updateop = cast<ep2::UpdateOp, mlir::Operation *>(gop);
     emitUpdate(file, updateop, true, guardop);
    }
-
-
 }
+
+
+void EmitFPGAPass::emitGlobalImport(std::ofstream &file,  ep2::GlobalImportOp importop){
+}
+
 void  EmitFPGAPass::emitSink(std::ofstream &file, ep2::SinkOp sinkop){
   auto val = sinkop.getOperand(0);
   auto val_name = getValName(val);
@@ -1225,6 +1240,9 @@ void EmitFPGAPass::emitOp(std::ofstream &file, mlir::Operation *op){
   } else if(isa<ep2::GuardOp>(op)){
     auto guardop = cast<ep2::GuardOp, mlir::Operation *>(op);
     emitGuard(file, guardop);
+  } else if(isa<ep2::GlobalImportOp>(op)){
+    auto globalimportop = cast<ep2::GlobalImportOp, mlir::Operation *>(op);
+    emitGlobalImport(file, globalimportop);
   }
   // TODO: Change STURCT ACCESS IR to generate new stream for each accessed
     // struct
@@ -1370,135 +1388,6 @@ void EmitFPGAPass::emitHandler(ep2::FuncOp funcOp) {
   fout_stage << "\nendmodule\n";
 }
 
-void EmitFPGAPass::emitController(ep2::FuncOp funcOp) {
-  cur_funcop = &funcOp;
-  auto handler_name = funcOp.getName().str();
-  std::ofstream file(handler_name + ".sv");
-  file << "module " << handler_name << "#()\n";
-
-  // from m replicas to n replicas
-  std::vector<struct inout_config> inout_wires;
-  std::list<struct wire_config> mux_in_wires;
-  std::list<struct wire_config> demux_out_wires;
-  // TODO: should have a analysis struct:
-  // std::unordered_map<ep2::FuncOp, std::list<ep2::FuncOp>>
-  // controller_srcs; std::unordered_map<ep2::FuncOp,
-  // std::list<ep2::FuncOp>> controller_dsts;
-
-  // vvv
-  int src_count = 2;
-  int dst_count = 2;
-  mlir::Value tmped_event;
-  for (auto &temp : handlerInOutAnalysis->handler_returnop_list) {
-    if (temp.second.size() != 0) {
-      tmped_event = temp.second[0];
-    }
-  }
-  // ^^^
-
-  auto event_type = tmped_event.getType();
-
-  assert(isa<ep2::StructType>(event_type));
-  auto return_event_struct = cast<ep2::StructType, Type>(event_type);
-  // TODO: This need special care -- event size contains buf/context and itis
-  // not simply a struct..
-  int eventsize = 233;
-  bool if_stream = true; // event is a stream
-  struct axis_config event_axis = {1, 1, eventsize};
-
-  std::string portname, debuginfo;
-
-  for (int src_id = 0; src_id < src_count; src_id++) {
-    auto name = assign_name("inport");
-    debuginfo = "input event from src port " + std::to_string(src_id);
-    portname = name + "_" + std::to_string(src_id);
-    struct axis_config wire = {if_stream, if_stream, eventsize};
-    struct inout_config out_if = {IN, AXIS, portname, debuginfo, wire};
-    inout_wires.push_back(out_if);
-    // Collect input port wire information for further wiring
-    mux_in_wires.push_back(
-        {AXIS, portname, debuginfo + "wire", false, -1, true, wire});
-  }
-
-  for (int dst_id = 0; dst_id < dst_count; dst_id++) {
-    auto name = assign_name("outport");
-    debuginfo = "output event for dst port " + std::to_string(dst_id);
-    portname = name + "_" + std::to_string(dst_id);
-    struct axis_config wire = {if_stream, if_stream, eventsize};
-    struct inout_config out_if = {OUT, AXIS, portname, debuginfo, wire};
-    inout_wires.push_back(out_if);
-    // Collect output port wire information for further wiring
-    demux_out_wires.push_back(
-        {AXIS, portname, debuginfo + "wire", false, -1, true, wire});
-  }
-
-  emitModuleParameter(file, inout_wires);
-
-  bool if_enable_mux = (src_count > 1);
-  bool if_enable_demux = (dst_count > 1);
-  std::vector<std::string> fifo_invar_names;
-  if (if_enable_mux) {
-    //  emit mux's output wire defination
-    struct module_port_config mux_in_port, mux_out_port;
-    struct wire_config mux_out_wire;
-    auto mux_out_name = assign_name("mux_out");
-    mux_out_wire.name = mux_out_name;
-    mux_out_wire = {AXIS,  mux_out_name, "Mux output wire",
-                    false, -1, true,         event_axis};
-    mux_out_port = {AXIS, {mux_out_name}, "mux output", "m_axis", event_axis};
-
-    emitwire(file, mux_out_wire);
-
-    // emit mux call
-    std::list<struct module_port_config> ports;
-    std::vector<std::string> var_names;
-    for (auto &w : mux_in_wires) {
-      var_names.push_back(w.name);
-    }
-    mux_in_port = {AXIS, var_names, "mux input", "s_axis", event_axis};
-
-    ports.push_back(mux_in_port);
-    ports.push_back(mux_out_port);
-    // MUX parameters
-    std::list<struct module_param_config> params;
-    params.push_back({"S_COUNT  ", src_count});
-    params.push_back({"DATA_WIDTH", eventsize});
-    params.push_back({"KEEP_ENABLE ", 1});
-    params.push_back({"USER_ENABLE ", 0});
-
-    emitModuleCall(file, "axis_arb_mux ", "axis_arb_mux", ports, params);
-
-    fifo_invar_names = {mux_out_name};
-  } else {
-    fifo_invar_names = {inout_wires.front().name};
-  }
-
-  // EMIT FIFO + disptacher
-  struct module_port_config fifo_in_port, fifo_out_port;
-  std::list<struct module_port_config> fifoports;
-  fifo_in_port = {AXIS, fifo_invar_names, "queue input", "s_axis", event_axis};
-
-  std::vector<std::string> fifo_out_var_names;
-  for (auto &w : demux_out_wires) {
-    fifo_out_var_names.push_back(w.name);
-  }
-  fifo_out_port = {AXIS, fifo_out_var_names, "queue output", "m_axis",
-                   event_axis};
-  fifoports.push_back(fifo_in_port);
-  fifoports.push_back(fifo_out_port);
-
-  // MUX parameters
-  std::list<struct module_param_config> params;
-  params.push_back({"D_COUNT  ", dst_count});
-  params.push_back({"DATA_WIDTH", eventsize});
-  params.push_back({"KEEP_ENABLE ", 1});
-  params.push_back({"USER_ENABLE ", 0});
-  params.push_back({"QUEUE_TYPE ", 0});
-  params.push_back({"QUEUE_SIZE ", 128});
-
-  emitModuleCall(file, "dispatch_queue", "queue", fifoports, params);
-  file << "\nendmodule\n";
-}
 
 void EmitFPGAPass::runOnOperation() {
   module = getOperation();
@@ -1514,12 +1403,16 @@ void EmitFPGAPass::runOnOperation() {
     std::cout << functype << "\n";
     if (functype == "handler" && !funcOp->hasAttr("extern")) {
       emitHandler(funcOp);
-    } else if (functype == "controller") {
+    } 
+  });
+
+  module->walk([&](ep2::FuncOp funcOp) {
+    auto functype = funcOp->getAttr("type").cast<StringAttr>().getValue().str();
+    std::cout << functype << "\n";
+    if (functype == "controller") {
       emitController(funcOp);
     }
   });
-
-
   emitTop();
 }
 

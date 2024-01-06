@@ -1,0 +1,59 @@
+
+// #include "ep2/dialect/Dialect.h"
+// #include "ep2/dialect/Passes.h"
+// #include "mlir/IR/BuiltinDialect.h"
+
+// #include "mlir/IR/BuiltinOps.h"
+// #include "mlir/IR/Visitors.h"
+// #include "mlir/Pass/Pass.h"
+// #include "llvm/ADT/StringMap.h"
+
+// using namespace mlir;
+
+// namespace mlir {
+// namespace ep2 {
+
+// FuncOp ControllerAnalysis::findTargetHanlder(FuncOp funcOp) {
+
+//   FuncOp targetfunc = nullptr;
+//   for (auto &block : funcOp.getBody().getBlocks()) {
+//     std::string targetEvent =
+//         funcOp->getAttr("event").cast<StringAttr>().getValue().str();
+//     auto &dependency = getAnalysis<HandlerDependencyAnalysis>();
+//     funcOp->walk([&](ConstantOp constantOp) {
+//       if (auto portType = constantOp.getType().dyn_cast<ep2::PortType>()) {
+//         auto value = constantOp.getResult();
+//         auto portAttr = constantOp.getValue().cast<PortAttr>();
+//         HandlerDependencyAnalysis::HandlerFullName fullname{
+//             portAttr.getHandler().str(), portAttr.getAtom().str()};
+
+//         FuncOp funcOp = dependency.handlersMap[fullname];
+
+//         int instance = portAttr.getInstance();
+
+//         if (!portType.getIn() && portType.getOut()) {
+//           if (!targetfunc)
+//             targetfunc = funcOp;
+//           else if (targetfunc != funcOp) {
+//             printf("Error: multiple target func for %s\n", targetEvent.c_str());
+//             assert(false);
+//           }
+//         }
+//       }
+//     });
+//   }
+//     return targetfunc;
+// }
+
+// ControllerAnalysis::ControllerAnalysis(Operation *module) {
+//   // walk through and find all function targets.
+//   module->walk([&](FuncOp funcOp) {
+//     if (funcOp->getAttr("type").cast<StringAttr>().getValue() == "controller") {
+//         auto targetfunc = findTargetHanlder(funcOp);
+//         ctrl_func_to_target_handler[funcOp] = targetfunc;
+//         target_handler_to_ctrl_func[targetfunc] = funcOp;
+//     }
+//   });
+// }
+// } // namespace ep2
+// } // namespace mlir

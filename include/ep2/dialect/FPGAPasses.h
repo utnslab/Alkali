@@ -55,7 +55,7 @@ private:
   HandlerDependencyAnalysis *handlerDependencyAnalysis;
   FuncOp *cur_funcop;
 
-  enum VAL_TYPE { CONTEXT, STRUCT, INT, BUF, ATOM, UNKNOWN };
+  enum VAL_TYPE { CONTEXT, STRUCT, INT, BUF, ATOM, TABLE, UNKNOWN };
 
   enum INOUT { IN, OUT };
 
@@ -142,6 +142,8 @@ private:
       return "BUF";
     case ATOM:
       return "ATOM";
+    case TABLE:
+      return "TABLE";
     case UNKNOWN:
       return "UNKNOWN";
     default:
@@ -153,20 +155,35 @@ private:
   // an edge is an event, with a group of wires (all parameters in an event)
   struct handler_edge {
     INOUT direction;
-    int id;
+    // int id;
+    std::string eventname;
     bool if_extern;
     std::vector<struct wire_config> event_wires;
   };
 
-  mlir::DenseMap<mlir::ep2::FuncOp, std::vector<struct handler_edge>> handler_edge_map;
+  mlir::DenseMap<mlir::ep2::FuncOp, std::vector<struct handler_edge>> handler_in_edge_map, handler_out_edge_map;
 
-  std::vector<struct inout_config> extern_inouts;
+  struct inout_info {
+    FuncOp funcop;
+    int replicate_index;
+    std::string eventname;
+    std::vector<struct wire_config> event_wires;
+    bool if_connect_to_extern;
+  };
+
+  mlir::DenseMap<mlir::ep2::FuncOp, mlir::DenseMap<Value, struct inout_info>> ctrl_ins, ctrl_outs;
+
+  mlir::DenseMap<llvm::StringRef, struct inout_config> extern_inouts;
 
   struct name_and_uses {
     std::string name;
     int total_uses;
     int cur_use;
   };
+
+  std::string getExternArgName(std::string eventname, int argid){
+    return eventname + "_" + std::to_string(argid);
+  }
 
   // std::unordered_map<mlir::Location, std::string> arg_names;
   mlir::DenseMap<Value, struct name_and_uses> val_names_and_useid;
@@ -205,6 +222,12 @@ private:
     }
     return if_stream;
   }
+
+  struct top_handler_inout_wires{
+      bool if_extern;
+      bool if_connected;
+      std::vector<struct wire_config> event_wires;
+  };
 
   std::string assignValNameAndUpdate(mlir::Value val, std::string prefix, bool if_add_gindex=true);
   
@@ -258,10 +281,16 @@ private:
   void emitHandler(ep2::FuncOp funcOp);
   void emitController(ep2::FuncOp funcOp);
   void emitGuard(std::ofstream &file, ep2::GuardOp guardop);
+  void emitGlobalImport(std::ofstream &file, ep2::GlobalImportOp importop);
 
   void emitOp(std::ofstream &file, mlir::Operation *op);
 
   void emitTop();
+  void emitControllerTop();
+
+
+  void emitControllerInOut(std::ofstream &file, ep2::FuncOp funcOp);
+  void emitControllerMux(std::ofstream &file, ep2::ConnectOp conncetop);
 };
 
 } // namespace ep2
