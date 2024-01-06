@@ -3,10 +3,10 @@
 #include "extern/extern_dma.h"
 #include "extern/extern_net.h"
 
-struct ip_header_t _loc_buf_13;
-__xrw struct ip_header_t _loc_buf_13_xfer;
 struct tcp_header_t _loc_buf_14;
 __xrw struct tcp_header_t _loc_buf_14_xfer;
+struct ip_header_t _loc_buf_13;
+__xrw struct ip_header_t _loc_buf_13_xfer;
 struct eth_header_t _loc_buf_12;
 __xrw struct eth_header_t _loc_buf_12_xfer;
 __declspec(aligned(4)) struct event_param_ACK_GEN work;
@@ -55,7 +55,7 @@ void __event___handler_ACK_GEN_ack_gen_1() {
   v2 = 64;
   v3 = &work;
   v4 = &work_ref;
-  cls_workq_add_thread(WORKQ_ID_ACK_GEN, v4, sizeof(*v4));
+  cls_workq_add_thread(WORKQ_ID_ACK_GEN_1, v4, sizeof(*v4));
   *(v3) = *(v4);
   v5 = v3->ctx;
   v6 = &v3->f0;

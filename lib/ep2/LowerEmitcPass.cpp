@@ -642,8 +642,18 @@ struct FunctionPattern : public OpConversionPattern<ep2::FuncOp> {
       auto eventXfer = rewriter.create<emitc::VariableOp>(loc, inputWrapperXferType, emitc::OpaqueAttr::get(getContext(), std::string{"&work_ref"}));
 
       {
+        auto getReplicaId = [](std::string name) {
+          std::string id = name.substr(1 + name.rfind("_"));
+          for (int i = 0; i<id.size(); ++i) {
+            if (!isdigit(id[i])) {
+              return std::string{""};
+            }
+          }
+          return id;
+        };
+
         llvm::SmallVector<Type> resTypes3 = {};
-        mlir::ArrayAttr args3 = rewriter.getStrArrayAttr({eventName});
+        mlir::ArrayAttr args3 = rewriter.getStrArrayAttr({eventName, getReplicaId(funcOp.getName().str())});
         mlir::ArrayAttr templ_args3;
         rewriter.create<emitc::CallOp>(loc, resTypes3, rewriter.getStringAttr("__ep2_intrin_deq_work"), args3, templ_args3, ValueRange{eventXfer.getResult()});
       }

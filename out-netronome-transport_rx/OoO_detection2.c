@@ -72,7 +72,7 @@ void __event___handler_OoO_DETECT_OoO_detection_2() {
   v4 = 0;
   v5 = &work;
   v6 = &work_ref;
-  cls_workq_add_thread(WORKQ_ID_OoO_DETECT, v6, sizeof(*v6));
+  cls_workq_add_thread(WORKQ_ID_OoO_DETECT_2, v6, sizeof(*v6));
   *(v5) = *(v6);
   v7 = v5->ctx;
   v8 = &v5->f0;
@@ -138,7 +138,7 @@ void __event___handler_OoO_DETECT_OoO_detection_2() {
     v49->f0 = *v14;
     v50 = &next_work_ref_ACK_GEN;
     *(v50) = *(v49);
-    cls_workq_add_work(WORKQ_ID_ACK_GEN, v50, sizeof(*v50));
+    cls_workq_add_work(WORKQ_ID_ACK_GEN_2, v50, sizeof(*v50));
   }
   return;
 }

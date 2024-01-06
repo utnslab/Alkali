@@ -65,7 +65,7 @@ void HandlerReplicationPass::runOnOperation() {
           for (mlir::Value arg : op.getIns()) {
             auto portIn = cast<ep2::ConstantOp>(arg.getDefiningOp()).getValue().cast<ep2::PortAttr>();
             auto k = std::pair<std::string, std::string>{portToHandlerName(portIn), portOut.getHandler().str()};
-            qMap[k].push_back(portOut.getInstance());
+            qMap[k].push_back(1 + portOut.getInstance());
           }
         }
       });
@@ -87,14 +87,10 @@ void HandlerReplicationPass::runOnOperation() {
         auto k = std::pair<std::string, std::string>{handlerName, outEventName};
 
         // TODO encode round-robin, partitioning, which targets, etc. here
-        auto attr = builder.getI32ArrayAttr(qMap[k]);
         initOp->setAttr("enqInfo", builder.getI32ArrayAttr(qMap[k]));
       });
     }
   });
-
-  module->dump();
-  return;
 }
 
 } // namespace ep2

@@ -100,7 +100,6 @@ static std::vector<std::pair<int, unsigned>> calcPadding(const mlir::LLVM::LLVMS
 
 void EmitNetronomePass::runOnOperation() {
   auto module = getOperation();
-  module->dump();
 
   if (basePathOpt.empty()) {
     emitError(module.getLoc(), "basePath not specified");
@@ -193,9 +192,12 @@ void EmitNetronomePass::runOnOperation() {
       std::string eventName = q.first;
 
       fout_prog_hdr << "#define WORKQ_SIZE_" << eventName << " " << q.second.size << '\n';
-      fout_prog_hdr << "#define WORKQ_ID_" << eventName << " " << (workq_id_incr++) << '\n';
       fout_prog_hdr << "#define WORKQ_TYPE_" << eventName << " " << "MEM_TYEP_" << toString(q.second.memType) << '\n';
-      fout_prog_hdr << toString(q.second.memType) << "_WORKQ_DECLARE(workq_" << eventName << ", WORKQ_SIZE_" << eventName << ");\n\n";
+
+      for (int replica : q.second.replicas) {
+        fout_prog_hdr << "#define WORKQ_ID_" << eventName << " " << (workq_id_incr++) << '\n';
+        fout_prog_hdr << toString(q.second.memType) << "_WORKQ_DECLARE(workq_" << eventName << "_" << replica << ", WORKQ_SIZE_" << eventName << ");\n\n";
+      }
     }
 
     unsigned tableCtr = 0;

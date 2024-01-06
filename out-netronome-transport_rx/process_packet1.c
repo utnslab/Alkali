@@ -84,7 +84,7 @@ void __event___handler_NET_RECV_process_packet_1() {
   v22->f0 = *v8;
   v23 = &next_work_ref_OoO_DETECT;
   *(v23) = *(v22);
-  cls_workq_add_work(WORKQ_ID_OoO_DETECT, v23, sizeof(*v23));
+  cls_workq_add_work(WORKQ_ID_OoO_DETECT_1, v23, sizeof(*v23));
   return;
 }
 

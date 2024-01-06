@@ -172,16 +172,19 @@ CollectInfoAnalysis::CollectInfoAnalysis(Operation* module, AnalysisManager& am)
     if (funcOp->getAttr("type").cast<StringAttr>().getValue() == "controller" && !funcOp.isExtern()) {
       funcOp->walk([&](ep2::ConnectOp op) {
         assert(op.getMethod() == "Queue");
+        std::string eventName = funcOp->getAttr("event").cast<mlir::StringAttr>().getValue().str();
+
+        auto& qInfo = this->eventQueues[eventName];
+        qInfo.memType = MemType::CLS;
+        // TODO do not hardcode queue size=100
+        qInfo.size = 100;
+
         std::vector<int> replicas;
         for (mlir::Value arg : op.getOuts()) {
           auto port = cast<ep2::ConstantOp>(arg.getDefiningOp()).getValue().cast<ep2::PortAttr>();
+          qInfo.replicas.push_back(port.getInstance());
           replicas.push_back(port.getInstance());
         }
-
-        // TODO do not hardcode queue size=100
-        std::string eventName = funcOp->getAttr("event").cast<mlir::StringAttr>().getValue().str();
-        QueueInfo qInfo(MemType::CLS, 100, replicas);
-        this->eventQueues.emplace(eventName, qInfo); 
       });
     } else {
       std::string eventName = funcOp->getAttr("event").cast<StringAttr>().getValue().str();
