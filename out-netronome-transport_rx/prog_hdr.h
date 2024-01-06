@@ -83,18 +83,6 @@ __packed struct context_chain_1_t {
 	int32_t ctx_id;
 };
 
-__packed struct event_param_NET_SEND {
-	struct __buf_t f0;
-	struct send_meta_t meta;
-	struct context_chain_1_t* ctx;
-};
-
-__packed struct event_param_DMA_WRITE_REQ {
-	struct __buf_t f0;
-	struct dma_write_cmd_t f1;
-	struct context_chain_1_t* ctx;
-};
-
 __packed struct event_param_NET_RECV {
 	struct __buf_t f0;
 	struct recv_meta_t meta;
@@ -106,20 +94,37 @@ __packed struct event_param_OoO_DETECT {
 	struct context_chain_1_t* ctx;
 };
 
+__packed struct event_param_DMA_WRITE_REQ {
+	struct __buf_t f0;
+	struct dma_write_cmd_t f1;
+	struct context_chain_1_t* ctx;
+};
+
 __packed struct event_param_ACK_GEN {
 	struct ack_info_t f0;
 	struct context_chain_1_t* ctx;
 };
 
-#define WORKQ_SIZE_DMA_WRITE_REQ 256
-#define WORKQ_ID_DMA_WRITE_REQ 10
-#define WORKQ_TYPE_DMA_WRITE_REQ MEM_TYEP_CLS
-CLS_WORKQ_DECLARE(workq_DMA_WRITE_REQ, WORKQ_SIZE_DMA_WRITE_REQ);
+__packed struct event_param_NET_SEND {
+	struct __buf_t f0;
+	struct send_meta_t meta;
+	struct context_chain_1_t* ctx;
+};
+
+#define WORKQ_SIZE_ACK_GEN 100
+#define WORKQ_ID_ACK_GEN 10
+#define WORKQ_TYPE_ACK_GEN MEM_TYEP_CLS
+CLS_WORKQ_DECLARE(workq_ACK_GEN, WORKQ_SIZE_ACK_GEN);
+
+#define WORKQ_SIZE_OoO_DETECT 100
+#define WORKQ_ID_OoO_DETECT 11
+#define WORKQ_TYPE_OoO_DETECT MEM_TYEP_CLS
+CLS_WORKQ_DECLARE(workq_OoO_DETECT, WORKQ_SIZE_OoO_DETECT);
 
 __packed struct table_i16_flow_state_t_16_t {
 	struct flow_state_t table[16];
 };
-__shared struct table_i16_flow_state_t_16_t table_7;
+__shared struct table_i16_flow_state_t_16_t table_22;
 
 EMEM_CONTEXTQ_DECLARE(context_chain_1_t, context_chain_pool, 2048);
 MEM_RING_INIT(context_chain_ring, 2048);

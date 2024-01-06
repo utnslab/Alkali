@@ -84,7 +84,7 @@ struct HandlerDependencyAnalysis {
   GraphType graph;
   std::vector<GraphType> subGraphs;
   std::vector<std::vector<FuncOp>> subGraphsOrder;
-  std::unordered_map<std::string, std::vector<std::string>> eventDeps;
+  std::unordered_map<std::string, std::unordered_set<std::string>> eventDeps;
 
   std::map<HandlerFullName, FuncOp> handlersMap;
   FuncOp lookupHandler(HandlerFullName fullname);
@@ -281,7 +281,7 @@ struct CollectInfoAnalysis {
   std::unordered_set<unsigned> typeBitWidths;
   std::vector<std::pair<std::string, mlir::LLVM::LLVMStructType>> structDefs;
   std::unordered_map<std::string, QueueInfo> eventQueues;
-  std::unordered_map<std::string, std::vector<std::string>> eventDeps;
+  std::unordered_map<std::string, std::unordered_set<std::string>> eventDeps;
   std::unordered_map<std::string, std::vector<std::pair<std::string, std::string>>> eventAllocs;
   std::vector<TableInfo> tableInfos;
 

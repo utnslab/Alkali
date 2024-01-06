@@ -186,7 +186,7 @@ CollectInfoAnalysis::CollectInfoAnalysis(Operation* module, AnalysisManager& am)
     } else {
       std::string eventName = funcOp->getAttr("event").cast<StringAttr>().getValue().str();
       std::string stageName = funcOp->hasAttr("atom") ? funcOp->getAttr("atom").cast<StringAttr>().getValue().str() : funcOp->getAttr("event").cast<StringAttr>().getValue().str();
-      this->eventAllocs[eventName + "_a_" + stageName] = {};
+      this->eventAllocs[eventName + "_a_" + stageName + "_a_" + funcOp.getName().str()] = {};
     }
   });
 
@@ -203,7 +203,7 @@ CollectInfoAnalysis::CollectInfoAnalysis(Operation* module, AnalysisManager& am)
       std::pair<std::string, std::string> prOut;
       prOut.first = cast<ep2::StructType>(pr.first->getResult(0).getType()).getName().str();
       prOut.second = pr.second;
-      this->eventAllocs[eventName + "_a_" + stageName].push_back(prOut);
+      this->eventAllocs[eventName + "_a_" + stageName + "_a_" + cast<ep2::FuncOp>(funcOp).getName().str()].push_back(prOut);
     }
   }
 

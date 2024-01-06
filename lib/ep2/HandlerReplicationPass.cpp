@@ -24,22 +24,28 @@ namespace ep2 {
 void HandlerReplicationPass::runOnOperation() {
   auto module = getOperation();
 
+  std::vector<mlir::Operation*> toInsert;
+  mlir::Block* parentBlock = nullptr;
+
   module->walk([&](ep2::FuncOp funcOp) {
     if (funcOp->getAttr("type").cast<StringAttr>().getValue() == "handler" && !funcOp.isExtern()) {
-      llvm::errs() << "ABEFORE CLONE\n";
-      funcOp->dump();
+      parentBlock = funcOp->getBlock();
       int sz = cast<mlir::ArrayAttr>(funcOp->getAttr("instances")).size();
-      llvm::errs() << "DBEFORE CLONE\n";
       mlir::Operation::CloneOptions options(true, true);
-      for (int i = 0; i<sz-1; ++i) {
-        llvm::errs() << "BEFORE CLONE\n";
-        Operation* op = funcOp->clone(options);
-        llvm::errs() << "CLONE RESULT: " << op << '\n';
-        funcOp->getBlock()->push_back(op);
+
+      std::string name = funcOp.getSymName().str();
+      for (int i = 1; i<sz+1; ++i) {
+        mlir::Operation* cloneOp = funcOp->clone(options);
+        cast<ep2::FuncOp>(cloneOp).setSymName(name + "_" + std::to_string(i));
+        toInsert.push_back(cloneOp);
       }
+      funcOp->erase();
     }
   });
-  module->dump();
+
+  for (mlir::Operation* op : toInsert) {
+    parentBlock->push_back(op);
+  }
 
   /*
   module->walk([&](ep2::FuncOp funcOp) {

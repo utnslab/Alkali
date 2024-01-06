@@ -3,21 +3,21 @@
 #include "extern/extern_dma.h"
 #include "extern/extern_net.h"
 
-struct pkt_info_t _loc_buf_6;
-__xrw struct pkt_info_t _loc_buf_6_xfer;
+struct pkt_info_t _loc_buf_18;
+__xrw struct pkt_info_t _loc_buf_18_xfer;
 struct tcp_header_t _loc_buf_2;
 __xrw struct tcp_header_t _loc_buf_2_xfer;
-struct ip_header_t _loc_buf_1;
-__xrw struct ip_header_t _loc_buf_1_xfer;
 struct eth_header_t _loc_buf_0;
 __xrw struct eth_header_t _loc_buf_0_xfer;
+struct ip_header_t _loc_buf_1;
+__xrw struct ip_header_t _loc_buf_1_xfer;
 __declspec(aligned(4)) struct event_param_NET_RECV work;
 __xrw struct event_param_NET_RECV work_ref;
 __declspec(aligned(4)) struct event_param_OoO_DETECT next_work_OoO_DETECT;
 __xrw struct event_param_OoO_DETECT next_work_ref_OoO_DETECT;
 
 __forceinline
-void __event___handler_NET_RECV_process_packet() {
+void __event___handler_NET_RECV_process_packet_1() {
   int64_t v1;
   int32_t v2;
   int32_t v3;
@@ -50,7 +50,7 @@ void __event___handler_NET_RECV_process_packet() {
   v4->ctx = v5;
   v6 = v4->ctx;
   v7 = v4->f0;
-  v8 = &_loc_buf_6;
+  v8 = &_loc_buf_18;
   v9 = &_loc_buf_0;
   v10 = &_loc_buf_0_xfer;
   mem_read32(&v10->f0, v7.buf + v7.offs, 12);
@@ -94,6 +94,6 @@ int main(void) {
 	init_context_chain_ring();
 	wait_global_start_();
 	for (;;) {
-		__event___handler_NET_RECV_process_packet();
+		__event___handler_NET_RECV_process_packet_1();
 	}
 }

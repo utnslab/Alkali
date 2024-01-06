@@ -111,6 +111,22 @@ void EmitNetronomePass::runOnOperation() {
   std::string basePath = basePathOpt.getValue();
   const CollectInfoAnalysis& info = getCachedAnalysis<CollectInfoAnalysis>().value();
 
+  auto extractEventName = [&](std::string str) {
+    return str.substr(0, str.find("_a_"));
+  };
+  auto extractAtomName = [&](std::string str) {
+    int first = str.find("_a_");
+    return str.substr(first + 3, str.find("_a_", first + 3) - first - 3);
+  };
+  auto extractHandlerName = [&](std::string str) {
+    int first = str.find("_a_");
+    int second = str.find("_a_", first + 3);
+    return "__event_" + str.substr(second + 3);
+  };
+  auto makeFileName = [&](std::string str) {
+    return extractAtomName(str) + str.substr(str.rfind("_") + 1);
+  };
+
   {
     std::ofstream fout_prog_hdr(basePath + "/prog_hdr.h");
     fout_prog_hdr << "#ifndef _PROG_HDR_H_\n";
@@ -236,9 +252,9 @@ void EmitNetronomePass::runOnOperation() {
     std::unordered_map<std::string, unsigned> atomToCtr;
 
     for (const auto& pr : info.eventAllocs) {
-      std::string atomName = pr.first.substr(pr.first.find("_a_") + 3);
+      std::string atomName = extractAtomName(pr.first);
 
-      fout_makefile << "S" << ctr << "_SRCS := $(app_src_dir)/" << atomName << ".c\n";
+      fout_makefile << "S" << ctr << "_SRCS := $(app_src_dir)/" << makeFileName(pr.first) << ".c\n";
       fout_makefile << "S" << ctr << "_LIST := " << atomName << ".list\n";
       fout_makefile << "S" << ctr << "_DEFS := $(mlir_NFCCFLAGS)\n";
       fout_makefile << "$(S" << ctr << "_LIST): $(mlir_NFCCSRCS) $(S" << ctr << "_SRCS)\n";
@@ -296,13 +312,14 @@ void EmitNetronomePass::runOnOperation() {
 
     // each event is a stage in the pipeline.
     for (const auto& pr : info.eventAllocs) {
-      std::string eventName = pr.first.substr(0, pr.first.find("_a_"));
-      std::string atomName = pr.first.substr(pr.first.find("_a_") + 3);
-      std::string funcName = "__event___handler_" + eventName + "_" + atomName;
+      std::string eventName = extractEventName(pr.first);
+      std::string atomName = extractAtomName(pr.first);
+      std::string funcName = extractHandlerName(pr.first);
       
       // TODO add code to wait for initialization
 
-      std::ofstream fout_stage(basePath + "/" + atomName + ".c");
+      std::string filePath = basePath + std::string{"/"} + makeFileName(pr.first) + ".c";
+      std::ofstream fout_stage(filePath);
       fout_stage << "#include \"nfplib.h\"\n";
       fout_stage << "#include \"prog_hdr.h\"\n";
       fout_stage << "#include \"extern/extern_dma.h\"\n";
@@ -319,7 +336,7 @@ void EmitNetronomePass::runOnOperation() {
       bool isLastStage = info.eventDeps.find(eventName) == info.eventDeps.end();
 
       if (!isLastStage) {
-        const std::vector<std::string>& nextEventNames = info.eventDeps.find(eventName)->second;
+        const auto& nextEventNames = info.eventDeps.find(eventName)->second;
         for (const std::string& nextEventName : nextEventNames) {
           fout_stage << "__declspec(aligned(4)) struct event_param_" << nextEventName << " next_work_" << nextEventName << ";\n";
           fout_stage << "__xrw struct event_param_" << nextEventName << " next_work_ref_" << nextEventName << ";\n";

@@ -129,46 +129,67 @@ $(DMA_LIST): $(mlir_NFCCSRCS) $(DMA_SRCS)
 global_LIST_FILES += $(DMA_LIST)
 
 
-S1_SRCS := $(app_src_dir)/OoO_detection.c
-S1_LIST := OoO_detection.list
+S1_SRCS := $(app_src_dir)/ack_gen2.c
+S1_LIST := ack_gen.list
 S1_DEFS := $(mlir_NFCCFLAGS)
 $(S1_LIST): $(mlir_NFCCSRCS) $(S1_SRCS)
 	@echo "--- Building #@"
 	$(Q) $(NFCC) $(S1_DEFS) -Fe$@ $(S1_SRCS) $(mlir_NFCCSRCS)
 global_LIST_FILES += $(S1_LIST)
-S2_SRCS := $(app_src_dir)/ack_gen.c
+S2_SRCS := $(app_src_dir)/ack_gen1.c
 S2_LIST := ack_gen.list
 S2_DEFS := $(mlir_NFCCFLAGS)
 $(S2_LIST): $(mlir_NFCCSRCS) $(S2_SRCS)
 	@echo "--- Building #@"
 	$(Q) $(NFCC) $(S2_DEFS) -Fe$@ $(S2_SRCS) $(mlir_NFCCSRCS)
 global_LIST_FILES += $(S2_LIST)
-S3_SRCS := $(app_src_dir)/process_packet.c
-S3_LIST := process_packet.list
+S3_SRCS := $(app_src_dir)/OoO_detection2.c
+S3_LIST := OoO_detection.list
 S3_DEFS := $(mlir_NFCCFLAGS)
 $(S3_LIST): $(mlir_NFCCSRCS) $(S3_SRCS)
 	@echo "--- Building #@"
 	$(Q) $(NFCC) $(S3_DEFS) -Fe$@ $(S3_SRCS) $(mlir_NFCCSRCS)
 global_LIST_FILES += $(S3_LIST)
-S4_SRCS := $(app_src_dir)/dma_write.c
-S4_LIST := dma_write.list
+S4_SRCS := $(app_src_dir)/OoO_detection1.c
+S4_LIST := OoO_detection.list
 S4_DEFS := $(mlir_NFCCFLAGS)
 $(S4_LIST): $(mlir_NFCCSRCS) $(S4_SRCS)
 	@echo "--- Building #@"
 	$(Q) $(NFCC) $(S4_DEFS) -Fe$@ $(S4_SRCS) $(mlir_NFCCSRCS)
 global_LIST_FILES += $(S4_LIST)
-S5_SRCS := $(app_src_dir)/net_send.c
-S5_LIST := net_send.list
+S5_SRCS := $(app_src_dir)/process_packet4.c
+S5_LIST := process_packet.list
 S5_DEFS := $(mlir_NFCCFLAGS)
 $(S5_LIST): $(mlir_NFCCSRCS) $(S5_SRCS)
 	@echo "--- Building #@"
 	$(Q) $(NFCC) $(S5_DEFS) -Fe$@ $(S5_SRCS) $(mlir_NFCCSRCS)
 global_LIST_FILES += $(S5_LIST)
+S6_SRCS := $(app_src_dir)/process_packet3.c
+S6_LIST := process_packet.list
+S6_DEFS := $(mlir_NFCCFLAGS)
+$(S6_LIST): $(mlir_NFCCSRCS) $(S6_SRCS)
+	@echo "--- Building #@"
+	$(Q) $(NFCC) $(S6_DEFS) -Fe$@ $(S6_SRCS) $(mlir_NFCCSRCS)
+global_LIST_FILES += $(S6_LIST)
+S7_SRCS := $(app_src_dir)/process_packet2.c
+S7_LIST := process_packet.list
+S7_DEFS := $(mlir_NFCCFLAGS)
+$(S7_LIST): $(mlir_NFCCSRCS) $(S7_SRCS)
+	@echo "--- Building #@"
+	$(Q) $(NFCC) $(S7_DEFS) -Fe$@ $(S7_SRCS) $(mlir_NFCCSRCS)
+global_LIST_FILES += $(S7_LIST)
+S8_SRCS := $(app_src_dir)/process_packet1.c
+S8_LIST := process_packet.list
+S8_DEFS := $(mlir_NFCCFLAGS)
+$(S8_LIST): $(mlir_NFCCSRCS) $(S8_SRCS)
+	@echo "--- Building #@"
+	$(Q) $(NFCC) $(S8_DEFS) -Fe$@ $(S8_SRCS) $(mlir_NFCCSRCS)
+global_LIST_FILES += $(S8_LIST)
 core.fw: $(global_LIST_FILES)
 	@echo "--- Linking $@"
 	$(NFLD) $(mlir_NFLDFLAGS) \
 	-elf $@ \
-	-u mei1.me1 -l $(	-u mei1.me2 -l $(	-u mei2.me1 -l $(	-u mei2.me2 -l $(	-u mei1.me3 -l $(	-u mei2.me3 -l $(	-u mei1.me4 -l $(	-u mei2.me4 -l $(	-u ila0.me0 -l $(ME_BLM_LIST) \
+	-u mei1.me1 -l $(	-u mei1.me2 -l $(	-u mei2.me1 -l $(	-u mei2.me2 -l $(	-u mei1.me1 -l $(	-u mei1.me2 -l $(	-u mei2.me1 -l $(	-u mei2.me2 -l $(	-u mei1.me1 -l $(	-u mei1.me2 -l $(	-u mei2.me1 -l $(	-u mei2.me2 -l $(	-u mei1.me1 -l $(	-u mei1.me2 -l $(	-u mei2.me1 -l $(	-u mei2.me2 -l $(	-u mei1.me3 -l $(	-u mei2.me3 -l $(	-u mei1.me3 -l $(	-u mei2.me3 -l $(	-u mei1.me4 -l $(	-u mei2.me4 -l $(	-u mei1.me4 -l $(	-u mei2.me4 -l $(	-u ila0.me0 -l $(ME_BLM_LIST) \
 	-i i8 -e $(PICO_CODE)
 
 
