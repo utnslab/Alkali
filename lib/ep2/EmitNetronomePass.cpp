@@ -100,6 +100,7 @@ static std::vector<std::pair<int, unsigned>> calcPadding(const mlir::LLVM::LLVMS
 
 void EmitNetronomePass::runOnOperation() {
   auto module = getOperation();
+  module->dump();
 
   if (basePathOpt.empty()) {
     emitError(module.getLoc(), "basePath not specified");

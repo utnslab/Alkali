@@ -364,8 +364,15 @@ struct InitPattern : public OpConversionPattern<ep2::InitOp> {
           auto copy = rewriter.create<emitc::CallOp>(loc, resTypes, rewriter.getStringAttr("__ep2_intrin_gpr2xfer"), args, templ_args, ValueRange{alloc, eventXfer});
 
           {
+            llvm::ArrayRef<mlir::Attribute> outputQueues = initOp->getAttr("enqInfo").cast<mlir::ArrayAttr>().getValue();
+            std::string outputQStr;
+            for (auto q : outputQueues) {
+              outputQStr += std::to_string(cast<mlir::IntegerAttr>(q).getValue().getSExtValue());
+              outputQStr += ' ';
+            }
+
             llvm::SmallVector<Type> resTypes3 = {};
-            mlir::ArrayAttr args3 = rewriter.getStrArrayAttr({eventName});
+            mlir::ArrayAttr args3 = rewriter.getStrArrayAttr({eventName, outputQStr});
             mlir::ArrayAttr templ_args3;
             rewriter.create<emitc::CallOp>(loc, resTypes3, rewriter.getStringAttr("__ep2_intrin_enq_work"), args3, templ_args3, ValueRange{eventXfer.getResult()});
           }
