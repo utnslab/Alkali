@@ -189,16 +189,16 @@ core.fw: $(global_LIST_FILES)
 	@echo "--- Linking $@"
 	$(NFLD) $(mlir_NFLDFLAGS) \
 	-elf $@ \
-	-u mei2.me3 -l $(S8_LIST) \
-	-u mei2.me4 -l $(S7_LIST) \
-	-u mei3.me3 -l $(S6_LIST) \
-	-u mei3.me4 -l $(S5_LIST) \
-	-u mei2.me5 -l $(S4_LIST) \
-	-u mei3.me5 -l $(S3_LIST) \
-	-u mei2.me6 -l $(S2_LIST) \
-	-u mei3.me6 -l $(S1_LIST) \
-	-u mei3.me0 -l $(DMA_LIST) \
-	-u mei2.me0 -l $(DMA_LIST) \
+	-u mei0.me1 -l $(S8_LIST) \
+	-u mei0.me2 -l $(S7_LIST) \
+	-u mei1.me1 -l $(S6_LIST) \
+	-u mei1.me2 -l $(S5_LIST) \
+	-u mei0.me3 -l $(S4_LIST) \
+	-u mei1.me3 -l $(S3_LIST) \
+	-u mei0.me4 -l $(S2_LIST) \
+	-u mei1.me4 -l $(S1_LIST) \
+	-u mei1.me0 -l $(DMA_LIST) \
+	-u mei0.me0 -l $(DMA_LIST) \
 	-u ila0.me0 -l $(ME_BLM_LIST) \
 	-i i8 -e $(PICO_CODE)
 

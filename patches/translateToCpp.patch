@@ -1,8 +1,16 @@
 diff --git a/mlir/lib/Target/Cpp/TranslateToCpp.cpp b/mlir/lib/Target/Cpp/TranslateToCpp.cpp
-index 4645ca4b206e..cbf6396fd6d9 100644
+index 4645ca4b206e..710b07561599 100644
 --- a/mlir/lib/Target/Cpp/TranslateToCpp.cpp
 +++ b/mlir/lib/Target/Cpp/TranslateToCpp.cpp
-@@ -417,9 +417,137 @@ static LogicalResult printOperation(CppEmitter &emitter, emitc::CallOp callOp) {
+@@ -24,6 +24,7 @@
+ #include "llvm/Support/Debug.h"
+ #include "llvm/Support/FormatVariadic.h"
+ #include <utility>
++#include <cctype>
+ 
+ #define DEBUG_TYPE "translate-to-cpp"
+ 
+@@ -417,9 +418,167 @@ static LogicalResult printOperation(CppEmitter &emitter, emitc::CallOp callOp) {
    raw_ostream &os = emitter.ostream();
    Operation &op = *callOp.getOperation();
  
@@ -110,14 +118,44 @@ index 4645ca4b206e..cbf6396fd6d9 100644
 +    return success();
 +  } else if (callOp.getCallee() == "__ep2_intrin_deq_work") {
 +    auto event = (*callOp.getArgs())[0].cast<StringAttr>().getValue();
-+    os << "cls_workq_add_thread(WORKQ_ID_" << event << ", ";
-+    os << emitter.getOrCreateName(op.getOperand(0)) << ", ";
++    auto queueId = (*callOp.getArgs())[1].cast<StringAttr>().getValue();
++
++    os << "cls_workq_add_thread(WORKQ_ID_" << event;
++    if (queueId != "") {
++      os << "_" << queueId;
++    }
++    os << ", " << emitter.getOrCreateName(op.getOperand(0)) << ", ";
 +    os << "sizeof(*" << emitter.getOrCreateName(op.getOperand(0)) << "))";
 +    return success();
 +  } else if (callOp.getCallee() == "__ep2_intrin_enq_work") {
 +    auto event = (*callOp.getArgs())[0].cast<StringAttr>().getValue();
-+    os << "cls_workq_add_work(WORKQ_ID_" << event << ", ";
-+    os << emitter.getOrCreateName(op.getOperand(0)) << ", ";
++    std::string queueList = (*callOp.getArgs())[1].cast<StringAttr>().getValue().str();
++    llvm::SmallVector<int> queues;
++    
++    auto parseDescription = [&](std::string info) {
++      unsigned p = 0;
++      while (p < info.size()) {
++        int v = 0;
++        while (p < info.size() && isdigit(info[p])) {
++          v *= 10;
++          v += (info[p] - '0');
++          p += 1;
++        }
++        queues.push_back(v);
++        while (p < info.size() && !isdigit(info[p])) {
++          p += 1;
++        }
++      }
++    };
++    parseDescription(queueList);
++
++    os << "cls_workq_add_work(WORKQ_ID_" << event;
++    if (queues.size() == 0) {
++      // TODO handle externs
++    } else {
++      os << "_" << queues[0];
++    }
++    os << ", " << emitter.getOrCreateName(op.getOperand(0)) << ", ";
 +    os << "sizeof(*" << emitter.getOrCreateName(op.getOperand(0)) << "))";
 +    return success();
 +  } else if (callOp.getCallee() == "__ep2_intrin_xfer2gpr" ||
@@ -143,7 +181,7 @@ index 4645ca4b206e..cbf6396fd6d9 100644
  
    auto emitArgs = [&](Attribute attr) -> LogicalResult {
      if (auto t = dyn_cast<IntegerAttr>(attr)) {
-@@ -451,10 +579,15 @@ static LogicalResult printOperation(CppEmitter &emitter, emitc::CallOp callOp) {
+@@ -451,10 +610,15 @@ static LogicalResult printOperation(CppEmitter &emitter, emitc::CallOp callOp) {
  
    os << "(";
  
@@ -163,7 +201,7 @@ index 4645ca4b206e..cbf6396fd6d9 100644
    if (failed(emittedArgs))
      return failure();
    os << ")";
-@@ -1046,10 +1179,11 @@ LogicalResult CppEmitter::emitType(Location loc, Type type) {
+@@ -1046,10 +1210,11 @@ LogicalResult CppEmitter::emitType(Location loc, Type type) {
    if (auto iType = dyn_cast<IntegerType>(type)) {
      switch (iType.getWidth()) {
      case 1:

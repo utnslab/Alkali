@@ -284,9 +284,9 @@ void EmitNetronomePass::runOnOperation() {
     getOperation()->walk([&](func::FuncOp fop) {
       auto getIslandMEStr = [&](std::string instance) {
         std::string island = instance.substr(1, instance.find("cu")-1);
-        usedIslands.insert(std::stoi(island)+1);
+        usedIslands.insert(std::stoi(island)-1);
         std::string microEngine = instance.substr(instance.find("cu") + 2);
-        return "mei" + std::to_string(std::stoi(island)+1) + ".me" + std::to_string(std::stoi(microEngine)+1);
+        return "mei" + std::to_string(std::stoi(island)-1) + ".me" + std::to_string(std::stoi(microEngine)-1);
       };
 
       if (fop->hasAttr("location")) {
