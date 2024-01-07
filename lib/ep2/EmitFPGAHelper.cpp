@@ -104,7 +104,7 @@ void EmitFPGAPass::emitonewire(std::ofstream &file, struct wire_config &wire) {
     std::string readyvalue = "";
     if (wire.if_init_value) {
       initvalue = "=1";
-      initdatavalue = "=" + std::to_string(wire.init_value);
+      initdatavalue = "=" + wire.init_value;
     }
     if (!wire.if_use)
       readyvalue = "=1";
@@ -499,11 +499,7 @@ EmitFPGAPass::VAL_TYPE EmitFPGAPass::GetValTypeAndSize(mlir::Type type,
   } else if (isa<ep2::AtomType>(type)) {
     enum_type = ATOM;
     size = -1;
-  } else if (isa<ep2::TableType>(type)){
-    enum_type = TABLE;
-    size = -1;
-  } 
-  else {
+  } else {
     enum_type = UNKNOWN;
     size = -1;
   }

@@ -89,7 +89,7 @@ private:
     std::string name;
     std::string debuginfo;
     bool if_init_value;
-    int init_value;
+    std::string init_value;
     bool if_use;
     union {
       struct axis_config axis;
@@ -173,7 +173,7 @@ private:
 
   mlir::DenseMap<mlir::ep2::FuncOp, mlir::DenseMap<Value, struct inout_info>> ctrl_ins, ctrl_outs;
 
-  mlir::DenseMap<llvm::StringRef, struct inout_config> extern_inouts;
+  std::map<std::string, struct inout_config> extern_inouts;
 
   struct name_and_uses {
     std::string name;

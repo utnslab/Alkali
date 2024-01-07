@@ -9,6 +9,7 @@
 #include <iostream>
 #include <list>
 #include <string>
+#include <bit>
 
 using namespace mlir;
 
@@ -77,10 +78,6 @@ void EmitFPGAPass::emitControllerInOut(std::ofstream &file, ep2::FuncOp funcOp) 
     event_wire_counts = event_wires.size();
 
     int port_id = 0;
-    
-    printf("targetfunc: %s\n", targetfunc.getName().str().c_str());
-    printf("in size %d\n", ctrl_ins[funcOp].size());
-    printf("out size %d\n", ctrl_outs[funcOp].size());
 
     for(auto &in : ctrl_ins[funcOp]){
         auto in_event_wires = event_wires;
@@ -125,10 +122,20 @@ void EmitFPGAPass::emitControllerMux(std::ofstream &file, ep2::ConnectOp conncet
 
     assert((in_count >= 1) && (out_count >= 1));
     assert(!((in_count > 1) && (out_count > 1))); // currently no n-to-n mapping
-    auto mux_name = "mux" ;
+    
+    std::string mux_name = "ctrl_mux" ;
+    int port_count = in_count;
+    std::string selector_name = "ctrl_selector";
+
     if(in_count == 1){
-        mux_name = "demux";
+        mux_name = "ctrl_demux";
+        port_count = out_count;
+        selector_name = "ctrl_dispatcher";
     }
+    int select_data_width = ceil(log2(port_count));
+
+    std::vector<struct wire_config> selector_wires;
+    struct axis_config selector_axis = {0, 0, select_data_width};
 
     
     for(int i = 0; i < event_wire_counts ; i++){
@@ -150,20 +157,62 @@ void EmitFPGAPass::emitControllerMux(std::ofstream &file, ep2::ConnectOp conncet
             auto event_wire = ctrl_outs[*cur_funcop][out].event_wires[i];
             out_var_names.push_back(event_wire.name);
         }
-        ports.push_back({AXIS, out_var_names, "(de)mux out", "m_val_axis", axis});
+        ports.push_back({AXIS, out_var_names, "(des)mux out", "m_val_axis", axis});
+
+
+        struct wire_config selector_wire = {AXIS, assign_name(mux_name + "_select"), "selector wire", false, "", true, selector_axis};
+        selector_wires.push_back(selector_wire);
+        ports.push_back({AXIS, {selector_wire.name}, "selector wire", "s_selector", selector_axis});
     
     
         std::list<struct module_param_config> params;
-        if(mux_name == "mux")
+        if(mux_name == "ctrl_mux")
             params.push_back({"S_COUNT  ", in_count});
         else
             params.push_back({"D_COUNT  ", out_count});
         params.push_back({"DATA_WIDTH", axis.data_width});
         params.push_back({"KEEP_ENABLE ", axis.if_keep});
-        params.push_back({"USER_ENABLE ", 0});
 
         emitModuleCall(file, mux_name, assign_name(mux_name), ports, params);
     }
+
+
+    // emit selector
+    std::list<struct module_port_config> selector_ports;
+    if(mux_name == "ctrl_mux"){
+        std::vector<std::string> selector_inc_names;
+        struct axis_config axis = {0, 0, 1};
+        for(auto in : invs){
+            auto event_wire = ctrl_ins[*cur_funcop][in].event_wires[0];
+            auto inc_string = "(" + event_wire.name + "_tready && " + event_wire.name + "_tvalid" + ")";
+            auto inc_name = assign_name("inc");
+            struct wire_config inc_wire = {AXIS, inc_name, "increase from all port's first arg", true, inc_string, true, axis};
+            emitwire(file, inc_wire);
+            selector_inc_names.push_back(inc_name);
+        }
+        selector_ports.push_back({AXIS, selector_inc_names, "increase from all port's first arg", "s_inc", axis});
+    }
+
+    std::vector<std::string> selector_var_names;
+    for(auto &wire : selector_wires){
+        emitwire(file, wire);
+        selector_var_names.push_back(wire.name);
+    }
+    selector_ports.push_back({AXIS, selector_var_names, "selector wire", "m_selector", selector_axis});
+    std::list<struct module_param_config> params;
+    if(mux_name == "ctrl_mux")
+    {    
+        params.push_back({"S_COUNT", port_count});
+        params.push_back({"SELECT_WIDTH", select_data_width});
+    }
+    else{
+        params.push_back({"D_COUNT", port_count});
+        params.push_back({"DISPATCH_WIDTH", select_data_width});
+    }
+    
+    params.push_back({"REPLICATED_OUT_NUM", (int)selector_wires.size()});
+    emitModuleCall(file, selector_name, selector_name, selector_ports, params);
+
 
 }
 
@@ -222,7 +271,7 @@ void EmitFPGAPass::emitController(ep2::FuncOp funcOp) {
 //     inout_wires.push_back(out_if);
 //     // Collect input port wire information for further wiring
 //     mux_in_wires.push_back(
-//         {AXIS, portname, debuginfo + "wire", false, -1, true, wire});
+//         {AXIS, portname, debuginfo + "wire", false, "", true, wire});
 //   }
 
 //   for (int dst_id = 0; dst_id < dst_count; dst_id++) {
@@ -234,7 +283,7 @@ void EmitFPGAPass::emitController(ep2::FuncOp funcOp) {
 //     inout_wires.push_back(out_if);
 //     // Collect output port wire information for further wiring
 //     demux_out_wires.push_back(
-//         {AXIS, portname, debuginfo + "wire", false, -1, true, wire});
+//         {AXIS, portname, debuginfo + "wire", false, "", true, wire});
 //   }
 
 //   emitModuleParameter(file, inout_wires);
@@ -249,7 +298,7 @@ void EmitFPGAPass::emitController(ep2::FuncOp funcOp) {
 //     auto mux_out_name = assign_name("mux_out");
 //     mux_out_wire.name = mux_out_name;
 //     mux_out_wire = {AXIS,  mux_out_name, "Mux output wire",
-//                     false, -1, true,         event_axis};
+//                     false, "", true,         event_axis};
 //     mux_out_port = {AXIS, {mux_out_name}, "mux output", "m_axis", event_axis};
 
 //     emitwire(file, mux_out_wire);
