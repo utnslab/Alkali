@@ -23,6 +23,7 @@
 #include "mlir/Pass/Pass.h"
 #include "mlir/Pass/PassManager.h"
 #include "mlir/IR/BuiltinOps.h"
+#include "mlir/Transforms/DialectConversion.h"
 #include "llvm/ADT/EquivalenceClasses.h"
 
 #include "mlir/Dialect/EmitC/IR/EmitC.h"
@@ -430,6 +431,23 @@ struct LocalAllocAnalysis {
   bool isInvalidated(const AnalysisManager::PreservedAnalyses &pa) {
     return false;
   }
+};
+
+
+struct LowerLLVMPass :
+        public PassWrapper<LowerLLVMPass, OperationPass<ModuleOp>> {
+    void runOnOperation() final;
+    void getDependentDialects(DialectRegistry &registry) const override {
+      registry.insert<EP2Dialect, func::FuncDialect, LLVM::LLVMDialect,
+                      scf::SCFDialect, cf::ControlFlowDialect>();
+    }
+    StringRef getArgument() const final { return "ep2-lower-llvm"; }
+    StringRef getDescription() const final { return "Rewrite to LLVM dialect"; }
+
+    using TableT = std::map<std::string, LLVM::LLVMFuncOp>;
+    TableT apiFunctions{};
+  private:
+    void populateAPIFunctions(mlir::TypeConverter &converter);
 };
 
 struct ContextToMemPass :

@@ -32,6 +32,7 @@ add_mlir_dialect_library(MLIREP2
         AtomAnalysis.cpp
         StructUpdatePropagationPass.cpp
         LocalAllocAnalysis.cpp
+        LowerLLVMPass.cpp
         HandlerReplicationPass.cpp
         LowerNoctxswapPass.cpp
         RepackStructTypesPass.cpp
