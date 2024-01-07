@@ -5,12 +5,12 @@
 
 struct pkt_info_t _loc_buf_18;
 __xrw struct pkt_info_t _loc_buf_18_xfer;
+struct tcp_header_t _loc_buf_2;
+__xrw struct tcp_header_t _loc_buf_2_xfer;
 struct eth_header_t _loc_buf_0;
 __xrw struct eth_header_t _loc_buf_0_xfer;
 struct ip_header_t _loc_buf_1;
 __xrw struct ip_header_t _loc_buf_1_xfer;
-struct tcp_header_t _loc_buf_2;
-__xrw struct tcp_header_t _loc_buf_2_xfer;
 __declspec(aligned(4)) struct event_param_NET_RECV work;
 __xrw struct event_param_NET_RECV work_ref;
 __declspec(aligned(4)) struct event_param_OoO_DETECT next_work_OoO_DETECT;
