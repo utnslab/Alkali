@@ -3,19 +3,19 @@
 #include "extern/extern_dma.h"
 #include "extern/extern_net.h"
 
-struct eth_header_t _loc_buf_15;
-__xrw struct eth_header_t _loc_buf_15_xfer;
-struct tcp_header_t _loc_buf_17;
-__xrw struct tcp_header_t _loc_buf_17_xfer;
-struct ip_header_t _loc_buf_16;
-__xrw struct ip_header_t _loc_buf_16_xfer;
+struct tcp_header_t _loc_buf_14;
+__xrw struct tcp_header_t _loc_buf_14_xfer;
+struct eth_header_t _loc_buf_12;
+__xrw struct eth_header_t _loc_buf_12_xfer;
+struct ip_header_t _loc_buf_13;
+__xrw struct ip_header_t _loc_buf_13_xfer;
 __declspec(aligned(4)) struct event_param_ACK_GEN work;
 __xrw struct event_param_ACK_GEN work_ref;
 __declspec(aligned(4)) struct event_param_NET_SEND next_work_NET_SEND;
 __xrw struct event_param_NET_SEND next_work_ref_NET_SEND;
 
 __forceinline
-void __event___handler_ACK_GEN_ack_gen_2() {
+void __event___handler_ACK_GEN_ack_gen_1() {
   int32_t v1;
   int16_t v2;
   __declspec(aligned(4)) struct event_param_ACK_GEN* v3;
@@ -55,20 +55,20 @@ void __event___handler_ACK_GEN_ack_gen_2() {
   v2 = 64;
   v3 = &work;
   v4 = &work_ref;
-  cls_workq_add_thread(WORKQ_ID_ACK_GEN_2, v4, sizeof(*v4));
+  cls_workq_add_thread(WORKQ_ID_ACK_GEN_1, v4, sizeof(*v4));
   *(v3) = *(v4);
   v5 = v3->ctx;
   v6 = &v3->f0;
   v7 = alloc_packet_buf();
   v8 = &v5->f0;
-  v9 = &_loc_buf_15;
+  v9 = &_loc_buf_12;
   *(v9) = *(v8);
   v10 = v9->f0;
   v11 = v9->f1;
   v9->f0 = v11;
   v9->f1 = v10;
   v14 = &v5->f1;
-  v15 = &_loc_buf_16;
+  v15 = &_loc_buf_13;
   *(v15) = *(v14);
   v16 = v15->f6;
   v17 = v15->f7;
@@ -76,7 +76,7 @@ void __event___handler_ACK_GEN_ack_gen_2() {
   v15->f7 = v16;
   v15->f1 = v2;
   v21 = &v5->f2;
-  v22 = &_loc_buf_17;
+  v22 = &_loc_buf_14;
   *(v22) = *(v21);
   v23 = v22->f0;
   v24 = v22->f1;
@@ -86,17 +86,17 @@ void __event___handler_ACK_GEN_ack_gen_2() {
   v22->f2 = v27;
   v29 = v6->f1;
   v22->f3 = v29;
-  v31 = &_loc_buf_15_xfer;
+  v31 = &_loc_buf_12_xfer;
   *(v31) = *(v9);
   mem_write32(&v31->f0, v7.buf + v7.offs, 12);
   v7.offs += 12;
   mem_write8(&v31->f2, v7.buf + v7.offs, 2);
   v7.offs += 2;
-  v32 = &_loc_buf_16_xfer;
+  v32 = &_loc_buf_13_xfer;
   *(v32) = *(v15);
   mem_write32(&v32->f0, v7.buf + v7.offs, 24);
   v7.offs += 24;
-  v33 = &_loc_buf_17_xfer;
+  v33 = &_loc_buf_14_xfer;
   *(v33) = *(v22);
   mem_write32(&v33->f0, v7.buf + v7.offs, 20);
   v7.offs += 20;
@@ -114,9 +114,9 @@ void __event___handler_ACK_GEN_ack_gen_2() {
 
 int main(void) {
 	init_me_cam(16);
-	init_recv_event_workq(WORKQ_ID_ACK_GEN, workq_ACK_GEN, WORKQ_TYPE_ACK_GEN, WORKQ_SIZE_ACK_GEN, 8);
+	init_recv_event_workq(WORKQ_ID_ACK_GEN_1, workq_ACK_GEN_1, WORKQ_TYPE_ACK_GEN, WORKQ_SIZE_ACK_GEN, 8);
 	wait_global_start_();
 	for (;;) {
-		__event___handler_ACK_GEN_ack_gen_2();
+		__event___handler_ACK_GEN_ack_gen_1();
 	}
 }

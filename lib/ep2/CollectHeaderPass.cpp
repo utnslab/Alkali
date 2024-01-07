@@ -176,8 +176,8 @@ CollectInfoAnalysis::CollectInfoAnalysis(Operation* module, AnalysisManager& am)
 
         auto& qInfo = this->eventQueues[eventName];
         qInfo.memType = MemType::CLS;
-        // TODO do not hardcode queue size=100
-        qInfo.size = 100;
+        // TODO do not hardcode queue size=256
+        qInfo.size = 256;
 
         std::vector<int> replicas;
         for (mlir::Value arg : op.getOuts()) {
@@ -214,13 +214,11 @@ CollectInfoAnalysis::CollectInfoAnalysis(Operation* module, AnalysisManager& am)
   module->walk([&](ep2::InitOp initOp){
     if (isa<ep2::TableType>(initOp->getResult(0).getType())) {
       TableInfo ti = getTableStr(cast<ep2::TableType>(initOp->getResult(0).getType()));
-      for (const TableInfo& t : this->tableInfos) {
-        if (t.tableType == ti.tableType) {
-          return;
-        }
+
+      if (this->tableInfos.find(ti.tableType) == this->tableInfos.end()) {
+        this->tableInfos[ti.tableType].first = ti;
       }
-      ti.tableId = laa.localAllocs[initOp];
-      this->tableInfos.push_back(ti);
+      this->tableInfos[ti.tableType].second.push_back(laa.localAllocs[initOp]);
     }
   });
 }

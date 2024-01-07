@@ -3,10 +3,10 @@
 #include "extern/extern_dma.h"
 #include "extern/extern_net.h"
 
-struct dma_write_cmd_t _loc_buf_23;
-__xrw struct dma_write_cmd_t _loc_buf_23_xfer;
-struct ack_info_t _loc_buf_24;
-__xrw struct ack_info_t _loc_buf_24_xfer;
+struct ack_info_t _loc_buf_27;
+__xrw struct ack_info_t _loc_buf_27_xfer;
+struct dma_write_cmd_t _loc_buf_26;
+__xrw struct dma_write_cmd_t _loc_buf_26_xfer;
 __declspec(aligned(4)) struct event_param_OoO_DETECT work;
 __xrw struct event_param_OoO_DETECT work_ref;
 __declspec(aligned(4)) struct event_param_ACK_GEN next_work_ACK_GEN;
@@ -15,7 +15,7 @@ __declspec(aligned(4)) struct event_param_DMA_WRITE_REQ next_work_DMA_WRITE_REQ;
 __xrw struct event_param_DMA_WRITE_REQ next_work_ref_DMA_WRITE_REQ;
 
 __forceinline
-void __event___handler_OoO_DETECT_OoO_detection_1() {
+void __event___handler_OoO_DETECT_OoO_detection_2() {
   int64_t v1;
   int32_t v2;
   int32_t v3;
@@ -72,16 +72,16 @@ void __event___handler_OoO_DETECT_OoO_detection_1() {
   v4 = 0;
   v5 = &work;
   v6 = &work_ref;
-  cls_workq_add_thread(WORKQ_ID_OoO_DETECT_1, v6, sizeof(*v6));
+  cls_workq_add_thread(WORKQ_ID_OoO_DETECT_2, v6, sizeof(*v6));
   *(v5) = *(v6);
   v7 = v5->ctx;
   v8 = &v5->f0;
-  v9 = &table_22;
+  v9 = &table_25;
   v10 = v8->f0;
   v11 = (int16_t) v10;
   v12 = &v9->table[me_cam_lookup(v11)];
-  v13 = &_loc_buf_23;
-  v14 = &_loc_buf_24;
+  v13 = &_loc_buf_26;
+  v14 = &_loc_buf_27;
   v15 = v12->f5;
   v16 = v8->f2;
   v17 = v15 - v16;
@@ -138,7 +138,7 @@ void __event___handler_OoO_DETECT_OoO_detection_1() {
     v49->f0 = *v14;
     v50 = &next_work_ref_ACK_GEN;
     *(v50) = *(v49);
-    cls_workq_add_work(WORKQ_ID_ACK_GEN_1, v50, sizeof(*v50));
+    cls_workq_add_work(WORKQ_ID_ACK_GEN_2, v50, sizeof(*v50));
   }
   return;
 }
@@ -146,9 +146,9 @@ void __event___handler_OoO_DETECT_OoO_detection_1() {
 
 int main(void) {
 	init_me_cam(16);
-	init_recv_event_workq(WORKQ_ID_OoO_DETECT, workq_OoO_DETECT, WORKQ_TYPE_OoO_DETECT, WORKQ_SIZE_OoO_DETECT, 8);
+	init_recv_event_workq(WORKQ_ID_OoO_DETECT_2, workq_OoO_DETECT_2, WORKQ_TYPE_OoO_DETECT, WORKQ_SIZE_OoO_DETECT, 8);
 	wait_global_start_();
 	for (;;) {
-		__event___handler_OoO_DETECT_OoO_detection_1();
+		__event___handler_OoO_DETECT_OoO_detection_2();
 	}
 }

@@ -3,21 +3,21 @@
 #include "extern/extern_dma.h"
 #include "extern/extern_net.h"
 
-struct pkt_info_t _loc_buf_18;
-__xrw struct pkt_info_t _loc_buf_18_xfer;
-struct tcp_header_t _loc_buf_2;
-__xrw struct tcp_header_t _loc_buf_2_xfer;
-struct eth_header_t _loc_buf_0;
-__xrw struct eth_header_t _loc_buf_0_xfer;
-struct ip_header_t _loc_buf_1;
-__xrw struct ip_header_t _loc_buf_1_xfer;
+struct pkt_info_t _loc_buf_21;
+__xrw struct pkt_info_t _loc_buf_21_xfer;
+struct eth_header_t _loc_buf_9;
+__xrw struct eth_header_t _loc_buf_9_xfer;
+struct ip_header_t _loc_buf_10;
+__xrw struct ip_header_t _loc_buf_10_xfer;
+struct tcp_header_t _loc_buf_11;
+__xrw struct tcp_header_t _loc_buf_11_xfer;
 __declspec(aligned(4)) struct event_param_NET_RECV work;
 __xrw struct event_param_NET_RECV work_ref;
 __declspec(aligned(4)) struct event_param_OoO_DETECT next_work_OoO_DETECT;
 __xrw struct event_param_OoO_DETECT next_work_ref_OoO_DETECT;
 
 __forceinline
-void __event___handler_NET_RECV_process_packet_1() {
+void __event___handler_NET_RECV_process_packet_4() {
   int64_t v1;
   int32_t v2;
   int32_t v3;
@@ -50,21 +50,21 @@ void __event___handler_NET_RECV_process_packet_1() {
   v4->ctx = v5;
   v6 = v4->ctx;
   v7 = v4->f0;
-  v8 = &_loc_buf_18;
-  v9 = &_loc_buf_0;
-  v10 = &_loc_buf_0_xfer;
+  v8 = &_loc_buf_21;
+  v9 = &_loc_buf_9;
+  v10 = &_loc_buf_9_xfer;
   mem_read32(&v10->f0, v7.buf + v7.offs, 12);
   v7.offs += 12;
   mem_read8(&v10->f2, v7.buf + v7.offs, 2);
   v7.offs += 2;
   *(v9) = *(v10);
-  v11 = &_loc_buf_1;
-  v12 = &_loc_buf_1_xfer;
+  v11 = &_loc_buf_10;
+  v12 = &_loc_buf_10_xfer;
   mem_read32(&v12->f0, v7.buf + v7.offs, 24);
   v7.offs += 24;
   *(v11) = *(v12);
-  v13 = &_loc_buf_2;
-  v14 = &_loc_buf_2_xfer;
+  v13 = &_loc_buf_11;
+  v14 = &_loc_buf_11_xfer;
   mem_read32(&v14->f0, v7.buf + v7.offs, 20);
   v7.offs += 20;
   *(v13) = *(v14);
@@ -84,7 +84,7 @@ void __event___handler_NET_RECV_process_packet_1() {
   v22->f0 = *v8;
   v23 = &next_work_ref_OoO_DETECT;
   *(v23) = *(v22);
-  cls_workq_add_work(WORKQ_ID_OoO_DETECT_1, v23, sizeof(*v23));
+  cls_workq_add_work(WORKQ_ID_OoO_DETECT_2, v23, sizeof(*v23));
   return;
 }
 
@@ -94,6 +94,6 @@ int main(void) {
 	init_context_chain_ring();
 	wait_global_start_();
 	for (;;) {
-		__event___handler_NET_RECV_process_packet_1();
+		__event___handler_NET_RECV_process_packet_4();
 	}
 }

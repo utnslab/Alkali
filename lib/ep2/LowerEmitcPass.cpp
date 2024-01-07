@@ -619,8 +619,8 @@ struct FunctionPattern : public OpConversionPattern<ep2::FuncOp> {
         loc, std::string{"__event_" + funcOp.getName().str()},
         rewriter.getFunctionType(TypeRange(newArgTypes), TypeRange{}));
 
-    if (funcOp->hasAttr("instances")) {
-      newFuncOp->setAttr("instances", funcOp->getAttr("instances"));
+    if (funcOp->hasAttr("location")) {
+      newFuncOp->setAttr("location", funcOp->getAttr("location"));
     }
     if (funcOp->hasAttr("atom")) {
       newFuncOp->setAttr("atom", funcOp->getAttr("atom"));

@@ -111,26 +111,27 @@ __packed struct event_param_NET_SEND {
 	struct context_chain_1_t* ctx;
 };
 
-#define WORKQ_SIZE_ACK_GEN 100
+#define WORKQ_SIZE_ACK_GEN 256
 #define WORKQ_TYPE_ACK_GEN MEM_TYEP_CLS
-#define WORKQ_ID_ACK_GEN 10
-CLS_WORKQ_DECLARE(workq_ACK_GEN_0, WORKQ_SIZE_ACK_GEN);
-
-#define WORKQ_ID_ACK_GEN 11
+#define WORKQ_ID_ACK_GEN_1 10
 CLS_WORKQ_DECLARE(workq_ACK_GEN_1, WORKQ_SIZE_ACK_GEN);
 
-#define WORKQ_SIZE_OoO_DETECT 100
-#define WORKQ_TYPE_OoO_DETECT MEM_TYEP_CLS
-#define WORKQ_ID_OoO_DETECT 12
-CLS_WORKQ_DECLARE(workq_OoO_DETECT_0, WORKQ_SIZE_OoO_DETECT);
+#define WORKQ_ID_ACK_GEN_2 11
+CLS_WORKQ_DECLARE(workq_ACK_GEN_2, WORKQ_SIZE_ACK_GEN);
 
-#define WORKQ_ID_OoO_DETECT 13
+#define WORKQ_SIZE_OoO_DETECT 256
+#define WORKQ_TYPE_OoO_DETECT MEM_TYEP_CLS
+#define WORKQ_ID_OoO_DETECT_1 12
 CLS_WORKQ_DECLARE(workq_OoO_DETECT_1, WORKQ_SIZE_OoO_DETECT);
+
+#define WORKQ_ID_OoO_DETECT_2 13
+CLS_WORKQ_DECLARE(workq_OoO_DETECT_2, WORKQ_SIZE_OoO_DETECT);
 
 __packed struct table_i16_flow_state_t_16_t {
 	struct flow_state_t table[16];
 };
 __shared struct table_i16_flow_state_t_16_t table_22;
+__shared struct table_i16_flow_state_t_16_t table_25;
 
 EMEM_CONTEXTQ_DECLARE(context_chain_1_t, context_chain_pool, 2048);
 MEM_RING_INIT(context_chain_ring, 2048);

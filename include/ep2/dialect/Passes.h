@@ -265,7 +265,6 @@ struct TableInfo {
   std::string keyType;
   std::string valType;
   int size;
-  std::string tableId;
 };
 
 struct CollectInfoAnalysis {
@@ -283,7 +282,7 @@ struct CollectInfoAnalysis {
   std::unordered_map<std::string, QueueInfo> eventQueues;
   std::unordered_map<std::string, std::unordered_set<std::string>> eventDeps;
   std::unordered_map<std::string, std::vector<std::pair<std::string, std::string>>> eventAllocs;
-  std::vector<TableInfo> tableInfos;
+  std::unordered_map<std::string, std::pair<TableInfo, std::vector<std::string>>> tableInfos;
 
   CollectInfoAnalysis(Operation* op, AnalysisManager& am);
 

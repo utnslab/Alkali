@@ -124,7 +124,7 @@ void EmitNetronomePass::runOnOperation() {
     return "__event_" + str.substr(second + 3);
   };
   auto makeFileName = [&](std::string str) {
-    return extractAtomName(str) + str.substr(str.rfind("_") + 1);
+    return extractAtomName(str) + "_" + str.substr(str.rfind("_") + 1);
   };
 
   {
@@ -195,18 +195,23 @@ void EmitNetronomePass::runOnOperation() {
       fout_prog_hdr << "#define WORKQ_TYPE_" << eventName << " " << "MEM_TYEP_" << toString(q.second.memType) << '\n';
 
       for (int replica : q.second.replicas) {
-        fout_prog_hdr << "#define WORKQ_ID_" << eventName << " " << (workq_id_incr++) << '\n';
-        fout_prog_hdr << toString(q.second.memType) << "_WORKQ_DECLARE(workq_" << eventName << "_" << replica << ", WORKQ_SIZE_" << eventName << ");\n\n";
+        fout_prog_hdr << "#define WORKQ_ID_" << eventName << "_" << (replica+1) << " " << (workq_id_incr++) << '\n';
+        fout_prog_hdr << toString(q.second.memType) << "_WORKQ_DECLARE(workq_" << eventName << "_" << (replica+1) << ", WORKQ_SIZE_" << eventName << ");\n\n";
       }
     }
 
     unsigned tableCtr = 0;
-    for (const auto& tInfo : info.tableInfos) {
+    for (const auto& pr : info.tableInfos) {
+      const auto& tInfo = pr.second.first;
       fout_prog_hdr << "__packed " << tInfo.tableType << " {\n";
       fout_prog_hdr << "\t" << tInfo.valType << " table[" << tInfo.size << "];\n";
       fout_prog_hdr << "};\n";
+
       // TODO not lmem always
-      fout_prog_hdr << "__shared " << tInfo.tableType << " " << tInfo.tableId << ";\n\n";
+      for (const std::string& field : pr.second.second) {
+        fout_prog_hdr << "__shared " << tInfo.tableType << " " << field << ";\n";
+      }
+      fout_prog_hdr << "\n";
     }
 
     // emit context allocation code
@@ -255,7 +260,7 @@ void EmitNetronomePass::runOnOperation() {
     std::unordered_map<std::string, unsigned> atomToCtr;
 
     for (const auto& pr : info.eventAllocs) {
-      std::string atomName = extractAtomName(pr.first);
+      std::string atomName = makeFileName(pr.first);
 
       fout_makefile << "S" << ctr << "_SRCS := $(app_src_dir)/" << makeFileName(pr.first) << ".c\n";
       fout_makefile << "S" << ctr << "_LIST := " << atomName << ".list\n";
@@ -274,32 +279,25 @@ void EmitNetronomePass::runOnOperation() {
     fout_makefile << "\t$(NFLD) $(mlir_NFLDFLAGS) \\\n";
     fout_makefile << "\t-elf $@ \\\n";
 
+    std::unordered_set<int> usedIslands;
+
     getOperation()->walk([&](func::FuncOp fop) {
-      auto getIslandMEStr = [](std::string instance) {
+      auto getIslandMEStr = [&](std::string instance) {
         std::string island = instance.substr(1, instance.find("cu")-1);
+        usedIslands.insert(std::stoi(island)+1);
         std::string microEngine = instance.substr(instance.find("cu") + 2);
-        return "mei" + island + ".me" + microEngine;
+        return "mei" + std::to_string(std::stoi(island)+1) + ".me" + std::to_string(std::stoi(microEngine)+1);
       };
 
-      if (fop->hasAttr("instances")) {
-        //atomToCtr[fop->getAttr("atom").cast<mlir::StringAttr>().getValue().str()]
-        for (const auto& inst : cast<mlir::ArrayAttr>(fop->getAttr("instances")).getValue()) {
-          fout_makefile << "\t-u " << getIslandMEStr(cast<mlir::StringAttr>(inst).getValue().str()) << " -l $(";
-        }
+      if (fop->hasAttr("location")) {
+        fout_makefile << "\t-u " << getIslandMEStr(fop->getAttr("location").cast<mlir::StringAttr>().getValue().str()) << " -l $(S";
+        fout_makefile << atomToCtr[fop->getAttr("atom").cast<mlir::StringAttr>().getValue().str() + "_" + fop.getName().str().substr(fop.getName().str().rfind("_") + 1)];
+        fout_makefile << "_LIST) \\\n";
       }
     });
-
-    /*
-    for (const auto& pr : placementInfo.placementMap) {
-      fout_makefile << "\t-u mei" << pr.second.first << ".me" << pr.second.second << " -l $(";
-      // TODO assumes all separate-file externs are DMA's, and only one use of DMA.
-      if (atomToCtr.find(pr.first) == atomToCtr.end()) {
-        fout_makefile << "DMA_LIST) \\\n";
-      } else {
-        fout_makefile << "S" << atomToCtr[pr.first] << "_LIST) \\\n";
-      }
+    for (int island : usedIslands) {
+      fout_makefile << "\t-u mei" << island << ".me0 -l $(DMA_LIST) \\\n";
     }
-    */
 
     fout_makefile << "\t-u ila0.me0 -l $(ME_BLM_LIST) \\\n";
     fout_makefile << "\t-i i8 -e $(PICO_CODE)\n";
@@ -318,6 +316,7 @@ void EmitNetronomePass::runOnOperation() {
       std::string eventName = extractEventName(pr.first);
       std::string atomName = extractAtomName(pr.first);
       std::string funcName = extractHandlerName(pr.first);
+      int id = std::stoi(funcName.substr(funcName.rfind("_") + 1));
       
       // TODO add code to wait for initialization
 
@@ -370,7 +369,7 @@ void EmitNetronomePass::runOnOperation() {
       }
 
       if (eventName != "NET_RECV") {
-        fout_stage << "\tinit_recv_event_workq(WORKQ_ID_" << eventName << ", workq_" << eventName << ", WORKQ_TYPE_" << eventName << ", WORKQ_SIZE_" << eventName << ", 8);\n";
+        fout_stage << "\tinit_recv_event_workq(WORKQ_ID_" << eventName << "_" << id << ", workq_" << eventName << "_" << id << ", WORKQ_TYPE_" << eventName << ", WORKQ_SIZE_" << eventName << ", 8);\n";
       }
       fout_stage << "\twait_global_start_();\n";
 

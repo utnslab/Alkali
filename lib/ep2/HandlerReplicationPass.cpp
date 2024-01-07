@@ -26,16 +26,19 @@ void HandlerReplicationPass::runOnOperation() {
 
   std::vector<mlir::Operation*> toInsert;
   mlir::Block* parentBlock = nullptr;
+  mlir::Builder builder(&getContext());
 
   module->walk([&](ep2::FuncOp funcOp) {
     if (funcOp->getAttr("type").cast<StringAttr>().getValue() == "handler" && !funcOp.isExtern()) {
       parentBlock = funcOp->getBlock();
-      int sz = cast<mlir::ArrayAttr>(funcOp->getAttr("instances")).size();
+      auto instances = cast<mlir::ArrayAttr>(funcOp->getAttr("instances")).getValue();
+      int sz = instances.size();
       mlir::Operation::CloneOptions options(true, true);
 
       std::string name = funcOp.getSymName().str();
       for (int i = 1; i<=sz; ++i) {
         mlir::Operation* cloneOp = funcOp->clone(options);
+        cloneOp->setAttr("location", instances[i-1]);
         cast<ep2::FuncOp>(cloneOp).setSymName(name + "_" + std::to_string(i));
         toInsert.push_back(cloneOp);
       }
@@ -72,7 +75,6 @@ void HandlerReplicationPass::runOnOperation() {
     }
   });
 
-  mlir::Builder builder(&getContext());
   module->walk([&](ep2::FuncOp funcOp) {
     if (funcOp->getAttr("type").cast<StringAttr>().getValue() == "handler" && !funcOp.isExtern()) {
       funcOp->walk([&](ep2::ReturnOp retOp) {
