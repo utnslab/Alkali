@@ -34,11 +34,15 @@ module {
     %21 = ep2.struct_access %6[2] : <"tcp_header_t" : isEvent = false, elementTypes = i16, i16, i32, i32, i8, i8, i16, i16, i16> -> i32
     %22 = "ep2.struct_update"(%19, %21) <{index = 2 : i64}> : (!ep2.struct<"pkt_info_t" : isEvent = false, elementTypes = i32, i32, i32>, i32) -> !ep2.struct<"pkt_info_t" : isEvent = false, elementTypes = i32, i32, i32>
     %23 = ep2.struct_access %22[0] : <"pkt_info_t" : isEvent = false, elementTypes = i32, i32, i32> -> i32
-    %24 = "ep2.constant"() <{value = 0 : i64}> : () -> i64
-    %25 = "ep2.struct_update"(%22, %24) <{index = 0 : i64}> : (!ep2.struct<"pkt_info_t" : isEvent = false, elementTypes = i32, i32, i32>, i64) -> !ep2.struct<"pkt_info_t" : isEvent = false, elementTypes = i32, i32, i32>
-    %26 = "ep2.constant"() <{value = "OoO_detection"}> : () -> !ep2.atom
-    %27 = "ep2.init"(%26, %arg0, %25) : (!ep2.atom, !ep2.context, !ep2.struct<"pkt_info_t" : isEvent = false, elementTypes = i32, i32, i32>) -> !ep2.struct<"OoO_DETECT" : isEvent = true, elementTypes = !ep2.context, !ep2.struct<"pkt_info_t" : isEvent = false, elementTypes = i32, i32, i32>>
-    ep2.return %27 : !ep2.struct<"OoO_DETECT" : isEvent = true, elementTypes = !ep2.context, !ep2.struct<"pkt_info_t" : isEvent = false, elementTypes = i32, i32, i32>>
+    %24 = ep2.struct_access %6[1] : <"tcp_header_t" : isEvent = false, elementTypes = i16, i16, i32, i32, i8, i8, i16, i16, i16> -> i16
+    %25 = "ep2.struct_update"(%22, %24) <{index = 0 : i64}> : (!ep2.struct<"pkt_info_t" : isEvent = false, elementTypes = i32, i32, i32>, i16) -> !ep2.struct<"pkt_info_t" : isEvent = false, elementTypes = i32, i32, i32>
+    %26 = "ep2.context_ref"(%arg0) <{name = "flow_id"}> : (!ep2.context) -> !ep2.conref<!ep2.any>
+    %27 = ep2.struct_access %6[1] : <"tcp_header_t" : isEvent = false, elementTypes = i16, i16, i32, i32, i8, i8, i16, i16, i16> -> i16
+    "ep2.store"(%26, %27) : (!ep2.conref<!ep2.any>, i16) -> ()
+    %28 = "ep2.nop"() : () -> none
+    %29 = "ep2.constant"() <{value = "OoO_detection"}> : () -> !ep2.atom
+    %30 = "ep2.init"(%29, %arg0, %25) : (!ep2.atom, !ep2.context, !ep2.struct<"pkt_info_t" : isEvent = false, elementTypes = i32, i32, i32>) -> !ep2.struct<"OoO_DETECT" : isEvent = true, elementTypes = !ep2.context, !ep2.struct<"pkt_info_t" : isEvent = false, elementTypes = i32, i32, i32>>
+    ep2.return %30 : !ep2.struct<"OoO_DETECT" : isEvent = true, elementTypes = !ep2.context, !ep2.struct<"pkt_info_t" : isEvent = false, elementTypes = i32, i32, i32>>
     "ep2.terminate"() : () -> ()
   }
   ep2.func private @__controller_DMA_WRITE_REQ() attributes {event = "DMA_WRITE_REQ", extern = true, type = "controller"} {

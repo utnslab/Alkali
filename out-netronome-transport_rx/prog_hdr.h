@@ -80,6 +80,7 @@ __packed struct context_chain_1_t {
 	struct ip_header_t f1;
 	struct tcp_header_t f2;
 	struct __buf_t f3;
+	int16_t f4;
 	int32_t ctx_id;
 };
 

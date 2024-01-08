@@ -3,10 +3,10 @@
 #include "extern/extern_dma.h"
 #include "extern/extern_net.h"
 
-struct ack_info_t _loc_buf_24;
-__xrw struct ack_info_t _loc_buf_24_xfer;
 struct dma_write_cmd_t _loc_buf_23;
 __xrw struct dma_write_cmd_t _loc_buf_23_xfer;
+struct ack_info_t _loc_buf_24;
+__xrw struct ack_info_t _loc_buf_24_xfer;
 __declspec(aligned(4)) struct event_param_OoO_DETECT work;
 __xrw struct event_param_OoO_DETECT work_ref;
 __declspec(aligned(4)) struct event_param_ACK_GEN next_work_ACK_GEN;

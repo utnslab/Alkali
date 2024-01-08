@@ -102,7 +102,8 @@ event ACK_GEN {context ctx; ack_info_t ack;}
 
     pkt_info.pk_len = ip_header.length + 14; # ip length + ethernet header length
     pkt_info.pk_seq = tcp_header.seq;
-    pkt_info.flow_id = 0; # TODO: this should calculate by hashing src/dst port and ip
+    pkt_info.flow_id = tcp_header.dport; # TODO: this should calculate by hashing src/dst port and ip
+    ctx.flow_id = tcp_header.dport;
 
     generate OoO_DETECT:OoO_detection{ctx, pkt_info};
 }
