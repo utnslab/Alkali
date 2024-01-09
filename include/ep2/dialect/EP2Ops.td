@@ -850,6 +850,12 @@ def ConnectOp : EP2_Op<"connect", [AttrSizedOperandSegments]> {
   }];
 
   let arguments = (ins StrAttr:$method, Variadic<EP2_PortType>:$ins, Variadic<EP2_PortType>:$outs, OptionalAttr<ArrayAttr>:$parameters);
+  let extraClassDeclaration = [{
+    size_t getNumParameters() { return getParameters().has_value() ? getParameters()->size() : 0; }
+
+    template <typename T>
+    T getParameter(int i) { return (*getParameters())[0].cast<T>(); }
+  }];
 }
 
 #endif // TOY_OPS
