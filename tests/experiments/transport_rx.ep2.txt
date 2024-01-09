@@ -125,7 +125,7 @@ scope table_sc <OoO_DETECT:OoO_detection>[flow_id];
 # this global variable currently only used in OoO_detection handler. In more complexed example, it can be shared across multiple handlers.
 [sync=table_sc] global table <bits<16>, flow_state_t, 16> flow_table;
 
-controller OoO_DETECT() {
+[sync=table_sc] controller OoO_DETECT() {
     In in1 = [NET_RECV:process_packet, 0];
     In in2 = [NET_RECV:process_packet, 1];
     In in3 = [NET_RECV:process_packet, 2];
@@ -134,8 +134,8 @@ controller OoO_DETECT() {
     Out out2 = [OoO_DETECT:OoO_detection, 1];
 
     # connects
-    Queue(100)[in1,in2][out1];
-    Queue(100)[in3,in4][out2];
+    PartitionByScope(flow_id,0)[in1,in2,in3,in4][out1];
+    PartitionByScope(flow_id,1)[in1,in2,in3,in4][out1];
 }
 
 [sync=table_sc, instances=(i1cu3,i2cu3)] handler OoO_DETECT:OoO_detection (context ctx, pkt_info_t pkt_info) {

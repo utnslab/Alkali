@@ -569,15 +569,6 @@ private:
     auto &path = call.getCallee()->getPath();
     std::string callee = std::string(path.back()->getName());
 
-    // Codegen the operands first.
-    SmallVector<mlir::Value, 4> operands;
-    for (auto &expr : call.getArgs()) {
-      auto arg = mlirGen(*expr);
-      if (!arg)
-        return nullptr;
-      operands.push_back(arg);
-    }
-
     // if its a command, emit a Control
     if (call.isCommand()) {
       auto ins = llvm::map_to_vector(call.ins, [&](auto &k) {
@@ -588,8 +579,29 @@ private:
         auto [value, _, _d] = symbolTable.lookup(k);
         return value;
       });
-      builder.create<ConnectOp>(location, callee, ins, outs);
+
+      SmallVector<mlir::Attribute> attrs;
+      for (auto &expr : call.getArgs()) {
+        if (isa<NumberExprAST>(*expr)) {
+          auto num = cast<NumberExprAST>(*expr);
+          attrs.push_back(builder.getI64IntegerAttr(num.getValue()));
+        } else if (isa<PathExprAST>(*expr)) {
+          auto &path = cast<PathExprAST>(*expr);
+          auto &var = path.getPath()[0];
+          attrs.push_back(builder.getStringAttr(var->getName()));
+        }
+      }
+      builder.create<ConnectOp>(location, callee, ins, outs, builder.getArrayAttr(attrs));
       return builder.create<NopOp>(location);
+    }
+
+    // Codegen the operands first.
+    SmallVector<mlir::Value, 4> operands;
+    for (auto &expr : call.getArgs()) {
+      auto arg = mlirGen(*expr);
+      if (!arg)
+        return nullptr;
+      operands.push_back(arg);
     }
 
     // generate struct access

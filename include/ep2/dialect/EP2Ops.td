@@ -849,7 +849,7 @@ def ConnectOp : EP2_Op<"connect", [AttrSizedOperandSegments]> {
     ports could be in names or in "*", stands for all valid variables in the context
   }];
 
-  let arguments = (ins StrAttr:$method, Variadic<EP2_PortType>:$ins, Variadic<EP2_PortType>:$outs);
+  let arguments = (ins StrAttr:$method, Variadic<EP2_PortType>:$ins, Variadic<EP2_PortType>:$outs, OptionalAttr<ArrayAttr>:$parameters);
 }
 
 #endif // TOY_OPS
