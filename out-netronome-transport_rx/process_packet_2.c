@@ -3,10 +3,10 @@
 #include "extern/extern_dma.h"
 #include "extern/extern_net.h"
 
-struct tcp_header_t _loc_buf_5;
-__xrw struct tcp_header_t _loc_buf_5_xfer;
 struct pkt_info_t _loc_buf_19;
 __xrw struct pkt_info_t _loc_buf_19_xfer;
+struct tcp_header_t _loc_buf_5;
+__xrw struct tcp_header_t _loc_buf_5_xfer;
 struct eth_header_t _loc_buf_3;
 __xrw struct eth_header_t _loc_buf_3_xfer;
 struct ip_header_t _loc_buf_4;
@@ -15,6 +15,17 @@ __declspec(aligned(4)) struct event_param_NET_RECV work;
 __xrw struct event_param_NET_RECV work_ref;
 __declspec(aligned(4)) struct event_param_OoO_DETECT next_work_OoO_DETECT;
 __xrw struct event_param_OoO_DETECT next_work_ref_OoO_DETECT;
+
+__forceinline static void dispatch1 () {
+	switch (hash(work.ctx->f4) % 2) {
+	case 0:
+		cls_workq_add_work(WORKQ_ID_OoO_DETECT_1, &next_work_ref_OoO_DETECT, sizeof(next_work_ref_OoO_DETECT));
+		break;
+	case 1:
+		cls_workq_add_work(WORKQ_ID_OoO_DETECT_2, &next_work_ref_OoO_DETECT, sizeof(next_work_ref_OoO_DETECT));
+		break;
+	}
+}
 
 __forceinline
 void __event___handler_NET_RECV_process_packet_2() {
@@ -87,7 +98,7 @@ void __event___handler_NET_RECV_process_packet_2() {
   v23->f0 = *v7;
   v24 = &next_work_ref_OoO_DETECT;
   *(v24) = *(v23);
-  cls_workq_add_work(WORKQ_ID_OoO_DETECT_1, v24, sizeof(*v24));
+  dispatch1();
   return;
 }
 

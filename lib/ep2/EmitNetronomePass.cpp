@@ -241,6 +241,7 @@ void EmitNetronomePass::runOnOperation() {
     fout_prog_hdr << "\twhile (mem_ring_get(rnum, raddr_hi, &context_idx, sizeof(context_idx)) != 0);\n";
     fout_prog_hdr << "\treturn &" << declId << "[context_idx];\n";
     fout_prog_hdr << "}\n\n";
+
     fout_prog_hdr << "__forceinline static struct __buf_t alloc_packet_buf() {\n";
     fout_prog_hdr << "\tstruct __buf_t buf;\n";
     fout_prog_hdr << "\tbuf.buf = alloc_packet_buffer();\n";
@@ -248,6 +249,11 @@ void EmitNetronomePass::runOnOperation() {
     fout_prog_hdr << "\tbuf.sz = 0;\n";
     fout_prog_hdr << "\treturn buf;\n";
     fout_prog_hdr << "}\n\n";
+
+    fout_prog_hdr << "__forceinline static int hash(int x) {\n";
+    fout_prog_hdr << "\treturn x;\n";
+    fout_prog_hdr << "}\n\n";
+
     fout_prog_hdr << "#endif\n";
   }
   {
@@ -344,6 +350,55 @@ void EmitNetronomePass::runOnOperation() {
           fout_stage << "__xrw struct event_param_" << nextEventName << " next_work_ref_" << nextEventName << ";\n";
         }
       }
+
+      // emit work dispatching functions, one per func. tell emitc backend which to call via an attribute.
+      unsigned dispatchCtr = 0;
+      mlir::Builder builder(&getContext());
+      nameToFunc[funcName]->walk([&](emitc::CallOp callOp) {
+        if (callOp.getCallee() == "__ep2_intrin_enq_work") {
+          std::string event = (*callOp.getArgs())[0].cast<StringAttr>().getValue().str();
+          std::string queueList = (*callOp.getArgs())[1].cast<StringAttr>().getValue().str();
+          llvm::SmallVector<int> queues;
+          
+          auto parseDescription = [&](std::string info) {
+            unsigned p = 0;
+            while (p < info.size()) {
+              int v = 0;
+              while (p < info.size() && isdigit(info[p])) {
+                v *= 10;
+                v += (info[p] - '0');
+                p += 1;
+              }
+              queues.push_back(v);
+              while (p < info.size() && !isdigit(info[p])) {
+                p += 1;
+              }
+            }
+          };
+          parseDescription(queueList);
+
+          if (queues.size() < 2) {
+            return;
+          }
+
+          dispatchCtr += 1;
+
+          std::string field = (*callOp.getArgs())[2].cast<StringAttr>().getValue().str();
+          assert(field != "-1" && "round-robin unsupported");
+
+          fout_stage << "\n__forceinline static void dispatch" << dispatchCtr << " () {\n";
+          fout_stage << "\tswitch (hash(work.ctx->f" << field << ") % " << queues.size() << ") {\n";
+          for (int i = 0; i<queues.size(); ++i) {
+            fout_stage << "\tcase " << i << ":\n";
+            fout_stage << "\t\tcls_workq_add_work(WORKQ_ID_" << event << "_" << (i+1) << ", &next_work_ref_" << event << ", sizeof(next_work_ref_" << event << "));\n";
+            fout_stage << "\t\tbreak;\n";
+          }
+          fout_stage << "\t}\n";
+          fout_stage << "}\n";
+
+          callOp->setAttr("func", builder.getStringAttr(std::string{"dispatch"} + std::to_string(dispatchCtr)));
+        }
+      });
 
       {
         llvm::raw_os_ostream func_stage(fout_stage);

@@ -854,7 +854,7 @@ def ConnectOp : EP2_Op<"connect", [AttrSizedOperandSegments]> {
     size_t getNumParameters() { return getParameters().has_value() ? getParameters()->size() : 0; }
 
     template <typename T>
-    T getParameter(int i) { return (*getParameters())[0].cast<T>(); }
+    T getParameter(int i) { return (*getParameters())[i].cast<T>(); }
   }];
 }
 

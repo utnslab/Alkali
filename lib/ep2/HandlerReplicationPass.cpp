@@ -21,6 +21,36 @@ using namespace mlir;
 namespace mlir {
 namespace ep2 {
 
+enum SprayType {
+  UNSUPPORTED,
+  ROUND_ROBIN,
+  PARTITION,
+};
+
+struct SprayInfo {
+  SprayType type;
+  std::string desc;
+
+  SprayInfo() {}
+  SprayInfo(SprayType t, std::string d) : type(t), desc(d) {}
+  
+  std::string toString() {
+    std::string ty;
+    switch (type) {
+      case SprayType::ROUND_ROBIN:
+        ty = "ROUND_ROBIN";
+        break;
+      case SprayType::PARTITION:
+        ty = "PARTITION";
+        break;
+      default:
+        assert(false);
+        break;
+    }
+    return ty + " " + desc;
+  }
+};
+
 void HandlerReplicationPass::runOnOperation() {
   auto module = getOperation();
 
@@ -35,10 +65,13 @@ void HandlerReplicationPass::runOnOperation() {
       int sz = instances.size();
       mlir::Operation::CloneOptions options(true, true);
 
+      //funcOp->getAttr("scope").cast<ep2::ScopeAttr>
+
       std::string name = funcOp.getSymName().str();
       for (int i = 1; i<=sz; ++i) {
         mlir::Operation* cloneOp = funcOp->clone(options);
         cloneOp->setAttr("location", instances[i-1]);
+        
         cast<ep2::FuncOp>(cloneOp).setSymName(name + "_" + std::to_string(i));
         toInsert.push_back(cloneOp);
       }
@@ -50,7 +83,7 @@ void HandlerReplicationPass::runOnOperation() {
   }
 
   // map from each queue to which return statements feed it
-  std::map<std::pair<std::string, std::string>, llvm::SmallVector<int>> qMap;
+  std::map<std::pair<std::string, std::string>, std::pair<SprayInfo, llvm::SmallVector<int>>> qMap;
   module->walk([&](ep2::FuncOp funcOp) {
     if (funcOp.isExtern()) {
       return;
@@ -62,14 +95,20 @@ void HandlerReplicationPass::runOnOperation() {
 
     if (funcOp->getAttr("type").cast<StringAttr>().getValue() == "controller" && !funcOp.isExtern()) {
       funcOp->walk([&](ep2::ConnectOp op) {
-        assert(op.getMethod() == "Queue");
-        for (mlir::Value arg : op.getOuts()) {
-          auto portOut = cast<ep2::ConstantOp>(arg.getDefiningOp()).getValue().cast<ep2::PortAttr>();
-          for (mlir::Value arg : op.getIns()) {
-            auto portIn = cast<ep2::ConstantOp>(arg.getDefiningOp()).getValue().cast<ep2::PortAttr>();
-            auto k = std::pair<std::string, std::string>{portToHandlerName(portIn), portOut.getHandler().str()};
-            qMap[k].push_back(1 + portOut.getInstance());
+        assert(op.getMethod() == "Queue" || op.getMethod() == "PartitionByScope");
+        assert(op.getOuts().size() == 1);
+
+        mlir::Value outArg = op.getOuts()[0];
+        auto portOut = cast<ep2::ConstantOp>(outArg.getDefiningOp()).getValue().cast<ep2::PortAttr>();
+        for (mlir::Value arg : op.getIns()) {
+          auto portIn = cast<ep2::ConstantOp>(arg.getDefiningOp()).getValue().cast<ep2::PortAttr>();
+          auto k = std::pair<std::string, std::string>{portToHandlerName(portIn), portOut.getHandler().str()};
+          if (op.getMethod() == "Queue") {
+            qMap[k].first = SprayInfo(SprayType::ROUND_ROBIN, "");
+          } else if (op.getMethod() == "PartitionByScope") {
+            qMap[k].first = SprayInfo(SprayType::PARTITION, op.getParameter<mlir::StringAttr>(0).getValue().str());
           }
+          qMap[k].second.push_back(1 + portOut.getInstance());
         }
       });
     }
@@ -88,8 +127,10 @@ void HandlerReplicationPass::runOnOperation() {
         std::string outEventName = cast<ep2::StructType>(initOp.getOutput().getType()).getName().str();
         auto k = std::pair<std::string, std::string>{handlerName, outEventName};
 
-        // TODO encode round-robin, partitioning, which targets, etc. here
-        initOp->setAttr("enqInfo", builder.getI32ArrayAttr(qMap[k]));
+        if (qMap.find(k) != qMap.end()) {
+          initOp->setAttr("enqInfo", builder.getI32ArrayAttr(qMap[k].second));
+          initOp->setAttr("sprayInfo", builder.getStringAttr(qMap[k].first.toString()));
+        }
       });
     }
   });

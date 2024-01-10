@@ -286,10 +286,11 @@ struct StructUpdatePattern : public OpConversionPattern<ep2::StructUpdateOp> {
 
 // convert init op
 struct InitPattern : public OpConversionPattern<ep2::InitOp> {
+  ContextBufferizationAnalysis &analyzer;
   LocalAllocAnalysis &allocAnalyzer;
 
-  InitPattern(TypeConverter &converter, MLIRContext *context, LocalAllocAnalysis& analysis)
-      : OpConversionPattern<ep2::InitOp>(converter, context), allocAnalyzer(analysis) {}
+  InitPattern(TypeConverter &converter, MLIRContext *context, ContextBufferizationAnalysis& cba, LocalAllocAnalysis& analysis)
+      : OpConversionPattern<ep2::InitOp>(converter, context), analyzer(cba), allocAnalyzer(analysis) {}
 
   LogicalResult
   matchAndRewrite(ep2::InitOp initOp, OpAdaptor adaptor,
@@ -364,15 +365,26 @@ struct InitPattern : public OpConversionPattern<ep2::InitOp> {
           auto copy = rewriter.create<emitc::CallOp>(loc, resTypes, rewriter.getStringAttr("__ep2_intrin_gpr2xfer"), args, templ_args, ValueRange{alloc, eventXfer});
 
           {
-            llvm::ArrayRef<mlir::Attribute> outputQueues = initOp->getAttr("enqInfo").cast<mlir::ArrayAttr>().getValue();
             std::string outputQStr;
-            for (auto q : outputQueues) {
-              outputQStr += std::to_string(cast<mlir::IntegerAttr>(q).getValue().getSExtValue());
-              outputQStr += ' ';
+            int ctxFieldPos = -1;
+
+            if (initOp->hasAttr("enqInfo")) {
+              std::string sprayInfo = initOp->getAttr("sprayInfo").cast<mlir::StringAttr>().getValue().str();
+              std::string sprayMethod = sprayInfo.substr(0, sprayInfo.find(" "));
+              if (sprayMethod == "PARTITION") {
+                std::string partitionKey = sprayInfo.substr(sprayInfo.find(" ")+1);
+                ctxFieldPos = analyzer.getContextType(cast<func::FuncOp>(getParentFunction(initOp)), partitionKey).first;
+              }
+
+              llvm::ArrayRef<mlir::Attribute> outputQueues = initOp->getAttr("enqInfo").cast<mlir::ArrayAttr>().getValue();
+              for (auto q : outputQueues) {
+                outputQStr += std::to_string(cast<mlir::IntegerAttr>(q).getValue().getSExtValue());
+                outputQStr += ' ';
+              }
             }
 
             llvm::SmallVector<Type> resTypes3 = {};
-            mlir::ArrayAttr args3 = rewriter.getStrArrayAttr({eventName, outputQStr});
+            mlir::ArrayAttr args3 = rewriter.getStrArrayAttr({eventName, outputQStr, std::to_string(ctxFieldPos)});
             mlir::ArrayAttr templ_args3;
             rewriter.create<emitc::CallOp>(loc, resTypes3, rewriter.getStringAttr("__ep2_intrin_enq_work"), args3, templ_args3, ValueRange{eventXfer.getResult()});
           }
@@ -385,7 +397,6 @@ struct InitPattern : public OpConversionPattern<ep2::InitOp> {
       auto varOp = rewriter.create<emitc::VariableOp>(loc, newType, emitc::OpaqueAttr::get(getContext(), std::string{"alloc_packet_buf()"}));
       rewriter.replaceOp(initOp, varOp);
     } else if (resType.isa<ep2::TableType>()) {
-      // init_me_cam(capacity)
       auto newType = typeConverter->convertType(resType);
       auto varOp = rewriter.create<emitc::VariableOp>(loc, newType, emitc::OpaqueAttr::get(getContext(), std::string{"&"} + allocAnalyzer.localAllocs[initOp]));
       rewriter.replaceOp(initOp, varOp);
@@ -818,7 +829,7 @@ void LowerEmitcPass::runOnOperation() {
   patterns.add<ConstPattern>(typeConverter, &getContext(),
                                 atomAnalysis);
   patterns.add<InitPattern>(typeConverter, &getContext(),
-                                allocAnalysis);
+                                contextAnalysis, allocAnalysis);
   patterns.add<LoadPattern>(typeConverter, &getContext(),
                                 contextAnalysis, allocAnalysis);
   patterns.add<StorePattern>(typeConverter, &getContext(),

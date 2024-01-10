@@ -165,4 +165,8 @@ __forceinline static struct __buf_t alloc_packet_buf() {
 	return buf;
 }
 
+__forceinline static int hash(int x) {
+	return x;
+}
+
 #endif

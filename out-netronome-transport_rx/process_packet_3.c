@@ -16,6 +16,17 @@ __xrw struct event_param_NET_RECV work_ref;
 __declspec(aligned(4)) struct event_param_OoO_DETECT next_work_OoO_DETECT;
 __xrw struct event_param_OoO_DETECT next_work_ref_OoO_DETECT;
 
+__forceinline static void dispatch1 () {
+	switch (hash(work.ctx->f4) % 2) {
+	case 0:
+		cls_workq_add_work(WORKQ_ID_OoO_DETECT_1, &next_work_ref_OoO_DETECT, sizeof(next_work_ref_OoO_DETECT));
+		break;
+	case 1:
+		cls_workq_add_work(WORKQ_ID_OoO_DETECT_2, &next_work_ref_OoO_DETECT, sizeof(next_work_ref_OoO_DETECT));
+		break;
+	}
+}
+
 __forceinline
 void __event___handler_NET_RECV_process_packet_3() {
   int64_t v1;
@@ -87,7 +98,7 @@ void __event___handler_NET_RECV_process_packet_3() {
   v23->f0 = *v7;
   v24 = &next_work_ref_OoO_DETECT;
   *(v24) = *(v23);
-  cls_workq_add_work(WORKQ_ID_OoO_DETECT_2, v24, sizeof(*v24));
+  dispatch1();
   return;
 }
 
