@@ -207,9 +207,8 @@ void EmitNetronomePass::runOnOperation() {
       fout_prog_hdr << "\t" << tInfo.valType << " table[" << tInfo.size << "];\n";
       fout_prog_hdr << "};\n";
 
-      // TODO not lmem always
       for (const std::string& field : pr.second.second) {
-        fout_prog_hdr << "__shared " << tInfo.tableType << " " << field << ";\n";
+        fout_prog_hdr << "__shared __lmem " << tInfo.tableType << " " << field << ";\n";
       }
       fout_prog_hdr << "\n";
     }

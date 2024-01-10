@@ -787,7 +787,7 @@ void LowerEmitcPass::runOnOperation() {
 
   typeConverter.addConversion([&](ep2::TableType type) {
     TableInfo tInfo = getTableStr(type);
-    return builder.getType<emitc::PointerType>(builder.getType<emitc::OpaqueType>(tInfo.tableType));
+    return builder.getType<emitc::PointerType>(builder.getType<emitc::OpaqueType>(std::string{"__shared __lmem "} + tInfo.tableType));
   });
   typeConverter.addConversion([&](ep2::AtomType type) {
     return mlir::IntegerType::get(type.getContext(), 32);

@@ -5,10 +5,10 @@
 
 static struct flow_state_t lookup_buf_29;
 __xrw static struct flow_state_t lookup_buf_29_xfer;
-static struct ack_info_t _loc_buf_27;
-__xrw static struct ack_info_t _loc_buf_27_xfer;
 static struct dma_write_cmd_t _loc_buf_26;
 __xrw static struct dma_write_cmd_t _loc_buf_26_xfer;
+static struct ack_info_t _loc_buf_27;
+__xrw static struct ack_info_t _loc_buf_27_xfer;
 __declspec(aligned(4)) struct event_param_OoO_DETECT work;
 __xrw struct event_param_OoO_DETECT work_ref;
 __declspec(aligned(4)) struct event_param_ACK_GEN next_work_ACK_GEN;
@@ -26,7 +26,7 @@ void __event___handler_OoO_DETECT_OoO_detection_2() {
   __xrw struct event_param_OoO_DETECT* v6;
   struct context_chain_1_t* v7;
   struct pkt_info_t* v8;
-  struct table_i16_flow_state_t_16_t* v9;
+  __shared __lmem struct table_i16_flow_state_t_16_t* v9;
   int32_t v10;
   int16_t v11;
   struct flow_state_t* v12;
