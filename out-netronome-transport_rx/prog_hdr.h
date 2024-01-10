@@ -76,10 +76,10 @@ __packed struct ack_info_t {
 };
 
 __packed struct context_chain_1_t {
-	struct eth_header_t f0;
-	struct ip_header_t f1;
-	struct tcp_header_t f2;
-	struct __buf_t f3;
+	struct __buf_t f0;
+	struct eth_header_t f1;
+	struct ip_header_t f2;
+	struct tcp_header_t f3;
 	int16_t f4;
 	int32_t ctx_id;
 };

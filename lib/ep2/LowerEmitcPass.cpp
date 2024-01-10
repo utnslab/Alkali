@@ -566,14 +566,33 @@ struct IfPattern : public OpConversionPattern<scf::IfOp> {
 struct TableLookupPattern : public OpConversionPattern<ep2::LookupOp> {
   using OpConversionPattern<ep2::LookupOp>::OpConversionPattern;
 
+  LocalAllocAnalysis &allocAnalyzer;
+
+  TableLookupPattern(TypeConverter &converter, MLIRContext *context,
+                  LocalAllocAnalysis &allocAnalysis)
+      : OpConversionPattern<ep2::LookupOp>(converter, context), allocAnalyzer(allocAnalysis) {}
+
   // T[me_cam_lookup(k)]
   LogicalResult
   matchAndRewrite(ep2::LookupOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter &rewriter) const final {
-    llvm::SmallVector<Type> resTypes = {typeConverter->convertType(op.getValue().getType())};
-    mlir::ArrayAttr args = rewriter.getI32ArrayAttr({isa<ep2::StructType>(op.getValue().getType())});
-    mlir::ArrayAttr templ_args;
-    rewriter.replaceOpWithNewOp<emitc::CallOp>(op, resTypes, rewriter.getStringAttr("__ep2_intrin_table_lookup"), args, templ_args, adaptor.getOperands());
+
+    if (cast<ep2::StructType>(op.getValue().getType())) {
+      auto buf = rewriter.create<emitc::VariableOp>(op->getLoc(), typeConverter->convertType(op.getValue().getType()), emitc::OpaqueAttr::get(getContext(), std::string{"&"} + allocAnalyzer.localAllocs[op]));
+
+      llvm::SmallVector<Type> resTypes = {};
+      mlir::ArrayAttr args = rewriter.getI32ArrayAttr({true});
+      mlir::ArrayAttr templ_args;
+      rewriter.create<emitc::CallOp>(op->getLoc(), resTypes, rewriter.getStringAttr("__ep2_intrin_table_lookup"), args, templ_args, ValueRange{adaptor.getTable(), adaptor.getKey(), buf->getResult(0)});
+
+      rewriter.replaceOp(op, buf);
+    } else {
+      llvm::SmallVector<Type> resTypes = {typeConverter->convertType(op.getValue().getType())};
+      mlir::ArrayAttr args = rewriter.getI32ArrayAttr({false});
+      mlir::ArrayAttr templ_args;
+      rewriter.create<emitc::CallOp>(op->getLoc(), resTypes, rewriter.getStringAttr("__ep2_intrin_table_lookup"), args, templ_args, ValueRange{adaptor.getOperands()});
+    }
+
     return success();
   }
 };
@@ -822,7 +841,7 @@ void LowerEmitcPass::runOnOperation() {
   mlir::RewritePatternSet patterns(&getContext());
   patterns.add<CallPattern, ReturnPattern, ControllerPattern, StructUpdatePattern, EmitPattern,
                ContextRefPattern, StructAccessPattern, TerminatePattern, NopPattern, BitCastPattern,
-               SubPattern, AddPattern, MulPattern, CmpPattern, SelectPattern, TableLookupPattern,
+               SubPattern, AddPattern, MulPattern, CmpPattern, SelectPattern,
                TableUpdatePattern, YieldPattern, IfPattern>(typeConverter, &getContext());
   patterns.add<ExtractPattern>(typeConverter, &getContext(),
                                 allocAnalysis);
@@ -832,6 +851,8 @@ void LowerEmitcPass::runOnOperation() {
                                 contextAnalysis, allocAnalysis);
   patterns.add<LoadPattern>(typeConverter, &getContext(),
                                 contextAnalysis, allocAnalysis);
+  patterns.add<TableLookupPattern>(typeConverter, &getContext(),
+                                allocAnalysis);
   patterns.add<StorePattern>(typeConverter, &getContext(),
                                 contextAnalysis);
   patterns.add<FunctionPattern>(typeConverter, &getContext(),

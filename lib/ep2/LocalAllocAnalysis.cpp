@@ -65,6 +65,11 @@ LocalAllocAnalysis::LocalAllocAnalysis(Operation* module, AnalysisManager& am) {
       localAllocs.emplace(op, "table_" + std::to_string(bufCtr++));
     }
   });
+  module->walk([&](ep2::LookupOp op) {
+    if (isa<ep2::StructType>(op->getResult(0).getType())) {
+      localAllocs.emplace(op, "lookup_buf_" + std::to_string(bufCtr++));
+    }
+  });
 }
 
 }

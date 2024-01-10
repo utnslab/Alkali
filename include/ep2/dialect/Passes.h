@@ -333,6 +333,16 @@ struct HandlerReplicationPass :
     StringRef getDescription() const final { return "Handler replication pass file"; }
 };
 
+struct LowerNoctxswapPass :
+        public PassWrapper<LowerNoctxswapPass, OperationPass<ModuleOp>> {
+    void runOnOperation() final;
+    void getDependentDialects(DialectRegistry &registry) const override {
+        registry.insert<EP2Dialect, func::FuncDialect, LLVM::LLVMDialect, emitc::EmitCDialect>();
+    }
+    StringRef getArgument() const final { return "ep2-lower-noctxswap"; }
+    StringRef getDescription() const final { return "Lower no-context-switch region pass file"; }
+};
+
 struct EmitNetronomePass :
         public PassWrapper<EmitNetronomePass, OperationPass<ModuleOp>> {
   // TODO(zhiyuang): copy construction?

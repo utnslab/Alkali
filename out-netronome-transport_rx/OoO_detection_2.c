@@ -3,10 +3,12 @@
 #include "extern/extern_dma.h"
 #include "extern/extern_net.h"
 
-struct ack_info_t _loc_buf_27;
-__xrw struct ack_info_t _loc_buf_27_xfer;
-struct dma_write_cmd_t _loc_buf_26;
-__xrw struct dma_write_cmd_t _loc_buf_26_xfer;
+static struct flow_state_t lookup_buf_29;
+__xrw static struct flow_state_t lookup_buf_29_xfer;
+static struct ack_info_t _loc_buf_27;
+__xrw static struct ack_info_t _loc_buf_27_xfer;
+static struct dma_write_cmd_t _loc_buf_26;
+__xrw static struct dma_write_cmd_t _loc_buf_26_xfer;
 __declspec(aligned(4)) struct event_param_OoO_DETECT work;
 __xrw struct event_param_OoO_DETECT work_ref;
 __declspec(aligned(4)) struct event_param_ACK_GEN next_work_ACK_GEN;
@@ -79,7 +81,8 @@ void __event___handler_OoO_DETECT_OoO_detection_2() {
   v9 = &table_25;
   v10 = v8->f0;
   v11 = (int16_t) v10;
-  v12 = &v9->table[me_cam_lookup(v11)];
+  v12 = &lookup_buf_29;
+  *v12 = v9->table[me_cam_lookup(v11)];
   v13 = &_loc_buf_26;
   v14 = &_loc_buf_27;
   v15 = v12->f5;
@@ -114,7 +117,7 @@ void __event___handler_OoO_DETECT_OoO_detection_2() {
       v12->f6 = v36;
       v13->f0 = v29;
       v13->f1 = v25;
-      v40 = v7->f3;
+      v40 = v7->f0;
       v41 = &next_work_DMA_WRITE_REQ;
       v41->ctx = v7;
       v41->f0 = v40;

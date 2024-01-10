@@ -3,12 +3,12 @@
 #include "extern/extern_dma.h"
 #include "extern/extern_net.h"
 
-struct tcp_header_t _loc_buf_17;
-__xrw struct tcp_header_t _loc_buf_17_xfer;
-struct ip_header_t _loc_buf_16;
-__xrw struct ip_header_t _loc_buf_16_xfer;
-struct eth_header_t _loc_buf_15;
-__xrw struct eth_header_t _loc_buf_15_xfer;
+static struct eth_header_t _loc_buf_15;
+__xrw static struct eth_header_t _loc_buf_15_xfer;
+static struct ip_header_t _loc_buf_16;
+__xrw static struct ip_header_t _loc_buf_16_xfer;
+static struct tcp_header_t _loc_buf_17;
+__xrw static struct tcp_header_t _loc_buf_17_xfer;
 __declspec(aligned(4)) struct event_param_ACK_GEN work;
 __xrw struct event_param_ACK_GEN work_ref;
 __declspec(aligned(4)) struct event_param_NET_SEND next_work_NET_SEND;
@@ -60,14 +60,14 @@ void __event___handler_ACK_GEN_ack_gen_2() {
   v5 = v3->ctx;
   v6 = &v3->f0;
   v7 = alloc_packet_buf();
-  v8 = &v5->f0;
+  v8 = &v5->f1;
   v9 = &_loc_buf_15;
   *(v9) = *(v8);
   v10 = v9->f0;
   v11 = v9->f1;
   v9->f0 = v11;
   v9->f1 = v10;
-  v14 = &v5->f1;
+  v14 = &v5->f2;
   v15 = &_loc_buf_16;
   *(v15) = *(v14);
   v16 = v15->f6;
@@ -75,7 +75,7 @@ void __event___handler_ACK_GEN_ack_gen_2() {
   v15->f6 = v17;
   v15->f7 = v16;
   v15->f1 = v2;
-  v21 = &v5->f2;
+  v21 = &v5->f3;
   v22 = &_loc_buf_17;
   *(v22) = *(v21);
   v23 = v22->f0;
@@ -100,7 +100,7 @@ void __event___handler_ACK_GEN_ack_gen_2() {
   *(v33) = *(v22);
   mem_write32(&v33->f0, v7.buf + v7.offs, 20);
   v7.offs += 20;
-  v34 = v5->f3;
+  v34 = v5->f0;
   bulk_memcpy(v7.buf + v7.offs, v34.buf + v34.offs, v34.sz - v34.offs);
   v7.offs += v34.sz - v34.offs;
   v35 = &next_work_NET_SEND;

@@ -334,8 +334,8 @@ void EmitNetronomePass::runOnOperation() {
       fout_stage << "#include \"extern/extern_net.h\"\n\n";
 
       for (const auto& localAlloc : pr.second) {
-        fout_stage << "struct " << localAlloc.first << " " << localAlloc.second << ";\n";
-        fout_stage << "__xrw struct " << localAlloc.first << " " << localAlloc.second << "_xfer;\n";
+        fout_stage << "static struct " << localAlloc.first << " " << localAlloc.second << ";\n";
+        fout_stage << "__xrw static struct " << localAlloc.first << " " << localAlloc.second << "_xfer;\n";
       }
 
       fout_stage << "__declspec(aligned(4)) struct event_param_" << eventName << " work;\n";

@@ -32,6 +32,7 @@ add_mlir_dialect_library(MLIREP2
         StructUpdatePropagationPass.cpp
         LocalAllocAnalysis.cpp
         HandlerReplicationPass.cpp
+        LowerNoctxswapPass.cpp
 
         DEPENDS
         MLIREP2OpsIncGen
