@@ -1,14 +1,33 @@
-#include <iostream>
-#include <string>
-#include <vector>
-#include <map>
+#include "mlir/IR/BuiltinDialect.h"
+
+#include "ep2/lang/Lexer.h"
+#include "ep2/dialect/Dialect.h"
+#include "ep2/dialect/Passes.h"
+#include "mlir/Dialect/Func/IR/FuncOps.h"
+#include "mlir/Dialect/LLVMIR/LLVMDialect.h"
+#include "mlir/Dialect/MemRef/IR/MemRef.h"
+
+#include "mlir/IR/BuiltinOps.h"
+#include "mlir/Pass/Pass.h"
+#include "mlir/Transforms/DialectConversion.h"
+#include "mlir/Transforms/GreedyPatternRewriteDriver.h"
+
+#include "llvm/ADT/SmallSet.h"
+#include "llvm/Support/raw_ostream.h"
+
+namespace mlir {
+namespace ep2 {
+
+namespace {
 
 class Emitter {
 
-std::ostream &out;
+llvm::raw_ostream &out;
 std::map<std::string, int> handlers;
 std::map<std::string, int> handlerReplications;
 std::map<std::string, std::vector<int>> externs;
+
+Emitter(llvm::raw_ostream &out) : out(out) {}
 
 static constexpr auto header = R"(
 #ifndef _EP2_DEFS_
@@ -73,3 +92,23 @@ void emit() {
 }
 
 };
+
+} // local namespace
+
+void EmitLLVMHeaderPass::runOnOperation() {
+  ModuleOp moduleOp = getOperation();
+  // Collect the headers
+
+  // count the total number of queues
+  int numQueues = 0;
+  for (auto funcOp : moduleOp.getOps<FuncOp>()) {
+    if (!funcOp.isController())
+        continue;
+    funcOp.walk([&](ConnectOp connect) { numQueues++; });
+  }
+  
+
+}
+
+} // namespace ep2
+} // namespace mlir

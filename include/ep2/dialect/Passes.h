@@ -433,6 +433,7 @@ struct LocalAllocAnalysis {
   }
 };
 
+// LLVM Backends
 
 struct LowerLLVMPass :
         public PassWrapper<LowerLLVMPass, OperationPass<ModuleOp>> {
@@ -448,6 +449,17 @@ struct LowerLLVMPass :
     TableT apiFunctions{};
   private:
     void populateAPIFunctions(mlir::TypeConverter &converter);
+};
+
+struct EmitLLVMHeaderPass
+    : public PassWrapper<EmitLLVMHeaderPass, OperationPass<ModuleOp>> {
+  void runOnOperation() final;
+  void getDependentDialects(DialectRegistry &registry) const override {
+    registry.insert<EP2Dialect, func::FuncDialect, LLVM::LLVMDialect,
+                    scf::SCFDialect, cf::ControlFlowDialect>();
+  }
+  StringRef getArgument() const final { return "ep2-emit-llvm-header"; }
+  StringRef getDescription() const final { return "Emit LLVM header"; }
 };
 
 struct ContextToMemPass :
