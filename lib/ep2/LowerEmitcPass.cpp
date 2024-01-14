@@ -5,6 +5,8 @@
 #include "ep2/dialect/Passes.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Dialect/EmitC/IR/EmitC.h"
+#include "mlir/Dialect/ControlFlow/IR/ControlFlow.h"
+#include "mlir/Dialect/ControlFlow/IR/ControlFlowOps.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
 
@@ -532,36 +534,27 @@ struct SelectPattern : public OpConversionPattern<arith::SelectOp> {
   }
 };
 
-struct YieldPattern : public OpConversionPattern<scf::YieldOp> {
-  using OpConversionPattern<scf::YieldOp>::OpConversionPattern;
+struct BranchPattern : public OpConversionPattern<cf::BranchOp> {
+  using OpConversionPattern<cf::BranchOp>::OpConversionPattern;
 
   LogicalResult
-  matchAndRewrite(scf::YieldOp op, OpAdaptor adaptor,
+  matchAndRewrite(cf::BranchOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter &rewriter) const final {
-    rewriter.replaceOpWithNewOp<scf::YieldOp>(op, adaptor.getResults());
+    rewriter.replaceOpWithNewOp<cf::BranchOp>(op, op.getDest(), adaptor.getDestOperands());
     return success();
   }
 };
 
-struct IfPattern : public OpConversionPattern<scf::IfOp> {
-  using OpConversionPattern<scf::IfOp>::OpConversionPattern;
+struct CondBranchPattern : public OpConversionPattern<cf::CondBranchOp> {
+  using OpConversionPattern<cf::CondBranchOp>::OpConversionPattern;
 
   LogicalResult
-  matchAndRewrite(scf::IfOp op, OpAdaptor adaptor,
+  matchAndRewrite(cf::CondBranchOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter &rewriter) const final {
-
-    llvm::SmallVector<mlir::Type> adaptedTypes;
-    auto res = typeConverter->convertTypes(op->getResultTypes(), adaptedTypes);
-    assert(res.succeeded());
-
-    auto newOp = rewriter.create<scf::IfOp>(op->getLoc(), adaptedTypes, adaptor.getCondition(), adaptor.getElseRegion().getBlocks().size() == 1);
-    newOp.getThenRegion().takeBody(adaptor.getThenRegion());
-    newOp.getElseRegion().takeBody(adaptor.getElseRegion());
-    rewriter.replaceOp(op, newOp);
+    rewriter.replaceOpWithNewOp<cf::CondBranchOp>(op, adaptor.getCondition(), op.getTrueDest(), adaptor.getTrueDestOperands(), op.getFalseDest(), adaptor.getFalseDestOperands());
     return success();
   }
 };
-
 
 struct TableLookupPattern : public OpConversionPattern<ep2::LookupOp> {
   using OpConversionPattern<ep2::LookupOp>::OpConversionPattern;
@@ -759,6 +752,8 @@ struct FunctionPattern : public OpConversionPattern<ep2::FuncOp> {
 } // namespace
 
 void LowerEmitcPass::runOnOperation() {
+  getOperation()->dump();
+
   // install analysis
   LowerStructAnalysis &lowerStructAnalysis = getAnalysis<LowerStructAnalysis>();
   ContextBufferizationAnalysis &contextAnalysis = getAnalysis<ContextBufferizationAnalysis>();
@@ -833,7 +828,7 @@ void LowerEmitcPass::runOnOperation() {
     ep2::CallOp, ep2::FuncOp, ep2::ReturnOp, ep2::StructUpdateOp, ep2::NopOp, ep2::InitOp,
     ep2::StructAccessOp, ep2::ExtractOp, ep2::EmitOp, ep2::BitCastOp, ep2::SubOp, ep2::AddOp,
     ep2::CmpOp, ep2::MulOp, arith::SelectOp, ep2::LookupOp, ep2::UpdateOp, ep2::LoadOp>();
-  target.addDynamicallyLegalDialect<scf::SCFDialect>([&](mlir::Operation* op){
+  target.addDynamicallyLegalDialect<cf::ControlFlowDialect>([&](mlir::Operation* op){
     return typeConverter.isLegal(op);
   });
 
@@ -842,7 +837,7 @@ void LowerEmitcPass::runOnOperation() {
   patterns.add<CallPattern, ReturnPattern, ControllerPattern, StructUpdatePattern, EmitPattern,
                ContextRefPattern, StructAccessPattern, TerminatePattern, NopPattern, BitCastPattern,
                SubPattern, AddPattern, MulPattern, CmpPattern, SelectPattern,
-               TableUpdatePattern, YieldPattern, IfPattern>(typeConverter, &getContext());
+               TableUpdatePattern, BranchPattern, CondBranchPattern>(typeConverter, &getContext());
   patterns.add<ExtractPattern>(typeConverter, &getContext(),
                                 allocAnalysis);
   patterns.add<ConstPattern>(typeConverter, &getContext(),

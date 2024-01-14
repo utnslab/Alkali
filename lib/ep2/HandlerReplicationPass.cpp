@@ -65,8 +65,6 @@ void HandlerReplicationPass::runOnOperation() {
       int sz = instances.size();
       mlir::Operation::CloneOptions options(true, true);
 
-      //funcOp->getAttr("scope").cast<ep2::ScopeAttr>
-
       std::string name = funcOp.getSymName().str();
       for (int i = 1; i<=sz; ++i) {
         mlir::Operation* cloneOp = funcOp->clone(options);

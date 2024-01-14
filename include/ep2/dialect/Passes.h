@@ -240,7 +240,7 @@ struct ArchMappingPass :
   ArchMappingPass(const ArchMappingPass &pass) {}
   void runOnOperation() final;
   void getDependentDialects(DialectRegistry &registry) const override {
-    registry.insert<EP2Dialect, scf::SCFDialect>();
+    registry.insert<EP2Dialect, scf::SCFDialect, cf::ControlFlowDialect>();
   }
   StringRef getArgument() const final { return "ep2-mapping"; }
   StringRef getDescription() const final { return "Mapping ep2 program to mlir structures"; }
