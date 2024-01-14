@@ -19,6 +19,9 @@ namespace ep2 {
 namespace {
 
 void restoreContext(FuncOp funcOp) {
+  if (funcOp.isController() || funcOp.isExtern())
+    return;
+
   // insert all buffers from function arugments
   OpBuilder builder(funcOp);
   builder.setInsertionPointToStart(&funcOp.getBody().front());
@@ -30,14 +33,11 @@ void restoreContext(FuncOp funcOp) {
       contextName.try_emplace(attr.getValue(), i);
   }
 
-  if (contextName.empty())
-    return;
-
   // insert a function arg
   funcOp.insertArgument(0, builder.getType<ContextType>(), {}, funcOp.getLoc());
   auto ctxArg = funcOp.getArgument(0);
 
-  // remove all context args
+  // remove all context args, if any
   DenseMap<Value, Value> contextRefs;
   DenseMap<StringRef, std::pair<Value, Value>> nameToRefs;
   for (auto &[name, i] : contextName) {
@@ -69,9 +69,17 @@ void restoreContext(FuncOp funcOp) {
         newOperands.push_back(initOp.getOperand(i));
       else {
         auto value = initOp.getOperand(i);
-        auto [ba, ref] = nameToRefs[name];
-        if (value != ba) // we avoid load and store
+        auto it = nameToRefs.find(name);
+        if (it == nameToRefs.end()) {
+          // no context ref is created..
+          auto refType = builder.getType<ContextRefType>(value.getType());
+          auto ref = builder.create<ContextRefOp>(funcOp.getLoc(), refType, name, ctxArg);
           builder.create<StoreOp>(funcOp.getLoc(), ref, initOp.getOperand(i));
+        } else {
+          auto &[ba, ref] = it->second;
+          if (value != ba) // we avoid load and store
+            builder.create<StoreOp>(funcOp.getLoc(), ref, value);
+        }
       }
     }
 
@@ -81,8 +89,12 @@ void restoreContext(FuncOp funcOp) {
       insertIt++;
     newOperands.insert(insertIt, ctxArg);
 
+    // get new type
+    auto newTypes = llvm::map_to_vector(newOperands, [](Value &v) { return v.getType(); });
+    auto newEvent = builder.getType<StructType>(true, newTypes, event.getName());
+
     auto newInitOp =
-        builder.create<InitOp>(funcOp.getLoc(), initOp.getType(), newOperands);
+        builder.create<InitOp>(funcOp.getLoc(), newEvent, newOperands);
     initOp.replaceAllUsesWith(newInitOp.getResult());
     toErase.push_back(initOp);
   });
