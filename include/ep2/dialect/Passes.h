@@ -452,6 +452,16 @@ struct BufferReusePass :
     StringRef getDescription() const final { return "Reuse buffer using zero copy operators"; }
 };
 
+struct DeadFieldEliminatePass :
+        public PassWrapper<DeadFieldEliminatePass, OperationPass<ModuleOp>> {
+    void runOnOperation() final;
+    void getDependentDialects(DialectRegistry &registry) const override {
+        registry.insert<EP2Dialect, func::FuncDialect>();
+    }
+    StringRef getArgument() const final { return "ep2-dfe"; }
+    StringRef getDescription() const final { return "Remove the dead field in structs"; }
+};
+
 } // namespace ep2
 } // namespace mlir
 

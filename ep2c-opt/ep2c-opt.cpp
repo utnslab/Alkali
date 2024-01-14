@@ -54,6 +54,7 @@ int main(int argc, char **argv) {
 
   mlir::PassRegistration<mlir::ep2::ContextToMemPass>();
   mlir::PassRegistration<mlir::ep2::BufferReusePass>();
+  mlir::PassRegistration<mlir::ep2::DeadFieldEliminatePass>();
 
   mlir::registerAllPasses();
  

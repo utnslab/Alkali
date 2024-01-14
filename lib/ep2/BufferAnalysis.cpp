@@ -53,6 +53,7 @@ struct HistoryTable {
     return curOffset;
   }
 
+  // merge input
   void installMapping(Block &block, std::vector<ArgMap> &mappings) {
     std::map<int, BufferHistory> merged;
 
@@ -81,7 +82,7 @@ struct HistoryTable {
 };
 
 void analysisFuncion(FuncOp funcOp,
-                    HandlerDependencyAnalysis &dependency,
+                     HandlerDependencyAnalysis &dependency,
                      std::map<Block *, std::vector<ArgMap>> &blockInput,
                      std::map<Operation *, int> &offsetAt,
                      llvm::EquivalenceClasses<mlir::detail::ValueImpl *> &equivalence) {
