@@ -197,9 +197,11 @@ CollectInfoAnalysis::CollectInfoAnalysis(Operation* module, AnalysisManager& am)
     std::string eventName = funcOp->getAttr("event").cast<StringAttr>().getValue().str();
     std::string stageName = funcOp->hasAttr("atom") ? funcOp->getAttr("atom").cast<StringAttr>().getValue().str() : funcOp->getAttr("event").cast<StringAttr>().getValue().str();
 
-    if (isa<ep2::StructType>(pr.first->getResult(0).getType())) {
+    mlir::Type ty = isa<ep2::StoreOp>(pr.first) ? pr.first->getOperand(1).getType() : pr.first->getResult(0).getType();
+
+    if (isa<ep2::StructType>(ty)) {
       std::pair<std::string, std::string> prOut;
-      prOut.first = cast<ep2::StructType>(pr.first->getResult(0).getType()).getName().str();
+      prOut.first = cast<ep2::StructType>(ty).getName().str();
       prOut.second = pr.second;
       this->eventAllocs[eventName + "_a_" + stageName + "_a_" + cast<ep2::FuncOp>(funcOp).getName().str()].push_back(prOut);
     }

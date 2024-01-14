@@ -101,6 +101,15 @@ struct ContextRefPattern : public OpConversionPattern<ep2::ContextRefOp> {
   }
 };
 
+static mlir::Type addClsToEmitcPtrTy(mlir::MLIRContext* ctx, mlir::Type ty) {
+  if (isa<emitc::PointerType>(ty)) {
+    std::string newTy = std::string{"__shared __cls "} + cast<emitc::OpaqueType>(cast<emitc::PointerType>(ty).getPointee()).getValue().str();
+    return emitc::PointerType::get(ctx, emitc::OpaqueType::get(ctx, newTy));
+  } else {
+    return ty;
+  }
+}
+
 struct LoadPattern : public OpConversionPattern<ep2::LoadOp> {
   ContextBufferizationAnalysis &analyzer;
   LocalAllocAnalysis &allocAnalyzer;
@@ -116,7 +125,7 @@ struct LoadPattern : public OpConversionPattern<ep2::LoadOp> {
     auto refOp = dyn_cast<ep2::ContextRefOp>(loadOp->getOperand(0).getDefiningOp());
     auto contextId = rewriter.getRemappedValue(refOp.getOperand());
 
-    llvm::SmallVector<Type> resTypes = {typeConverter->convertType(loadOp->getResult(0).getType())};
+    llvm::SmallVector<Type> resTypes = {addClsToEmitcPtrTy(getContext(), typeConverter->convertType(loadOp->getResult(0).getType()))};
     int pos = analyzer.getContextType(cast<func::FuncOp>(getParentFunction(loadOp)), refOp.getName()).first;
     mlir::ArrayAttr args = rewriter.getI32ArrayAttr({pos, isa<ep2::StructType>(loadOp->getResult(0).getType())});
     mlir::ArrayAttr templ_args;
@@ -148,30 +157,58 @@ struct LoadPattern : public OpConversionPattern<ep2::LoadOp> {
   }
 };
 
-
 struct StorePattern : public OpConversionPattern<ep2::StoreOp> {
-
   ContextBufferizationAnalysis &analyzer;
+  LocalAllocAnalysis &allocAnalyzer;
+
   StorePattern(TypeConverter &converter, MLIRContext *context,
-                  ContextBufferizationAnalysis &analyzer)
+                  ContextBufferizationAnalysis &analyzer, LocalAllocAnalysis &allocAnalysis)
       : OpConversionPattern<ep2::StoreOp>(converter, context),
-        analyzer(analyzer) {}
+        analyzer(analyzer), allocAnalyzer(allocAnalysis) {}
 
   LogicalResult matchAndRewrite(ep2::StoreOp storeOp, OpAdaptor adaptor,
                   ConversionPatternRewriter &rewriter) const final {
-    auto refOp = dyn_cast<ep2::ContextRefOp>(storeOp.getOperand(0).getDefiningOp());
+    auto loc = storeOp->getLoc();
+    auto refOp = dyn_cast<ep2::ContextRefOp>(storeOp->getOperand(0).getDefiningOp());
     auto contextId = rewriter.getRemappedValue(refOp.getOperand());
 
-    llvm::SmallVector<Type> resTypes = {};
+    mlir::Type vTy = storeOp->getOperand(1).getType();
     int pos = analyzer.getContextType(cast<func::FuncOp>(getParentFunction(storeOp)), refOp.getName()).first;
-    mlir::ArrayAttr args = rewriter.getI32ArrayAttr({pos, isa<ep2::StructType>(storeOp->getOperand(1).getType())});
-    mlir::ArrayAttr templ_args;
 
-    rewriter.replaceOpWithNewOp<emitc::CallOp>(storeOp, resTypes, rewriter.getStringAttr("__ep2_intrin_ctx_write"), args, templ_args, ValueRange{adaptor.getValue(), contextId});
+    if (isa<ep2::StructType>(vTy)) {
+      llvm::SmallVector<Type> resTypes = {addClsToEmitcPtrTy(getContext(), typeConverter->convertType(vTy))};
+      mlir::ArrayAttr args = rewriter.getI32ArrayAttr({pos, isa<ep2::StructType>(vTy)});
+      mlir::ArrayAttr templ_args;
 
+      auto ctxV = rewriter.create<emitc::CallOp>(loc, resTypes, rewriter.getStringAttr("__ep2_intrin_ctx_read"), args, templ_args, ValueRange{contextId});
+
+      // get reference to allocated buffer
+      // generate memcpy into it.
+      auto resType = vTy;
+
+      // TODO support dynamically allocated structs too
+      assert(allocAnalyzer.localAllocs.find(storeOp) != allocAnalyzer.localAllocs.end());
+
+      int memcpySize = calcSize(resType);
+      auto varOp = rewriter.create<emitc::VariableOp>(loc, typeConverter->convertType(resType), emitc::OpaqueAttr::get(getContext(), std::string{"&"} + allocAnalyzer.localAllocs[storeOp]));
+
+      llvm::SmallVector<Type> resTypes2 = {};
+      // xferOffs, size
+      mlir::ArrayAttr args2 = rewriter.getI32ArrayAttr({0, memcpySize, 1});
+      mlir::ArrayAttr templ_args2;
+      auto memcpyOp = rewriter.create<emitc::CallOp>(loc, resTypes2, rewriter.getStringAttr("__ep2_intrin_memcpy"), args2, templ_args2, ValueRange{ctxV.getResult(0), varOp});
+      rewriter.replaceOp(storeOp, memcpyOp);
+    } else {
+      llvm::SmallVector<Type> resTypes = {};
+      mlir::ArrayAttr args = rewriter.getI32ArrayAttr({pos, isa<ep2::StructType>(vTy)});
+      mlir::ArrayAttr templ_args;
+      auto wr = rewriter.create<emitc::CallOp>(loc, resTypes, rewriter.getStringAttr("__ep2_intrin_ctx_write"), args, templ_args, ValueRange{adaptor.getValue(), contextId});
+      rewriter.replaceOp(storeOp, wr);
+    }
     return success();
   }
 };
+
 
 struct ReturnPattern : public OpConversionPattern<ep2::ReturnOp> {
   using OpConversionPattern<ep2::ReturnOp>::OpConversionPattern;
@@ -658,7 +695,7 @@ struct FunctionPattern : public OpConversionPattern<ep2::FuncOp> {
     auto inputWrapperType =
         rewriter.getType<emitc::PointerType>(rewriter.getType<emitc::OpaqueType>(std::string{"__declspec(aligned(4)) struct event_param_" + eventName}));
     auto contextType =
-        rewriter.getType<emitc::PointerType>(rewriter.getType<emitc::OpaqueType>(std::string{"struct context_chain_1_t"}));
+        rewriter.getType<emitc::PointerType>(rewriter.getType<emitc::OpaqueType>(std::string{"__shared __cls struct context_chain_1_t"}));
 
     auto eventPtr = rewriter.create<emitc::VariableOp>(loc, inputWrapperType, emitc::OpaqueAttr::get(getContext(), std::string{"&work"}));
     if (eventName != "NET_RECV") {
@@ -774,7 +811,7 @@ void LowerEmitcPass::runOnOperation() {
   typeConverter.addConversion([](Type type) { return type; });
   // TODO add an attribute to ep2::ContextType to know which context_chain_t to convert to.
   typeConverter.addConversion([&](ep2::ContextType type) {
-    return emitc::PointerType::get(type.getContext(), builder.getType<emitc::OpaqueType>("struct context_chain_1_t"));
+    return emitc::PointerType::get(type.getContext(), builder.getType<emitc::OpaqueType>("__shared __cls struct context_chain_1_t"));
   });
   typeConverter.addConversion([&](ep2::BufferType type) {
     return builder.getType<emitc::OpaqueType>("struct __buf_t");
@@ -849,7 +886,7 @@ void LowerEmitcPass::runOnOperation() {
   patterns.add<TableLookupPattern>(typeConverter, &getContext(),
                                 allocAnalysis);
   patterns.add<StorePattern>(typeConverter, &getContext(),
-                                contextAnalysis);
+                                contextAnalysis, allocAnalysis);
   patterns.add<FunctionPattern>(typeConverter, &getContext(),
                                 lowerStructAnalysis, handlerDepAnalysis, allocAnalysis);
 

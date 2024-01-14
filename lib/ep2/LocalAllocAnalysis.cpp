@@ -57,6 +57,11 @@ LocalAllocAnalysis::LocalAllocAnalysis(Operation* module, AnalysisManager& am) {
       localAllocs.emplace(op, "_loc_buf_" + std::to_string(bufCtr++));
     }
   });
+  module->walk([&](ep2::StoreOp op) {
+    if (isa<ep2::StructType>(op.getValue().getType())) {
+      localAllocs.emplace(op, "_loc_buf_" + std::to_string(bufCtr++));
+    }
+  });
   module->walk([&](ep2::InitOp op) {
     if (isa<ep2::StructType>(op->getResult(0).getType()) &&
         !cast<ep2::StructType>(op->getResult(0).getType()).getIsEvent()) {

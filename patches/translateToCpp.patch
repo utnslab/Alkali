@@ -1,5 +1,5 @@
 diff --git a/mlir/lib/Target/Cpp/TranslateToCpp.cpp b/mlir/lib/Target/Cpp/TranslateToCpp.cpp
-index 4645ca4b206e..a1e5c231144d 100644
+index 4645ca4b206e..af5bfb7ebc5d 100644
 --- a/mlir/lib/Target/Cpp/TranslateToCpp.cpp
 +++ b/mlir/lib/Target/Cpp/TranslateToCpp.cpp
 @@ -24,6 +24,7 @@
@@ -10,7 +10,7 @@ index 4645ca4b206e..a1e5c231144d 100644
  
  #define DEBUG_TYPE "translate-to-cpp"
  
-@@ -417,9 +418,173 @@ static LogicalResult printOperation(CppEmitter &emitter, emitc::CallOp callOp) {
+@@ -417,9 +418,186 @@ static LogicalResult printOperation(CppEmitter &emitter, emitc::CallOp callOp) {
    raw_ostream &os = emitter.ostream();
    Operation &op = *callOp.getOperation();
  
@@ -50,8 +50,14 @@ index 4645ca4b206e..a1e5c231144d 100644
 +      os << (*callOp.getArgs())[0].cast<StringAttr>().getValue();
 +    }
 +    os << " = ";
-+    os << ((*callOp.getArgs()).size() > 1 && (*callOp.getArgs())[1].cast<IntegerAttr>().getValue().getSExtValue() ? "*" : "");
-+    os << emitter.getOrCreateName(op.getOperand(0));
++    // support an embedded struct access.
++    if ((*callOp.getArgs()).size() >= 3 && (*callOp.getArgs())[2].cast<IntegerAttr>().getValue().getSExtValue()) {
++      os << emitter.getOrCreateName(op.getOperand(0)) << "->f";
++      os << (*callOp.getArgs())[0].cast<IntegerAttr>().getValue();
++    } else {
++      os << ((*callOp.getArgs()).size() > 1 && (*callOp.getArgs())[1].cast<IntegerAttr>().getValue().getSExtValue() ? "*" : "");
++      os << emitter.getOrCreateName(op.getOperand(0));
++    }
 +    return success();
 +  } else if (callOp.getCallee() == "__ep2_intrin_incr_ptr") {
 +    os << emitter.getOrCreateName(op.getOperand(0)) << " += ";
@@ -88,9 +94,13 @@ index 4645ca4b206e..a1e5c231144d 100644
 +    os << emitter.getOrCreateName(op.getOperand(1)) << " : ";
 +    os << emitter.getOrCreateName(op.getOperand(2)) << ")";
 +    return success();
-+  } else if (callOp.getCallee().starts_with("__ep2_intrin_memcpy_")) {
++  } else if (callOp.getCallee().starts_with("__ep2_intrin_memcpy_") || 
++             callOp.getCallee().starts_with("__ep2_intrin_memcpybuf_")) {
++
++    bool notBufCopy = callOp.getCallee().starts_with("__ep2_intrin_memcpy_");
++
 +    // extract real name
-+    llvm::StringRef realCallee = callOp.getCallee().substr(20);
++    llvm::StringRef realCallee = callOp.getCallee().substr(notBufCopy ? 20 : 23);
 +    os << realCallee << "(";
 +    int xferOffset = (*callOp.getArgs())[0].cast<IntegerAttr>().getValue().getSExtValue();
 +    int tag = (*callOp.getArgs())[2].cast<IntegerAttr>().getValue().getSExtValue();
@@ -107,8 +117,13 @@ index 4645ca4b206e..a1e5c231144d 100644
 +      xferOffset = ~xferOffset;
 +      os << "&" << emitter.getOrCreateName(op.getOperand(0)) << "->f" << xferOffset << ", ";
 +    }
-+    os << emitter.getOrCreateName(op.getOperand(1)) << ".buf + ";
-+    os << emitter.getOrCreateName(op.getOperand(1)) << ".offs, ";
++
++    if (notBufCopy) {
++      os << "&" << emitter.getOrCreateName(op.getOperand(1)) << "->f" << xferOffset << ", ";
++    } else {
++      os << emitter.getOrCreateName(op.getOperand(1)) << ".buf + ";
++      os << emitter.getOrCreateName(op.getOperand(1)) << ".offs, ";
++    }
 +
 +    int sz = (*callOp.getArgs())[1].cast<IntegerAttr>().getValue().getSExtValue();
 +    if (tag != 2) {
@@ -165,9 +180,7 @@ index 4645ca4b206e..a1e5c231144d 100644
 +    }
 +    return success();
 +  } else if (callOp.getCallee() == "__ep2_intrin_xfer2gpr" ||
-+             callOp.getCallee() == "__ep2_intrin_gpr2xfer" ||
-+             callOp.getCallee() == "__ep2_intrin_mem2gpr" ||
-+             callOp.getCallee() == "__ep2_intrin_gpr2mem") {
++             callOp.getCallee() == "__ep2_intrin_gpr2xfer") {
 +    os << "*(" << emitter.getOrCreateName(op.getOperand(1)) << ") = *(";
 +    os << emitter.getOrCreateName(op.getOperand(0)) << ")";
 +    return success();
@@ -187,7 +200,7 @@ index 4645ca4b206e..a1e5c231144d 100644
  
    auto emitArgs = [&](Attribute attr) -> LogicalResult {
      if (auto t = dyn_cast<IntegerAttr>(attr)) {
-@@ -451,10 +616,15 @@ static LogicalResult printOperation(CppEmitter &emitter, emitc::CallOp callOp) {
+@@ -451,10 +629,15 @@ static LogicalResult printOperation(CppEmitter &emitter, emitc::CallOp callOp) {
  
    os << "(";
  
@@ -207,7 +220,16 @@ index 4645ca4b206e..a1e5c231144d 100644
    if (failed(emittedArgs))
      return failure();
    os << ")";
-@@ -1046,10 +1216,11 @@ LogicalResult CppEmitter::emitType(Location loc, Type type) {
+@@ -787,7 +970,7 @@ StringRef CppEmitter::getOrCreateName(Block &block) {
+ bool CppEmitter::shouldMapToUnsigned(IntegerType::SignednessSemantics val) {
+   switch (val) {
+   case IntegerType::Signless:
+-    return false;
++    return true;
+   case IntegerType::Signed:
+     return false;
+   case IntegerType::Unsigned:
+@@ -1046,10 +1229,11 @@ LogicalResult CppEmitter::emitType(Location loc, Type type) {
    if (auto iType = dyn_cast<IntegerType>(type)) {
      switch (iType.getWidth()) {
      case 1:

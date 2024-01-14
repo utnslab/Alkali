@@ -6,8 +6,8 @@
 #include "extern/extern_net_meta.h"
 
 typedef __packed struct __int48 {
-	int8_t storage[6];
-} int48_t;
+	uint8_t storage[6];
+} uint48_t;
 
 __packed struct __buf_t {
 	char* buf;
@@ -16,100 +16,100 @@ __packed struct __buf_t {
 };
 
 __packed struct pkt_info_t {
-	int32_t f0;
-	int32_t f1;
-	int32_t f2;
+	uint32_t f0;
+	uint32_t f1;
+	uint32_t f2;
 };
 
 __packed struct eth_header_t {
-	int48_t f0;
-	int48_t f1;
-	int16_t f2;
-	int8_t pad0[2];
+	uint48_t f0;
+	uint48_t f1;
+	uint16_t f2;
+	uint8_t pad0[2];
 };
 
 __packed struct ip_header_t {
-	int16_t f0;
-	int16_t f1;
-	int16_t f2;
-	int16_t f3;
-	int16_t f4;
-	int16_t f5;
-	int32_t f6;
-	int32_t f7;
-	int32_t f8;
+	uint16_t f0;
+	uint16_t f1;
+	uint16_t f2;
+	uint16_t f3;
+	uint16_t f4;
+	uint16_t f5;
+	uint32_t f6;
+	uint32_t f7;
+	uint32_t f8;
 };
 
 __packed struct tcp_header_t {
-	int16_t f0;
-	int16_t f1;
-	int32_t f2;
-	int32_t f3;
-	int8_t f4;
-	int8_t f5;
-	int16_t f6;
-	int16_t f7;
-	int16_t f8;
+	uint16_t f0;
+	uint16_t f1;
+	uint32_t f2;
+	uint32_t f3;
+	uint8_t f4;
+	uint8_t f5;
+	uint16_t f6;
+	uint16_t f7;
+	uint16_t f8;
 };
 
 __packed struct flow_state_t {
-	int32_t f0;
-	int16_t f1;
-	int16_t f2;
-	int32_t f3;
-	int32_t f4;
-	int32_t f5;
-	int32_t f6;
-	int32_t f7;
-	int32_t f8;
+	uint32_t f0;
+	uint16_t f1;
+	uint16_t f2;
+	uint32_t f3;
+	uint32_t f4;
+	uint32_t f5;
+	uint32_t f6;
+	uint32_t f7;
+	uint32_t f8;
 };
 
 __packed struct dma_write_cmd_t {
-	int32_t f0;
-	int32_t f1;
+	uint32_t f0;
+	uint32_t f1;
 };
 
 __packed struct ack_info_t {
-	int32_t f0;
-	int32_t f1;
-	int32_t f2;
+	uint32_t f0;
+	uint32_t f1;
+	uint32_t f2;
 };
 
 __packed struct context_chain_1_t {
-	struct __buf_t f0;
-	struct eth_header_t f1;
-	struct ip_header_t f2;
-	struct tcp_header_t f3;
-	int16_t f4;
-	int32_t ctx_id;
+	struct eth_header_t f0;
+	struct ip_header_t f1;
+	struct tcp_header_t f2;
+	struct __buf_t f3;
+	uint16_t f4;
+	uint32_t ctx_id;
 };
 
 __packed struct event_param_NET_RECV {
 	struct __buf_t f0;
 	struct recv_meta_t meta;
-	struct context_chain_1_t* ctx;
+	__shared __cls struct context_chain_1_t* ctx;
 };
 
 __packed struct event_param_OoO_DETECT {
 	struct pkt_info_t f0;
-	struct context_chain_1_t* ctx;
+	__shared __cls struct context_chain_1_t* ctx;
 };
 
 __packed struct event_param_DMA_WRITE_REQ {
 	struct __buf_t f0;
 	struct dma_write_cmd_t f1;
-	struct context_chain_1_t* ctx;
+	__shared __cls struct context_chain_1_t* ctx;
 };
 
 __packed struct event_param_ACK_GEN {
 	struct ack_info_t f0;
-	struct context_chain_1_t* ctx;
+	__shared __cls struct context_chain_1_t* ctx;
 };
 
 __packed struct event_param_NET_SEND {
 	struct __buf_t f0;
 	struct send_meta_t meta;
-	struct context_chain_1_t* ctx;
+	__shared __cls struct context_chain_1_t* ctx;
 };
 
 #define WORKQ_SIZE_ACK_GEN 256
@@ -131,29 +131,21 @@ CLS_WORKQ_DECLARE(workq_OoO_DETECT_2, WORKQ_SIZE_OoO_DETECT);
 __packed struct table_i16_flow_state_t_16_t {
 	struct flow_state_t table[16];
 };
-__shared __lmem struct table_i16_flow_state_t_16_t table_22;
-__shared __lmem struct table_i16_flow_state_t_16_t table_25;
+__shared __lmem struct table_i16_flow_state_t_16_t table_34;
+__shared __lmem struct table_i16_flow_state_t_16_t table_37;
 
-EMEM_CONTEXTQ_DECLARE(context_chain_1_t, context_chain_pool, 2048);
-MEM_RING_INIT(context_chain_ring, 2048);
+CLS_CONTEXTQ_DECLARE(context_chain_1_t, context_chain_pool, 128);
+__shared __cls int context_chain_ring_qHead;
 
 __forceinline static void init_context_chain_ring() {
-	unsigned int idx, rnum, raddr_hi, init_range;
-	init_range = IF_SIMULATION ? 10 : 2048;
 	if (ctx() == 0) {
-		rnum = MEM_RING_GET_NUM(context_chain_ring);
-		raddr_hi = MEM_RING_GET_MEMADDR(context_chain_ring);
-		for (idx=1; idx<init_range; idx++) mem_ring_journal_fast(rnum, raddr_hi, idx);
+		context_chain_ring_qHead = 0;
 	}
-	for (idx=0; idx<init_range; ++idx) context_chain_pool[idx].ctx_id = idx;
 }
 
-__forceinline static struct context_chain_1_t* alloc_context_chain_ring_entry() {
-	__xread unsigned int context_idx;
-	unsigned int rnum, raddr_hi;
-	rnum = MEM_RING_GET_NUM(context_chain_ring);
-	raddr_hi = MEM_RING_GET_MEMADDR(context_chain_ring);
-	while (mem_ring_get(rnum, raddr_hi, &context_idx, sizeof(context_idx)) != 0);
+__forceinline static __shared __cls struct context_chain_1_t* alloc_context_chain_ring_entry() {
+	__xread int context_idx;
+	__asm cls[test_add_imm, context_idx, &context_chain_ring_qHead, 0, 1];
 	return &context_chain_pool[context_idx];
 }
 

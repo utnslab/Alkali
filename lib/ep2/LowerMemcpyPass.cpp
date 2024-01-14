@@ -15,6 +15,8 @@
 #include <climits>
 #include <algorithm>
 
+#include "Utils.h"
+
 using namespace mlir;
 
 namespace mlir {
@@ -87,7 +89,7 @@ struct LowerMemcpyPattern : public OpRewritePattern<emitc::CallOp> {
       return memberNum;
     };
 
-    auto emitMemIntrinsic = [&, this](std::string intrinsic, bool isWrite, mlir::Operation* xfer, int offs, int sz) {
+    auto emitMemIntrinsic = [&](std::string intrinsic, bool isWrite, bool usePktBuf, mlir::Operation* xfer, int offs, int sz) {
       int memberNum = getMemberPos(xfer, offs);
 
       int tag = op.getArgs().value().getValue()[2].cast<IntegerAttr>().getValue().getLimitedValue();
@@ -96,51 +98,78 @@ struct LowerMemcpyPattern : public OpRewritePattern<emitc::CallOp> {
       mlir::ArrayAttr args = rewriter.getI32ArrayAttr({~memberNum, sz, tag});
       mlir::ArrayAttr templ_args;
 
+      // rewrite intrinsic, since netronome memcpy intrinsics are named funny sometimes.
+      if (intrinsic == "__ep2_intrin_memcpy_cls_write32") {
+        intrinsic = "__ep2_intrin_memcpy_cls_write";
+      } else if (intrinsic == "__ep2_intrin_memcpy_cls_read32") {
+        intrinsic = "__ep2_intrin_memcpy_cls_read";
+      } else if (intrinsic == "__ep2_intrin_memcpy_cls_write8") {
+        intrinsic = "__ep2_intrin_ctx_write";
+        args = rewriter.getI32ArrayAttr({memberNum, false, true});
+      } else if (intrinsic == "__ep2_intrin_memcpy_cls_read8") {
+        assert(false && "Unsupported now");
+      }
       rewriter.create<emitc::CallOp>(op->getLoc(), resTypes, rewriter.getStringAttr(intrinsic), args, templ_args, ValueRange{xfer->getResult(0), isWrite ? op->getOperand(0) : op->getOperand(1)});
 
-      // emit increment
-      llvm::SmallVector<Type> resTypes3 = {};
-      mlir::ArrayAttr args3 = rewriter.getI32ArrayAttr({isWrite, sz});
-      mlir::ArrayAttr templ_args3;
-      rewriter.create<emitc::CallOp>(op->getLoc(), resTypes3, rewriter.getStringAttr("__ep2_intrin_incr_offs"), args3, templ_args3, ValueRange{isWrite ? op->getOperand(0) : op->getOperand(1)});
+      if (usePktBuf) {
+        // emit increment
+        llvm::SmallVector<Type> resTypes3 = {};
+        mlir::ArrayAttr args3 = rewriter.getI32ArrayAttr({isWrite, sz});
+        mlir::ArrayAttr templ_args3;
+        rewriter.create<emitc::CallOp>(op->getLoc(), resTypes3, rewriter.getStringAttr("__ep2_intrin_incr_offs"), args3, templ_args3, ValueRange{isWrite ? op->getOperand(0) : op->getOperand(1)});
+      }
     };
 
-    auto decomposeMemcpy = [&, this](bool isWrite, mlir::Operation* xfer) {
-      std::string opPrefix = isWrite ? "write" : "read";
-      opPrefix = "__ep2_intrin_memcpy_mem_" + opPrefix;
+    auto decomposeMemcpy = [&](bool isWrite, bool usePktBuf, MemType mem, mlir::Operation* xfer) {
+      std::string opPrefix = isWrite ? "_write" : "_read";
+      opPrefix = std::string{"__ep2_intrin_memcpy"} + (usePktBuf ? "buf_" : "_") + toStringFunc(mem) + opPrefix;
 
       const auto& args = op.getArgs().value().getValue();
       int szOrig = args[1].cast<IntegerAttr>().getValue().getLimitedValue();
       assert(szOrig >= 0);
+
+      if (!isWrite) {
+        /* we are copying into a register, which is size multiple of 4 bytes.
+           hence, we can read junk off the boundaries, up to 4 bytes. */
+        szOrig = ((szOrig + 3) / 4) * 4;
+      }
+
       int offOrig = args[0].cast<IntegerAttr>().getValue().getLimitedValue();
 
-      // Netronome supports r/w aligned to 64,32,8-bit boundaries.
-      // For simplicity, just use 32,8-bit. Max size is 128 for 32-bit, 32 for 8-bit.
-      bool canUse32 = true;
-      auto doEmission = [&](bool doEmit){
+      auto doEmission = [&](bool doEmit, bool& canUseFast, int fastMaxSize, int fastAlign, int slowMaxSize, int slowAlign) {
         int sz = szOrig;
         int off = offOrig;
         while (sz > 0) {
           if (getMemberPos(xfer, off) == -1) {
-            canUse32 = false;
+            canUseFast = false;
             break;
           }
-          if (canUse32 && sz >= 4) {
-            int sz32 = std::min(128, (sz/4)*4);
-            if (doEmit) emitMemIntrinsic(opPrefix + std::string{"32"}, isWrite, xfer, off, sz32);
-            sz -= sz32;
-            off += sz32;
-          } else if (sz >= 1) {
-            int sz8 = std::min(32, sz);
-            if (doEmit) emitMemIntrinsic(opPrefix + std::string{"8"}, isWrite, xfer, off, sz8);
-            sz -= sz8;
-            off += sz8;
+          if (canUseFast && sz >= fastAlign) {
+            int szFast = std::min(fastMaxSize, (sz/fastAlign)*fastAlign);
+            if (doEmit) emitMemIntrinsic(opPrefix + std::to_string(fastAlign*8), isWrite, usePktBuf, xfer, off, szFast);
+            sz -= szFast;
+            off += szFast;
+          } else if (sz >= slowAlign) {
+            int szSlow = std::min(slowMaxSize, sz);
+            if (doEmit) emitMemIntrinsic(opPrefix + std::to_string(slowAlign*8), isWrite, usePktBuf, xfer, off, szSlow);
+            sz -= szSlow;
+            off += szSlow;
           }
         }
       };
 
-      doEmission(false);
-      doEmission(true);
+      assert(mem == MemType::EMEM || mem == MemType::CLS);
+      if (mem == MemType::EMEM) {
+        // Netronome supports r/w aligned to 64,32,8-bit boundaries.
+        // For simplicity, just use 32,8-bit. Max size is 128 for 32-bit, 32 for 8-bit.
+        bool canUse32 = true;
+        doEmission(false, canUse32, 128, 4, 32, 1);
+        doEmission(true, canUse32, 128, 4, 32, 1);
+      } else if (mem == MemType::CLS) {
+        bool canUse32 = true;
+        doEmission(false, canUse32, 128, 4, 32, 1);
+        doEmission(true, canUse32, 128, 4, 32, 1);
+      }
     };
 
     auto convertToXferType = [&](mlir::Type ty) {
@@ -159,7 +188,7 @@ struct LowerMemcpyPattern : public OpRewritePattern<emitc::CallOp> {
       llvm::SmallVector<Type> resTypes = {};
       mlir::ArrayAttr args = op.getArgs().value();
       mlir::ArrayAttr templ_args;
-      auto bulkMemcpy = rewriter.create<emitc::CallOp>(op->getLoc(), resTypes, rewriter.getStringAttr("__ep2_intrin_memcpy_bulk_memcpy"), args, templ_args, op->getOperands());
+      auto bulkMemcpy = rewriter.create<emitc::CallOp>(op->getLoc(), resTypes, rewriter.getStringAttr("__ep2_intrin_memcpybuf_bulk_memcpy"), args, templ_args, op->getOperands());
 
       llvm::SmallVector<Type> resTypes3 = {};
       mlir::ArrayAttr args3 = rewriter.getI32ArrayAttr({2, INT32_MIN});
@@ -167,20 +196,20 @@ struct LowerMemcpyPattern : public OpRewritePattern<emitc::CallOp> {
       rewriter.create<emitc::CallOp>(op->getLoc(), resTypes3, rewriter.getStringAttr("__ep2_intrin_incr_offs"), args3, templ_args3, op->getOperands());
 
       rewriter.replaceOp(op, bulkMemcpy);
-    } else if (isLoc0 && isBuf1) {
+    } else if (isLoc0) {
       // Copy from mem to transfer register (assume packet buffers stored in EMEM).
       // Assume rt_buf is aligned at alloc wide enough.
       mlir::Operation* locBuf = followUpdateOps(opd0);
       std::string newName = cast<emitc::VariableOp>(locBuf).getValue().cast<emitc::OpaqueAttr>().getValue().str() + "_xfer";
       mlir::Operation* xferVar = rewriter.create<emitc::VariableOp>(op->getLoc(), convertToXferType(locBuf->getResultTypes()[0]), emitc::OpaqueAttr::get(getContext(), newName));
 
-      decomposeMemcpy(false, xferVar);
+      decomposeMemcpy(false, isBuf1, isBuf1 ? MemType::EMEM : MemType::CLS, xferVar);
 
       llvm::SmallVector<Type> resTypes = {};
       mlir::ArrayAttr args;
       mlir::ArrayAttr templ_args;
       rewriter.replaceOpWithNewOp<emitc::CallOp>(op, resTypes, rewriter.getStringAttr("__ep2_intrin_xfer2gpr"), args, templ_args, ValueRange{xferVar->getResult(0), locBuf->getResult(0)});
-    } else if (isBuf0 && isLoc1) {
+    } else if (isLoc1) {
       mlir::Operation* locBuf = followUpdateOps(opd1);
       mlir::Operation* xferVar = rewriter.create<emitc::VariableOp>(op->getLoc(), convertToXferType(locBuf->getResultTypes()[0]), emitc::OpaqueAttr::get(getContext(), cast<emitc::VariableOp>(locBuf).getValue().cast<emitc::OpaqueAttr>().getValue().str() + "_xfer"));
 
@@ -189,24 +218,8 @@ struct LowerMemcpyPattern : public OpRewritePattern<emitc::CallOp> {
       mlir::ArrayAttr templ_args;
       auto copy = rewriter.create<emitc::CallOp>(op->getLoc(), resTypes, rewriter.getStringAttr("__ep2_intrin_gpr2xfer"), args, templ_args, ValueRange{locBuf->getResult(0), xferVar->getResult(0)});
 
-      decomposeMemcpy(true, xferVar);
+      decomposeMemcpy(true, isBuf0, isBuf0 ? MemType::EMEM : MemType::CLS, xferVar);
       rewriter.replaceOp(op, copy);
-    } else if (isLoc0) {
-      mlir::Operation* locBuf = followUpdateOps(opd0);
-      mlir::Operation* memBuf = followUpdateOps(opd1);
-
-      llvm::SmallVector<Type> resTypes = {};
-      mlir::ArrayAttr args;
-      mlir::ArrayAttr templ_args;
-      rewriter.replaceOpWithNewOp<emitc::CallOp>(op, resTypes, rewriter.getStringAttr("__ep2_intrin_mem2gpr"), args, templ_args, ValueRange{memBuf->getResult(0), locBuf->getResult(0)});
-    } else if (isLoc1) {
-      mlir::Operation* memBuf = followUpdateOps(opd0);
-      mlir::Operation* locBuf = followUpdateOps(opd1);
-
-      llvm::SmallVector<Type> resTypes = {};
-      mlir::ArrayAttr args;
-      mlir::ArrayAttr templ_args;
-      rewriter.replaceOpWithNewOp<emitc::CallOp>(op, resTypes, rewriter.getStringAttr("__ep2_intrin_gpr2mem"), args, templ_args, ValueRange{locBuf->getResult(0), memBuf->getResult(0)});
     } else {
       op->dump();
       // should be a context/table copy.

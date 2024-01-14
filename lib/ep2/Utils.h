@@ -66,6 +66,34 @@ static TableInfo getTableStr(ep2::TableType type) {
   return info;
 }
 
+static const char* toStringDecl(MemType ty) {
+  switch (ty) {
+    case MemType::LMEM: return "LMEM";
+    case MemType::CLS: return "CLS";
+    case MemType::CTM: return "CTM";
+    case MemType::IMEM: return "IMEM";
+    case MemType::EMEM: return "EMEM";
+    default: {
+      assert(false && "Unsupported memtype");
+      return nullptr;
+    }
+  }
+}
+
+static const char* toStringFunc(MemType ty) {
+  switch (ty) {
+    case MemType::LMEM: return "lmem";
+    case MemType::CLS: return "cls";
+    case MemType::CTM: return "ctm";
+    case MemType::IMEM: return "mem";
+    case MemType::EMEM: return "mem";
+    default: {
+      assert(false && "Unsupported memtype");
+      return nullptr;
+    }
+  }
+}
+
 }
 }
 

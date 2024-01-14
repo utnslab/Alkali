@@ -23,20 +23,6 @@ using namespace mlir;
 namespace mlir {
 namespace ep2 {
 
-static const char* toString(MemType ty) {
-  switch (ty) {
-    case MemType::LMEM: return "LMEM";
-    case MemType::CLS: return "CLS";
-    case MemType::CTM: return "CTM";
-    case MemType::IMEM: return "IMEM";
-    case MemType::EMEM: return "EMEM";
-    default: {
-      assert(false && "Unsupported memtype");
-      return nullptr;
-    }
-  }
-}
-
 static unsigned calcSize(mlir::Type ty) {
   if (isa<mlir::IntegerType>(ty)) {
     return cast<mlir::IntegerType>(ty).getWidth()/8;
@@ -140,8 +126,8 @@ void EmitNetronomePass::runOnOperation() {
         continue;
       }
       fout_prog_hdr << "typedef __packed struct __int" << width << " {\n";
-      fout_prog_hdr << "\tint8_t storage[" << (width/8) << "];\n";
-      fout_prog_hdr << "} int48_t;\n\n";
+      fout_prog_hdr << "\tuint8_t storage[" << (width/8) << "];\n";
+      fout_prog_hdr << "} uint48_t;\n\n";
     }
 
     fout_prog_hdr << "__packed struct __buf_t {\n";
@@ -169,19 +155,19 @@ void EmitNetronomePass::runOnOperation() {
             fout_prog_hdr << "\tstruct " << cast<LLVM::LLVMStructType>(ty).getName().str() << " f" << i << ";\n";
           }
         } else if (isa<mlir::IntegerType>(ty)) {
-          fout_prog_hdr << "\tint" << cast<mlir::IntegerType>(ty).getWidth() << "_t f" << i << ";\n";
+          fout_prog_hdr << "\tuint" << cast<mlir::IntegerType>(ty).getWidth() << "_t f" << i << ";\n";
         }
         if (padPos < padding.size() && padding[padPos].first == i) {
-          fout_prog_hdr << "\tint8_t pad" << padPos << "[" << padding[padPos].second << "];\n";
+          fout_prog_hdr << "\tuint8_t pad" << padPos << "[" << padding[padPos].second << "];\n";
           padPos += 1;
         }
       }
       if (isContext) {
-        fout_prog_hdr << "\tint32_t ctx_id;\n";
+        fout_prog_hdr << "\tuint32_t ctx_id;\n";
       } else if (isEvent) {
         if (pr.first == "event_param_NET_RECV") fout_prog_hdr << "\tstruct recv_meta_t meta;\n";
         if (pr.first == "event_param_NET_SEND") fout_prog_hdr << "\tstruct send_meta_t meta;\n";
-        fout_prog_hdr << "\tstruct context_chain_1_t* ctx;\n";
+        fout_prog_hdr << "\t__shared __cls struct context_chain_1_t* ctx;\n";
       }
       fout_prog_hdr << "};\n\n";
     }
@@ -192,11 +178,11 @@ void EmitNetronomePass::runOnOperation() {
       std::string eventName = q.first;
 
       fout_prog_hdr << "#define WORKQ_SIZE_" << eventName << " " << q.second.size << '\n';
-      fout_prog_hdr << "#define WORKQ_TYPE_" << eventName << " " << "MEM_TYEP_" << toString(q.second.memType) << '\n';
+      fout_prog_hdr << "#define WORKQ_TYPE_" << eventName << " " << "MEM_TYEP_" << toStringDecl(q.second.memType) << '\n';
 
       for (int replica : q.second.replicas) {
         fout_prog_hdr << "#define WORKQ_ID_" << eventName << "_" << (replica+1) << " " << (workq_id_incr++) << '\n';
-        fout_prog_hdr << toString(q.second.memType) << "_WORKQ_DECLARE(workq_" << eventName << "_" << (replica+1) << ", WORKQ_SIZE_" << eventName << ");\n\n";
+        fout_prog_hdr << toStringDecl(q.second.memType) << "_WORKQ_DECLARE(workq_" << eventName << "_" << (replica+1) << ", WORKQ_SIZE_" << eventName << ");\n\n";
       }
     }
 
@@ -217,27 +203,21 @@ void EmitNetronomePass::runOnOperation() {
     std::string declType = "context_chain_1_t";
     std::string declId = "context_chain_pool";
     std::string declName = "context_chain_ring";
-    std::string declSize = "2048";
-    std::string declPlace = toString(MemType::EMEM);
+    std::string declSize = "128";
+    std::string declPlace = toStringDecl(MemType::CLS);
 
     fout_prog_hdr << declPlace << "_CONTEXTQ_DECLARE(" << declType << ", " << declId << ", " << declSize << ");\n";
-    fout_prog_hdr << "MEM_RING_INIT(" << declName << ", " << declSize << ");\n\n";
+    fout_prog_hdr << "__shared __cls int " << declName << "_qHead;\n\n";
+
     fout_prog_hdr << "__forceinline static void init_" << declName << "() {\n";
-    fout_prog_hdr << "\tunsigned int idx, rnum, raddr_hi, init_range;\n";
-    fout_prog_hdr << "\tinit_range = IF_SIMULATION ? 10 : " << declSize << ";\n";
     fout_prog_hdr << "\tif (ctx() == 0) {\n";
-    fout_prog_hdr << "\t\trnum = MEM_RING_GET_NUM(" << declName << ");\n";
-    fout_prog_hdr << "\t\traddr_hi = MEM_RING_GET_MEMADDR(" << declName << ");\n";
-    fout_prog_hdr << "\t\tfor (idx=1; idx<init_range; idx++) mem_ring_journal_fast(rnum, raddr_hi, idx);\n";
+    fout_prog_hdr << "\t\t" << declName << "_qHead = 0;\n";
     fout_prog_hdr << "\t}\n";
-    fout_prog_hdr << "\tfor (idx=0; idx<init_range; ++idx) " << declId << "[idx].ctx_id = idx;\n";
     fout_prog_hdr << "}\n\n";
-    fout_prog_hdr << "__forceinline static struct " << declType << "* alloc_" << declName << "_entry() {\n";
-    fout_prog_hdr << "\t__xread unsigned int context_idx;\n";
-    fout_prog_hdr << "\tunsigned int rnum, raddr_hi;\n";
-    fout_prog_hdr << "\trnum = MEM_RING_GET_NUM(" << declName << ");\n";
-    fout_prog_hdr << "\traddr_hi = MEM_RING_GET_MEMADDR(" << declName << ");\n";
-    fout_prog_hdr << "\twhile (mem_ring_get(rnum, raddr_hi, &context_idx, sizeof(context_idx)) != 0);\n";
+
+    fout_prog_hdr << "__forceinline static __shared __cls struct " << declType << "* alloc_" << declName << "_entry() {\n";
+    fout_prog_hdr << "\t__xread int context_idx;\n";
+    fout_prog_hdr << "\t__asm cls[test_add_imm, context_idx, &" << declName << "_qHead, 0, 1];\n";
     fout_prog_hdr << "\treturn &" << declId << "[context_idx];\n";
     fout_prog_hdr << "}\n\n";
 
