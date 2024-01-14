@@ -5,14 +5,14 @@
 
 static struct pkt_info_t _loc_buf_33;
 __xrw static struct pkt_info_t _loc_buf_33_xfer;
+static struct tcp_header_t _loc_buf_29;
+__xrw static struct tcp_header_t _loc_buf_29_xfer;
 static struct ip_header_t _loc_buf_10;
 __xrw static struct ip_header_t _loc_buf_10_xfer;
 static struct eth_header_t _loc_buf_9;
 __xrw static struct eth_header_t _loc_buf_9_xfer;
 static struct tcp_header_t _loc_buf_11;
 __xrw static struct tcp_header_t _loc_buf_11_xfer;
-static struct tcp_header_t _loc_buf_29;
-__xrw static struct tcp_header_t _loc_buf_29_xfer;
 static struct eth_header_t _loc_buf_27;
 __xrw static struct eth_header_t _loc_buf_27_xfer;
 static struct ip_header_t _loc_buf_28;
@@ -80,7 +80,7 @@ void __event___handler_NET_RECV_process_packet_4() {
   v8 = &_loc_buf_9;
   v9 = &_loc_buf_9_xfer;
   mem_read32(&v9->f0, v6.buf + v6.offs, 16);
-  v6.offs += 16;
+  v6.offs += 14;
   *(v8) = *(v9);
   v10 = &_loc_buf_10;
   v11 = &_loc_buf_10_xfer;

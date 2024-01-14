@@ -89,13 +89,13 @@ struct LowerMemcpyPattern : public OpRewritePattern<emitc::CallOp> {
       return memberNum;
     };
 
-    auto emitMemIntrinsic = [&](std::string intrinsic, bool isWrite, bool usePktBuf, mlir::Operation* xfer, int offs, int sz) {
+    auto emitMemIntrinsic = [&](std::string intrinsic, bool isWrite, bool usePktBuf, mlir::Operation* xfer, int offs, int szCopy, int szAdvance) {
       int memberNum = getMemberPos(xfer, offs);
 
       int tag = op.getArgs().value().getValue()[2].cast<IntegerAttr>().getValue().getLimitedValue();
       llvm::SmallVector<Type> resTypes = {};
       // convey to cpp translator to generate member offset here
-      mlir::ArrayAttr args = rewriter.getI32ArrayAttr({~memberNum, sz, tag});
+      mlir::ArrayAttr args = rewriter.getI32ArrayAttr({~memberNum, szCopy, tag});
       mlir::ArrayAttr templ_args;
 
       // rewrite intrinsic, since netronome memcpy intrinsics are named funny sometimes.
@@ -114,7 +114,7 @@ struct LowerMemcpyPattern : public OpRewritePattern<emitc::CallOp> {
       if (usePktBuf) {
         // emit increment
         llvm::SmallVector<Type> resTypes3 = {};
-        mlir::ArrayAttr args3 = rewriter.getI32ArrayAttr({isWrite, sz});
+        mlir::ArrayAttr args3 = rewriter.getI32ArrayAttr({isWrite, szAdvance});
         mlir::ArrayAttr templ_args3;
         rewriter.create<emitc::CallOp>(op->getLoc(), resTypes3, rewriter.getStringAttr("__ep2_intrin_incr_offs"), args3, templ_args3, ValueRange{isWrite ? op->getOperand(0) : op->getOperand(1)});
       }
@@ -126,6 +126,7 @@ struct LowerMemcpyPattern : public OpRewritePattern<emitc::CallOp> {
 
       const auto& args = op.getArgs().value().getValue();
       int szOrig = args[1].cast<IntegerAttr>().getValue().getLimitedValue();
+      int szAdvance = szOrig;
       assert(szOrig >= 0);
 
       if (!isWrite) {
@@ -146,12 +147,12 @@ struct LowerMemcpyPattern : public OpRewritePattern<emitc::CallOp> {
           }
           if (canUseFast && sz >= fastAlign) {
             int szFast = std::min(fastMaxSize, (sz/fastAlign)*fastAlign);
-            if (doEmit) emitMemIntrinsic(opPrefix + std::to_string(fastAlign*8), isWrite, usePktBuf, xfer, off, szFast);
+            if (doEmit) emitMemIntrinsic(opPrefix + std::to_string(fastAlign*8), isWrite, usePktBuf, xfer, off, szFast, std::min(szFast, szAdvance - off));
             sz -= szFast;
             off += szFast;
           } else if (sz >= slowAlign) {
             int szSlow = std::min(slowMaxSize, sz);
-            if (doEmit) emitMemIntrinsic(opPrefix + std::to_string(slowAlign*8), isWrite, usePktBuf, xfer, off, szSlow);
+            if (doEmit) emitMemIntrinsic(opPrefix + std::to_string(slowAlign*8), isWrite, usePktBuf, xfer, off, szSlow, std::min(szSlow, szAdvance - off));
             sz -= szSlow;
             off += szSlow;
           }

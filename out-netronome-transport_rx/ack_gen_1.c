@@ -5,10 +5,10 @@
 
 static struct eth_header_t _loc_buf_12;
 __xrw static struct eth_header_t _loc_buf_12_xfer;
-static struct tcp_header_t _loc_buf_14;
-__xrw static struct tcp_header_t _loc_buf_14_xfer;
 static struct ip_header_t _loc_buf_13;
 __xrw static struct ip_header_t _loc_buf_13_xfer;
+static struct tcp_header_t _loc_buf_14;
+__xrw static struct tcp_header_t _loc_buf_14_xfer;
 __declspec(aligned(4)) struct event_param_ACK_GEN work;
 __xrw struct event_param_ACK_GEN work_ref;
 __declspec(aligned(4)) struct event_param_NET_SEND next_work_NET_SEND;

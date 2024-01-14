@@ -5,8 +5,6 @@
 
 static struct pkt_info_t _loc_buf_31;
 __xrw static struct pkt_info_t _loc_buf_31_xfer;
-static struct ip_header_t _loc_buf_22;
-__xrw static struct ip_header_t _loc_buf_22_xfer;
 static struct eth_header_t _loc_buf_3;
 __xrw static struct eth_header_t _loc_buf_3_xfer;
 static struct tcp_header_t _loc_buf_5;
@@ -15,6 +13,8 @@ static struct ip_header_t _loc_buf_4;
 __xrw static struct ip_header_t _loc_buf_4_xfer;
 static struct eth_header_t _loc_buf_21;
 __xrw static struct eth_header_t _loc_buf_21_xfer;
+static struct ip_header_t _loc_buf_22;
+__xrw static struct ip_header_t _loc_buf_22_xfer;
 static struct tcp_header_t _loc_buf_23;
 __xrw static struct tcp_header_t _loc_buf_23_xfer;
 __declspec(aligned(4)) struct event_param_NET_RECV work;
@@ -80,7 +80,7 @@ void __event___handler_NET_RECV_process_packet_2() {
   v8 = &_loc_buf_3;
   v9 = &_loc_buf_3_xfer;
   mem_read32(&v9->f0, v6.buf + v6.offs, 16);
-  v6.offs += 16;
+  v6.offs += 14;
   *(v8) = *(v9);
   v10 = &_loc_buf_4;
   v11 = &_loc_buf_4_xfer;

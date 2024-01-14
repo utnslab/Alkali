@@ -80,7 +80,7 @@ void __event___handler_NET_RECV_process_packet_1() {
   v8 = &_loc_buf_0;
   v9 = &_loc_buf_0_xfer;
   mem_read32(&v9->f0, v6.buf + v6.offs, 16);
-  v6.offs += 16;
+  v6.offs += 14;
   *(v8) = *(v9);
   v10 = &_loc_buf_1;
   v11 = &_loc_buf_1_xfer;

@@ -3,12 +3,12 @@
 #include "extern/extern_dma.h"
 #include "extern/extern_net.h"
 
+static struct tcp_header_t _loc_buf_17;
+__xrw static struct tcp_header_t _loc_buf_17_xfer;
 static struct ip_header_t _loc_buf_16;
 __xrw static struct ip_header_t _loc_buf_16_xfer;
 static struct eth_header_t _loc_buf_15;
 __xrw static struct eth_header_t _loc_buf_15_xfer;
-static struct tcp_header_t _loc_buf_17;
-__xrw static struct tcp_header_t _loc_buf_17_xfer;
 __declspec(aligned(4)) struct event_param_ACK_GEN work;
 __xrw struct event_param_ACK_GEN work_ref;
 __declspec(aligned(4)) struct event_param_NET_SEND next_work_NET_SEND;
