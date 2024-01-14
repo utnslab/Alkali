@@ -521,6 +521,18 @@ def ExtractValueOp : EP2_Op<"extract_value", [Pure]> {
   let results = (outs EP2_BufferType, EP2_Type:$output);
 }
 
+def ExtractOffsetOp : EP2_Op<"extract_offset", [Pure]> {
+  let summary = "extract from buffer to variable, by the offset from the begining of the buffer";
+  let description = [{
+    Extract from buffer to a variable or struct. The buffer will not be modified.
+    This is a Pure operation as it do not modify the buffer
+  }];
+
+  let arguments = (ins EP2_BufferType:$buffer, I64Attr:$offset);
+  let results = (outs EP2_Type:$output);
+  // let hasVerifier = 1;
+}
+
 //===----------------------------------------------------------------------===//
 // EmitOp
 //===----------------------------------------------------------------------===//
@@ -548,6 +560,17 @@ def EmitValueOp : EP2_Op<"emit_value", [Pure]> {
 
   let arguments = (ins EP2_BufferType:$buffer, EP2_Type:$value);
   let results = (outs EP2_BufferType);
+}
+
+// Zero copy optimizations
+def EmitOffsetOp : EP2_Op<"emit_offset", []> {
+  let summary = "emit offset op to byte addressable buffer";
+  let description = [{
+    Emit from a variable or struct to a buffer. The buffer will be modified;
+    The semantic is to prepend the header to the buffer
+  }];
+
+  let arguments = (ins EP2_BufferType:$buffer, EP2_Type:$value, I64Attr:$offset);
 }
 
 //===----------------------------------------------------------------------===//

@@ -231,9 +231,8 @@ class MappingSolver {
       }
     }
   }
-
-
 };
+
 } // local namespace
 
 void ArchMappingPass::runOnOperation() {

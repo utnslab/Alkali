@@ -35,6 +35,9 @@ add_mlir_dialect_library(MLIREP2
         HandlerReplicationPass.cpp
         LowerNoctxswapPass.cpp
 
+        Passes/ContextToMemPass.cpp
+        Passes/BufferReusePass.cpp
+
         DEPENDS
         MLIREP2OpsIncGen
         EP2OpsAttrDefsIncGen

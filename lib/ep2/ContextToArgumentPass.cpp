@@ -85,6 +85,8 @@ void rewriteEventInit(InitOp initOp, ContextBufferizationAnalysis &analysis,
   auto context = *it;
   argList.erase(it);
 
+  auto strings = llvm::map_to_vector(argList, [](Value &v){ return std::string(""); });
+
   // insert new types and values
   auto funcOp = initOp->getParentOfType<FuncOp>();
   auto &table = analysis.getContextTable(funcOp);
@@ -97,6 +99,7 @@ void rewriteEventInit(InitOp initOp, ContextBufferizationAnalysis &analysis,
     auto load =
         builder.create<LoadOp>(initOp.getLoc(), pair.second.second, ref);
     argList.push_back(load.getResult());
+    strings.push_back(pair.first().str());
   }
 
   // build
@@ -104,6 +107,10 @@ void rewriteEventInit(InitOp initOp, ContextBufferizationAnalysis &analysis,
       llvm::map_to_vector(argList, [](Value &v) { return v.getType(); });
   auto newType = builder.getType<StructType>(true, typeList, type.getName());
   auto newInitOp = builder.create<InitOp>(initOp.getLoc(), newType, argList);
+
+  auto stringList = llvm::map_to_vector(strings, [](auto &s) { return StringRef(s); });
+  newInitOp->setAttr("context_names", builder.getStrArrayAttr(stringList));
+
   initOp.replaceAllUsesWith(newInitOp.getResult());
   initOp.erase();
 }

@@ -23,6 +23,7 @@
 #include "mlir/Pass/Pass.h"
 #include "mlir/Pass/PassManager.h"
 #include "mlir/IR/BuiltinOps.h"
+#include "llvm/ADT/EquivalenceClasses.h"
 
 #include "mlir/Dialect/EmitC/IR/EmitC.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
@@ -129,7 +130,28 @@ private:
 };
 
 struct BufferAnalysis {
-  BufferAnalysis(Operation* op);
+  // Out lattic structure ...
+  struct BufferHistory {
+    Value source;
+    bool known;
+    int offset;
+    BufferHistory(Value source, bool known, int offset)
+        : source(source), known(known), offset(offset) {}
+    BufferHistory() : BufferHistory(nullptr, false, 0) {}
+    void merge(BufferHistory &rhs) {
+      known = std::tie(source, offset, source) ==
+              std::tie(rhs.source, rhs.offset, rhs.source);
+      known = known && rhs.known;
+    }
+  };
+
+  using ArgMap = std::map<int, BufferHistory>;
+
+  std::map<Block *, std::vector<ArgMap>> blockInput{};
+  llvm::EquivalenceClasses<mlir::detail::ValueImpl *> bufferClasses{};
+  std::map<Operation *, int> offsetAt{};
+
+  BufferAnalysis(Operation *op, AnalysisManager &am);
 };
 
 /// Analysis for context
@@ -408,6 +430,26 @@ struct LocalAllocAnalysis {
   bool isInvalidated(const AnalysisManager::PreservedAnalyses &pa) {
     return false;
   }
+};
+
+struct ContextToMemPass :
+        public PassWrapper<ContextToMemPass, OperationPass<ModuleOp>> {
+    void runOnOperation() final;
+    void getDependentDialects(DialectRegistry &registry) const override {
+        registry.insert<EP2Dialect, func::FuncDialect, LLVM::LLVMDialect, emitc::EmitCDialect>();
+    }
+    StringRef getArgument() const final { return "ep2-context-to-mem"; }
+    StringRef getDescription() const final { return "Restore context to memory"; }
+};
+
+struct BufferReusePass :
+        public PassWrapper<BufferReusePass, OperationPass<ModuleOp>> {
+    void runOnOperation() final;
+    void getDependentDialects(DialectRegistry &registry) const override {
+        registry.insert<EP2Dialect, func::FuncDialect, LLVM::LLVMDialect, emitc::EmitCDialect>();
+    }
+    StringRef getArgument() const final { return "ep2-buffer-reuse"; }
+    StringRef getDescription() const final { return "Reuse buffer using zero copy operators"; }
 };
 
 } // namespace ep2
