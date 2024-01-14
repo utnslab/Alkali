@@ -742,6 +742,8 @@ struct FunctionPattern : public OpConversionPattern<ep2::FuncOp> {
       return failure();
     rewriter.mergeBlocks(*res, entryBlock);
 
+    rewriter.inlineRegionBefore(funcOp.getBody(), newFuncOp.getBody(), newFuncOp.end());
+
     // remove original func
     rewriter.eraseOp(funcOp);
 
@@ -752,8 +754,6 @@ struct FunctionPattern : public OpConversionPattern<ep2::FuncOp> {
 } // namespace
 
 void LowerEmitcPass::runOnOperation() {
-  getOperation()->dump();
-
   // install analysis
   LowerStructAnalysis &lowerStructAnalysis = getAnalysis<LowerStructAnalysis>();
   ContextBufferizationAnalysis &contextAnalysis = getAnalysis<ContextBufferizationAnalysis>();
