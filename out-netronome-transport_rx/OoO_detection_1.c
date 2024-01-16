@@ -3,12 +3,12 @@
 #include "extern/extern_dma.h"
 #include "extern/extern_net.h"
 
-static struct ack_info_t _loc_buf_36;
-__xrw static struct ack_info_t _loc_buf_36_xfer;
-static struct dma_write_cmd_t _loc_buf_35;
-__xrw static struct dma_write_cmd_t _loc_buf_35_xfer;
-static struct flow_state_t lookup_buf_40;
-__xrw static struct flow_state_t lookup_buf_40_xfer;
+static struct flow_state_t _loc_buf_4;
+__xrw static struct flow_state_t _loc_buf_4_xfer;
+static struct dma_write_cmd_t _loc_buf_5;
+__xrw static struct dma_write_cmd_t _loc_buf_5_xfer;
+static struct ack_info_t _loc_buf_6;
+__xrw static struct ack_info_t _loc_buf_6_xfer;
 __declspec(aligned(4)) struct event_param_OoO_DETECT work;
 __xrw struct event_param_OoO_DETECT work_ref;
 __declspec(aligned(4)) struct event_param_ACK_GEN next_work_ACK_GEN;
@@ -26,36 +26,36 @@ void __event___handler_OoO_DETECT_OoO_detection_1() {
   __xrw struct event_param_OoO_DETECT* v6;
   __shared __cls struct context_chain_1_t* v7;
   struct pkt_info_t* v8;
-  __shared __lmem struct table_i16_flow_state_t_16_t* v9;
-  uint32_t v10;
-  uint16_t v11;
-  struct flow_state_t* v12;
-  struct dma_write_cmd_t* v13;
-  struct ack_info_t* v14;
-  uint32_t v15;
+  struct __buf_t v9;
+  __shared __lmem struct table_i16_flow_state_t_16_t* v10;
+  uint32_t v11;
+  uint16_t v12;
+  struct flow_state_t* v13;
+  struct dma_write_cmd_t* v14;
+  struct ack_info_t* v15;
   uint32_t v16;
   uint32_t v17;
   uint32_t v18;
   uint32_t v19;
   uint32_t v20;
-  char v21;
-  uint32_t v22;
+  uint32_t v21;
+  char v22;
   uint32_t v23;
   uint32_t v24;
-  char v25;
+  uint32_t v25;
   char v26;
-  uint32_t v27;
+  char v27;
   uint32_t v28;
-  struct flow_state_t* v29;
-  uint32_t v30;
+  uint32_t v29;
+  struct flow_state_t* v30;
   uint32_t v31;
-  struct flow_state_t* v32;
-  uint32_t v33;
+  uint32_t v32;
+  struct flow_state_t* v33;
   uint32_t v34;
-  struct flow_state_t* v35;
-  struct dma_write_cmd_t* v36;
+  uint32_t v35;
+  struct flow_state_t* v36;
   struct dma_write_cmd_t* v37;
-  struct __buf_t v38;
+  struct dma_write_cmd_t* v38;
   __declspec(aligned(4)) struct event_param_DMA_WRITE_REQ* v39;
   __xrw struct event_param_DMA_WRITE_REQ* v40;
   uint32_t v41;
@@ -78,93 +78,85 @@ void __event___handler_OoO_DETECT_OoO_detection_1() {
   *(v5) = *(v6);
   v7 = v5->ctx;
   v8 = &v5->f0;
-  v9 = &table_34;
-  v10 = v8->f0;
-  v11 = (uint16_t) v10;
-  v12 = &lookup_buf_40;
-  *v12 = v9->table[me_cam_lookup(v11)];
-  v13 = &_loc_buf_35;
-  v14 = &_loc_buf_36;
-  v15 = v12->f5;
-  v16 = v8->f2;
-  v17 = v15 - v16;
-  v18 = v8->f1;
-  v19 = v18 - v17;
-  v20 = v12->f4;
-  v21 = v19 < v20;
-  if (v21) {
-    goto label2;
-  } else {
+  v9 = v7->f0;
+  v10 = &table_10;
+  v11 = v8->f0;
+  v12 = (uint16_t) v11;
+  v13 = &_loc_buf_4;
+  *v13 = v10->table[me_cam_lookup(v12)];
+  v14 = &_loc_buf_5;
+  v15 = &_loc_buf_6;
+  v16 = v13->f5;
+  v17 = v8->f2;
+  v18 = v16 - v17;
+  v19 = v8->f1;
+  v20 = v19 - v18;
+  v21 = v13->f4;
+  v22 = v20 < v21;
+  if (v22) {
+    v49 = v4;
     goto label3;
+  } else {
+    goto label2;
   }
 label2:
-  v49 = v4;
-  goto label4;
+  v23 = v20 - v21;
+  v49 = v23;
+  goto label3;
 label3:
-  v22 = v19 - v20;
-  v49 = v22;
-  goto label4;
-label4:
-  goto label5;
-label5:
-  v23 = v17 + v49;
-  v24 = v18 - v23;
-  v25 = v17 <= v18;
-  if (v25) {
-    goto label6;
-  } else {
-    goto label11;
-  }
-label6:
-  v26 = v24 > v1;
+  v24 = v18 + v49;
+  v25 = v19 - v24;
+  v26 = v18 <= v19;
   if (v26) {
-    goto label7;
+    goto label4;
   } else {
-    goto label8;
+    goto label7;
   }
-label7:
-  v27 = v12->f6;
-  v28 = v20 - v24;
-  v12->f4 = v28;
-  v30 = v12->f5;
-  v31 = v30 + v24;
-  v12->f5 = v31;
-  v33 = v12->f6;
-  v34 = v33 + v24;
-  v12->f6 = v34;
-  v13->f0 = v27;
-  v13->f1 = v24;
-  v38 = v7->f3;
+label4:
+  v27 = v25 > v1;
+  if (v27) {
+    goto label5;
+  } else {
+    v50 = v13;
+    goto label6;
+  }
+label5:
+  v28 = v13->f6;
+  v29 = v21 - v25;
+  v13->f4 = v29;
+  v31 = v13->f5;
+  v32 = v31 + v25;
+  v13->f5 = v32;
+  v34 = v13->f6;
+  v35 = v34 + v25;
+  v13->f6 = v35;
+  v14->f0 = v28;
+  v14->f1 = v25;
   v39 = &next_work_DMA_WRITE_REQ;
   v39->ctx = v7;
-  v39->f0 = v38;
-  v39->f1 = *v13;
+  v39->f0 = v9;
+  v39->f1 = *v14;
   v40 = &next_work_ref_DMA_WRITE_REQ;
   *(v40) = *(v39);
   cls_workq_add_work(WORKQ_ID_DMA_WRITE_REQ, v40, sizeof(*v40));
-  v50 = v12;
-  goto label9;
-label8:
-  v50 = v12;
-  goto label9;
-label9:
-  goto label10;
-label10:
-  v9->table[me_cam_update(v11)] = *v50;
+  v50 = v13;
+  goto label6;
+label6:
+  v10->table[me_cam_update(v12)] = *v50;
   v41 = v50->f0;
-  v14->f0 = v41;
+  v15->f0 = v41;
   v43 = v50->f5;
-  v14->f1 = v43;
+  v15->f1 = v43;
   v45 = v50->f4;
-  v14->f2 = v45;
+  v15->f2 = v45;
   v47 = &next_work_ACK_GEN;
   v47->ctx = v7;
-  v47->f0 = *v14;
+  v47->f0 = *v15;
   v48 = &next_work_ref_ACK_GEN;
   *(v48) = *(v47);
   cls_workq_add_work(WORKQ_ID_ACK_GEN_1, v48, sizeof(*v48));
-  goto label11;
-label11:
+  goto label7;
+label7:
   return;
 }
 

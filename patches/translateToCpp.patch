@@ -1,5 +1,5 @@
 diff --git a/mlir/lib/Target/Cpp/TranslateToCpp.cpp b/mlir/lib/Target/Cpp/TranslateToCpp.cpp
-index 4645ca4b206e..af5bfb7ebc5d 100644
+index 4645ca4b206e..9009ec4faedb 100644
 --- a/mlir/lib/Target/Cpp/TranslateToCpp.cpp
 +++ b/mlir/lib/Target/Cpp/TranslateToCpp.cpp
 @@ -24,6 +24,7 @@
@@ -10,7 +10,7 @@ index 4645ca4b206e..af5bfb7ebc5d 100644
  
  #define DEBUG_TYPE "translate-to-cpp"
  
-@@ -417,9 +418,186 @@ static LogicalResult printOperation(CppEmitter &emitter, emitc::CallOp callOp) {
+@@ -417,9 +418,197 @@ static LogicalResult printOperation(CppEmitter &emitter, emitc::CallOp callOp) {
    raw_ostream &os = emitter.ostream();
    Operation &op = *callOp.getOperation();
  
@@ -73,7 +73,8 @@ index 4645ca4b206e..af5bfb7ebc5d 100644
 +    }
 +    return success();
 +  } else if (callOp.getCallee() == "__ep2_intrin_pkt_size_set") {
-+    os << "next_work_NET_SEND.meta.len = next_work_NET_SEND.f0.offs";
++    // TODO should choose between f0.offs vs f0.sz, depending on zero-copy buffer
++    os << "next_work_NET_SEND.meta.len = next_work_NET_SEND.f0.sz";
 +    return success();
 +  } else if (callOp.getCallee() == "__ep2_intrin_table_lookup") {
 +    if ((*callOp.getArgs())[0].cast<IntegerAttr>().getValue().getSExtValue()) {
@@ -187,11 +188,21 @@ index 4645ca4b206e..af5bfb7ebc5d 100644
 +  } else if (callOp.getCallee() == "__ep2_intrin_incr_offs") {
 +    int sz = (*callOp.getArgs())[1].cast<IntegerAttr>().getValue().getSExtValue();
 +    int tag = (*callOp.getArgs())[0].cast<IntegerAttr>().getValue().getSExtValue();
-+    os << emitter.getOrCreateName(op.getOperand(0)) << ".offs += ";
-+    if (tag != 2) {
-+      os << sz;
++    int setVal = (*callOp.getArgs())[2].cast<IntegerAttr>().getValue().getSExtValue();
++
++    os << emitter.getOrCreateName(op.getOperand(0)) << ".offs ";
++    if (setVal == -1) {
++      os << "+";
++    }
++    os << "= ";
++    if (setVal == -1) {
++      if (tag != 2) {
++        os << sz;
++      } else {
++        os << emitter.getOrCreateName(op.getOperand(1)) << ".sz - " << emitter.getOrCreateName(op.getOperand(1)) << ".offs";
++      }
 +    } else {
-+      os << emitter.getOrCreateName(op.getOperand(1)) << ".sz - " << emitter.getOrCreateName(op.getOperand(1)) << ".offs";
++      os << setVal;
 +    }
 +    return success();
 +  } else {
@@ -200,7 +211,7 @@ index 4645ca4b206e..af5bfb7ebc5d 100644
  
    auto emitArgs = [&](Attribute attr) -> LogicalResult {
      if (auto t = dyn_cast<IntegerAttr>(attr)) {
-@@ -451,10 +629,15 @@ static LogicalResult printOperation(CppEmitter &emitter, emitc::CallOp callOp) {
+@@ -451,10 +640,15 @@ static LogicalResult printOperation(CppEmitter &emitter, emitc::CallOp callOp) {
  
    os << "(";
  
@@ -220,7 +231,7 @@ index 4645ca4b206e..af5bfb7ebc5d 100644
    if (failed(emittedArgs))
      return failure();
    os << ")";
-@@ -787,7 +970,7 @@ StringRef CppEmitter::getOrCreateName(Block &block) {
+@@ -787,7 +981,7 @@ StringRef CppEmitter::getOrCreateName(Block &block) {
  bool CppEmitter::shouldMapToUnsigned(IntegerType::SignednessSemantics val) {
    switch (val) {
    case IntegerType::Signless:
@@ -229,7 +240,7 @@ index 4645ca4b206e..af5bfb7ebc5d 100644
    case IntegerType::Signed:
      return false;
    case IntegerType::Unsigned:
-@@ -1046,10 +1229,11 @@ LogicalResult CppEmitter::emitType(Location loc, Type type) {
+@@ -1046,10 +1240,11 @@ LogicalResult CppEmitter::emitType(Location loc, Type type) {
    if (auto iType = dyn_cast<IntegerType>(type)) {
      switch (iType.getWidth()) {
      case 1:

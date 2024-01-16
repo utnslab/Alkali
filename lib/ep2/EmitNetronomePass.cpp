@@ -207,17 +207,11 @@ void EmitNetronomePass::runOnOperation() {
     std::string declPlace = toStringDecl(MemType::CLS);
 
     fout_prog_hdr << declPlace << "_CONTEXTQ_DECLARE(" << declType << ", " << declId << ", " << declSize << ");\n";
-    fout_prog_hdr << "__shared __cls int " << declName << "_qHead;\n\n";
-
-    fout_prog_hdr << "__forceinline static void init_" << declName << "() {\n";
-    fout_prog_hdr << "\tif (ctx() == 0) {\n";
-    fout_prog_hdr << "\t\t" << declName << "_qHead = 0;\n";
-    fout_prog_hdr << "\t}\n";
-    fout_prog_hdr << "}\n\n";
+    fout_prog_hdr << "__shared __cls int " << declName << "_qHead = 0;\n\n";
 
     fout_prog_hdr << "__forceinline static __shared __cls struct " << declType << "* alloc_" << declName << "_entry() {\n";
-    fout_prog_hdr << "\t__xread int context_idx;\n";
-    fout_prog_hdr << "\t__asm cls[test_add_imm, context_idx, &" << declName << "_qHead, 0, 1];\n";
+    fout_prog_hdr << "\t__xrw int context_idx = 1;\n";
+    fout_prog_hdr << "\tcls_test_add(&context_idx, &" << declName << "_qHead, sizeof(context_idx));\n";
     fout_prog_hdr << "\treturn &" << declId << "[context_idx];\n";
     fout_prog_hdr << "}\n\n";
 
@@ -398,10 +392,6 @@ void EmitNetronomePass::runOnOperation() {
       }
 
       fout_stage << "\tinit_me_cam(16);\n";
-      if (isFirstStage) {
-        fout_stage << "\tinit_context_chain_ring();\n";
-      }
-
       if (eventName != "NET_RECV") {
         fout_stage << "\tinit_recv_event_workq(WORKQ_ID_" << eventName << "_" << id << ", workq_" << eventName << "_" << id << ", WORKQ_TYPE_" << eventName << ", WORKQ_SIZE_" << eventName << ", 8);\n";
       }

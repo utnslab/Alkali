@@ -265,7 +265,6 @@ struct ExtractPattern : public OpConversionPattern<ep2::ExtractOp> {
     if (!resType.isa<ep2::StructType>())
       return rewriter.notifyMatchFailure(extractOp, "Currently only support extract op on struct");
 
-    // TODO support dynamically allocated structs too
     assert(analyzer.localAllocs.find(extractOp) != analyzer.localAllocs.end());
 
     int memcpySize = calcSize(resType);
@@ -275,6 +274,40 @@ struct ExtractPattern : public OpConversionPattern<ep2::ExtractOp> {
     llvm::SmallVector<Type> resTypes2 = {};
     // xferOffs, size
     mlir::ArrayAttr args2 = rewriter.getI32ArrayAttr({0, memcpySize, 0});
+    mlir::ArrayAttr templ_args2;
+    rewriter.create<emitc::CallOp>(loc, resTypes2, rewriter.getStringAttr("__ep2_intrin_memcpy"), args2, templ_args2, ValueRange{varOp, adaptor.getBuffer()});
+    return success();
+  }
+};
+
+struct ExtractOffsetPattern : public OpConversionPattern<ep2::ExtractOffsetOp> {
+  using OpConversionPattern<ep2::ExtractOffsetOp>::OpConversionPattern;
+
+  LocalAllocAnalysis &analyzer;
+
+  ExtractOffsetPattern(TypeConverter &converter, MLIRContext *context,
+                  LocalAllocAnalysis &analyzer)
+      : OpConversionPattern<ep2::ExtractOffsetOp>(converter, context),
+        analyzer(analyzer) {}
+
+  LogicalResult
+  matchAndRewrite(ep2::ExtractOffsetOp extractOp, OpAdaptor adaptor,
+                  ConversionPatternRewriter &rewriter) const final {
+
+    auto loc = extractOp->getLoc();
+    auto resType = extractOp.getResult().getType();
+    if (!resType.isa<ep2::StructType>())
+      return rewriter.notifyMatchFailure(extractOp, "Currently only support extract op on struct");
+
+    assert(analyzer.localAllocs.find(extractOp) != analyzer.localAllocs.end());
+
+    int memcpySize = calcSize(resType);
+    auto varOp = rewriter.create<emitc::VariableOp>(loc, typeConverter->convertType(resType), emitc::OpaqueAttr::get(getContext(), std::string{"&"} + analyzer.localAllocs[extractOp]));
+    rewriter.replaceOp(extractOp, varOp);
+
+    llvm::SmallVector<Type> resTypes2 = {};
+    // xferOffs, size
+    mlir::ArrayAttr args2 = rewriter.getI32ArrayAttr({0, memcpySize, 0, extractOp.getOffset() / 8});
     mlir::ArrayAttr templ_args2;
     rewriter.create<emitc::CallOp>(loc, resTypes2, rewriter.getStringAttr("__ep2_intrin_memcpy"), args2, templ_args2, ValueRange{varOp, adaptor.getBuffer()});
     return success();
@@ -297,6 +330,29 @@ struct EmitPattern : public OpConversionPattern<ep2::EmitOp> {
 
     llvm::SmallVector<Type> resTypes2 = {};
     mlir::ArrayAttr args2 = rewriter.getI32ArrayAttr({srcOffs, memcpySize, isa<ep2::BufferType>(resType) ? 2 : 1});
+    mlir::ArrayAttr templ_args2;
+    auto emit = rewriter.create<emitc::CallOp>(loc, resTypes2, rewriter.getStringAttr("__ep2_intrin_memcpy"), args2, templ_args2, ValueRange{adaptor.getBuffer(), adaptor.getValue()});
+    rewriter.replaceOp(emitOp, emit);
+    return success();
+  }
+};
+
+struct EmitOffsetPattern : public OpConversionPattern<ep2::EmitOffsetOp> {
+  using OpConversionPattern<ep2::EmitOffsetOp>::OpConversionPattern;
+
+  EmitOffsetPattern(TypeConverter &converter, MLIRContext *context)
+      : OpConversionPattern<ep2::EmitOffsetOp>(converter, context) {}
+
+  LogicalResult
+  matchAndRewrite(ep2::EmitOffsetOp emitOp, OpAdaptor adaptor,
+                  ConversionPatternRewriter &rewriter) const final {
+    auto loc = emitOp->getLoc();
+    auto resType = emitOp.getValue().getType();
+    int memcpySize = isa<ep2::BufferType>(resType) ? 0 : calcSize(resType);
+    unsigned srcOffs = isa<ep2::BufferType>(resType) ? (-memcpySize) : 0;
+
+    llvm::SmallVector<Type> resTypes2 = {};
+    mlir::ArrayAttr args2 = rewriter.getI32ArrayAttr({srcOffs, memcpySize, isa<ep2::BufferType>(resType) ? 2 : 1, emitOp.getOffset() / 8});
     mlir::ArrayAttr templ_args2;
     auto emit = rewriter.create<emitc::CallOp>(loc, resTypes2, rewriter.getStringAttr("__ep2_intrin_memcpy"), args2, templ_args2, ValueRange{adaptor.getBuffer(), adaptor.getValue()});
     rewriter.replaceOp(emitOp, emit);
@@ -864,7 +920,8 @@ void LowerEmitcPass::runOnOperation() {
   target.addIllegalOp<ep2::ConstantOp, ep2::StoreOp, ep2::ContextRefOp, ep2::TerminateOp, 
     ep2::CallOp, ep2::FuncOp, ep2::ReturnOp, ep2::StructUpdateOp, ep2::NopOp, ep2::InitOp,
     ep2::StructAccessOp, ep2::ExtractOp, ep2::EmitOp, ep2::BitCastOp, ep2::SubOp, ep2::AddOp,
-    ep2::CmpOp, ep2::MulOp, arith::SelectOp, ep2::LookupOp, ep2::UpdateOp, ep2::LoadOp>();
+    ep2::CmpOp, ep2::MulOp, arith::SelectOp, ep2::LookupOp, ep2::UpdateOp, ep2::LoadOp,
+    ep2::ExtractOffsetOp, ep2::EmitOffsetOp>();
   target.addDynamicallyLegalDialect<cf::ControlFlowDialect>([&](mlir::Operation* op){
     return typeConverter.isLegal(op);
   });
@@ -873,9 +930,11 @@ void LowerEmitcPass::runOnOperation() {
   mlir::RewritePatternSet patterns(&getContext());
   patterns.add<CallPattern, ReturnPattern, ControllerPattern, StructUpdatePattern, EmitPattern,
                ContextRefPattern, StructAccessPattern, TerminatePattern, NopPattern, BitCastPattern,
-               SubPattern, AddPattern, MulPattern, CmpPattern, SelectPattern,
+               SubPattern, AddPattern, MulPattern, CmpPattern, SelectPattern, EmitOffsetPattern,
                TableUpdatePattern, BranchPattern, CondBranchPattern>(typeConverter, &getContext());
   patterns.add<ExtractPattern>(typeConverter, &getContext(),
+                                allocAnalysis);
+  patterns.add<ExtractOffsetPattern>(typeConverter, &getContext(),
                                 allocAnalysis);
   patterns.add<ConstPattern>(typeConverter, &getContext(),
                                 atomAnalysis);

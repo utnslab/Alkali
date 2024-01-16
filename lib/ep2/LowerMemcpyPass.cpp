@@ -91,8 +91,26 @@ struct LowerMemcpyPattern : public OpRewritePattern<emitc::CallOp> {
 
     auto emitMemIntrinsic = [&](std::string intrinsic, bool isWrite, bool usePktBuf, mlir::Operation* xfer, int offs, int szCopy, int szAdvance) {
       int memberNum = getMemberPos(xfer, offs);
-
       int tag = op.getArgs().value().getValue()[2].cast<IntegerAttr>().getValue().getLimitedValue();
+
+      const auto& opArgs = op.getArgs().value().getValue();
+      int setOffset = -1;
+      if (opArgs.size() >= 4) {
+        setOffset = offs + opArgs[3].cast<IntegerAttr>().getValue().getLimitedValue();
+      }
+
+      auto emitOffsetCmd = [&](bool doSetOffset) {
+        // emit increment
+        llvm::SmallVector<Type> resTypes3 = {};
+        mlir::ArrayAttr args3 = rewriter.getI32ArrayAttr({isWrite, szAdvance, doSetOffset ? setOffset : -1});
+        mlir::ArrayAttr templ_args3;
+        rewriter.create<emitc::CallOp>(op->getLoc(), resTypes3, rewriter.getStringAttr("__ep2_intrin_incr_offs"), args3, templ_args3, ValueRange{isWrite ? op->getOperand(0) : op->getOperand(1)});
+      };
+
+      if (usePktBuf && setOffset != -1) {
+        emitOffsetCmd(true);
+      }
+
       llvm::SmallVector<Type> resTypes = {};
       // convey to cpp translator to generate member offset here
       mlir::ArrayAttr args = rewriter.getI32ArrayAttr({~memberNum, szCopy, tag});
@@ -111,12 +129,8 @@ struct LowerMemcpyPattern : public OpRewritePattern<emitc::CallOp> {
       }
       rewriter.create<emitc::CallOp>(op->getLoc(), resTypes, rewriter.getStringAttr(intrinsic), args, templ_args, ValueRange{xfer->getResult(0), isWrite ? op->getOperand(0) : op->getOperand(1)});
 
-      if (usePktBuf) {
-        // emit increment
-        llvm::SmallVector<Type> resTypes3 = {};
-        mlir::ArrayAttr args3 = rewriter.getI32ArrayAttr({isWrite, szAdvance});
-        mlir::ArrayAttr templ_args3;
-        rewriter.create<emitc::CallOp>(op->getLoc(), resTypes3, rewriter.getStringAttr("__ep2_intrin_incr_offs"), args3, templ_args3, ValueRange{isWrite ? op->getOperand(0) : op->getOperand(1)});
+      if (setOffset == -1 && usePktBuf) {
+        emitOffsetCmd(false);
       }
     };
 
@@ -129,9 +143,9 @@ struct LowerMemcpyPattern : public OpRewritePattern<emitc::CallOp> {
       int szAdvance = szOrig;
       assert(szOrig >= 0);
 
-      if (!isWrite) {
+      if (!(usePktBuf && isWrite)) {
         /* we are copying into a register, which is size multiple of 4 bytes.
-           hence, we can read junk off the boundaries, up to 4 bytes. */
+           hence, we can read junk off the boundaries, up to 4 bytes OR writing into a padded CLS field for context */
         szOrig = ((szOrig + 3) / 4) * 4;
       }
 
@@ -192,7 +206,7 @@ struct LowerMemcpyPattern : public OpRewritePattern<emitc::CallOp> {
       auto bulkMemcpy = rewriter.create<emitc::CallOp>(op->getLoc(), resTypes, rewriter.getStringAttr("__ep2_intrin_memcpybuf_bulk_memcpy"), args, templ_args, op->getOperands());
 
       llvm::SmallVector<Type> resTypes3 = {};
-      mlir::ArrayAttr args3 = rewriter.getI32ArrayAttr({2, INT32_MIN});
+      mlir::ArrayAttr args3 = rewriter.getI32ArrayAttr({2, INT32_MIN, -1});
       mlir::ArrayAttr templ_args3;
       rewriter.create<emitc::CallOp>(op->getLoc(), resTypes3, rewriter.getStringAttr("__ep2_intrin_incr_offs"), args3, templ_args3, op->getOperands());
 
