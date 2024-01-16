@@ -21,7 +21,7 @@ namespace ep2 {
 namespace {
 
 // RAII guard to erase ops on destruction.
-class EraseGuard {
+struct EraseGuard {
   std::vector<Operation *> ops;
   EraseGuard() {}
   ~EraseGuard() {
@@ -53,6 +53,7 @@ std::string renameSub(StringRef name, int index) {
 struct StructMap {
     StructType type;
     unsigned offset;
+    bool write;
 };
 
 struct SplitMap {
@@ -160,8 +161,10 @@ void DeadFieldEliminatePass::runOnOperation() {
       auto [it, _] = sourceMap.try_emplace(value);
       auto &map = it->second;
 
-      SmallVector<Type> fields;
       unsigned offset = 0;
+      // per-segment state
+      SmallVector<Type> fields;
+      bool write = false;
 
       for (auto [i, field] : llvm::enumerate(usage.type.getElementTypes())) {
         if (usage.used[i]) {
@@ -169,6 +172,7 @@ void DeadFieldEliminatePass::runOnOperation() {
           map.fieldToIndex.try_emplace(i, map.newTypes.size());
           map.indexToNewIndex.try_emplace(i, fields.size());
           fields.push_back(field);
+          write |= usage.writed[i];
         }
 
         if (!usage.used[i] && !fields.empty()) {
@@ -178,8 +182,9 @@ void DeadFieldEliminatePass::runOnOperation() {
           auto structType = builder.getType<StructType>(
               false, fields, newName);
               
-          map.newTypes.push_back({structType, offset});
+          map.newTypes.push_back({structType, offset, write});
           fields.clear();
+          write = false;
         }
         offset += getEP2TypeSize(field);
       }
@@ -208,12 +213,12 @@ void DeadFieldEliminatePass::runOnOperation() {
   for (auto funcOp : moduleOp.getOps<FuncOp>()) {
 
     auto &entryBlock = funcOp.getBody().front();
+    // all bbs in one function shares a context
+    DenseMap<Value, SplitMapContext> valueMapping;
 
     // do per-block update
     for (auto &block : funcOp.getBody()) {
       auto &context = fieldAnalysis.blockContext[&block];
-
-      DenseMap<Value, SplitMapContext> valueMapping;
 
       // find if any source value declared in the context
       for (auto &[source, map] : sourceMap) {
@@ -242,6 +247,7 @@ void DeadFieldEliminatePass::runOnOperation() {
         updateBlockSignature(&block, argMapping, valueMapping);
 
       // per-op updating
+      EraseGuard guard{};
       for (auto &op : block) {
         builder.setInsertionPoint(&op);
         // access op
@@ -267,12 +273,28 @@ void DeadFieldEliminatePass::runOnOperation() {
             // dispatch to value by index
             auto newStruct = ctx.indexToValue(accessOp.getIndex());
             auto newIndex = ctx.indexToNewIndex(accessOp.getIndex());
-            auto newOp = builder.create<StructUpdateOp>(accessOp.getLoc(), accessOp.getType(), newStruct,
+            auto newOp = builder.create<StructUpdateOp>(accessOp.getLoc(), newStruct.getType(), newStruct,
                                            newIndex, accessOp.getNewValue());
             auto [it2, _] = valueMapping.try_emplace(accessOp.getResult(), ctx);
             it2->second.updateValueByIndex(accessOp.getIndex(), newOp);
             // TODO(check and repalce!)
           }
+        }
+
+        if (auto emitOp = dyn_cast<EmitOffsetOp>(op)) {
+          auto it = valueMapping.find(emitOp.getValue());
+          if (it != valueMapping.end()) {
+            auto &ctx = it->second;
+            for (auto [value, typeDesc] :
+                 llvm::zip_equal(ctx.values, ctx.map.newTypes)) {
+              if (!typeDesc.write)
+                continue;
+              // TODO(zhyuang): write infomation should be per-buffer?
+              builder.create<EmitOffsetOp>(emitOp.getLoc(), emitOp.getBuffer(),
+                                           value, typeDesc.offset + emitOp.getOffset());
+            }
+          }
+          guard.add(&op);
         }
 
         // TODO(finish the rest of ops)
@@ -308,13 +330,15 @@ void DeadFieldEliminatePass::runOnOperation() {
     }
   }
 
+  // remove the init and function parameters
+
   // at last, schedule cse to remove the replaced ops
-  OpPassManager pm;
-  pm.addPass(createCanonicalizerPass());
-  pm.addPass(createCSEPass());
-  pm.addPass(createCanonicalizerPass());
-  if (failed(runPipeline(pm, moduleOp)))
-    return signalPassFailure();
+  // OpPassManager pm;
+  // pm.addPass(createCanonicalizerPass());
+  // pm.addPass(createCSEPass());
+  // pm.addPass(createCanonicalizerPass());
+  // if (failed(runPipeline(pm, moduleOp)))
+  //   return signalPassFailure();
 
 }
 

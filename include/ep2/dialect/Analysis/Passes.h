@@ -18,16 +18,19 @@ struct FieldUsage : ValueStateBase {
   Value source;
   StructType type;
   llvm::BitVector used;
+  llvm::BitVector writed;
 
   FieldUsage() = delete;
   FieldUsage(Value source)
       : source{source}, type{source.getType().dyn_cast<StructType>()},
-        used{static_cast<unsigned>(type.getNumElementTypes())} {}
+        used{static_cast<unsigned>(type.getNumElementTypes())},
+        writed{static_cast<unsigned>(type.getNumElementTypes())} {}
 
   // interface
   void merge(FieldUsage &rhs) {
     // TODO(zhiyuang): check source?
     used |= rhs.used;
+    writed |= rhs.writed;
   }
 };
 
@@ -63,6 +66,7 @@ struct FieldExtractVisitor : public ep2::Visitor<FieldUsage, FieldExtractInfo> {
       if (auto state = context.query(updateOp.getInput())) {
         FieldUsage newState = *state;
         newState.used.set(updateOp.getIndex());
+        newState.writed.set(updateOp.getIndex());
         context.decalre(updateOp, newState);
         global.update(newState, op);
       }
@@ -100,6 +104,12 @@ struct ContextVariableResult {
     if (!isNew)
       it->second.merge(info);
   }
+  bool isUnused(std::string name) {
+    auto it = finalInfo.find(name);
+    if (it != finalInfo.end())
+      return !it->second.used;
+    return false; // we do not remove those not tracked parameter
+  }
 };
 
 struct ContextVariableAnalysisVisitor : public ep2::Visitor<ContextVariableInfo, ContextVariableResult> {
@@ -122,6 +132,9 @@ struct ContextVariableAnalysisVisitor : public ep2::Visitor<ContextVariableInfo,
                          .getAsValueRange<StringAttr>();
         for (auto [i, name, value] :
              llvm::enumerate(names, initOp->getOperands())) {
+          // skip over the non-context value
+          if (name.empty())
+            continue;
           ContextVariableInfo info{name.str()};
           context.update(value, info);
           global.update(name.str(), info);

@@ -456,10 +456,20 @@ struct DeadFieldEliminatePass :
         public PassWrapper<DeadFieldEliminatePass, OperationPass<ModuleOp>> {
     void runOnOperation() final;
     void getDependentDialects(DialectRegistry &registry) const override {
-        registry.insert<EP2Dialect, func::FuncDialect>();
+        registry.insert<EP2Dialect, func::FuncDialect, cf::ControlFlowDialect>();
     }
     StringRef getArgument() const final { return "ep2-dfe"; }
     StringRef getDescription() const final { return "Remove the dead field in structs"; }
+};
+
+struct DeadParameterEliminatePass :
+        public PassWrapper<DeadParameterEliminatePass, OperationPass<ModuleOp>> {
+    void runOnOperation() final;
+    void getDependentDialects(DialectRegistry &registry) const override {
+        registry.insert<EP2Dialect, func::FuncDialect, cf::ControlFlowDialect>();
+    }
+    StringRef getArgument() const final { return "ep2-dpe"; }
+    StringRef getDescription() const final { return "Remove the dead parameter in generate calls between handlers"; }
 };
 
 } // namespace ep2
