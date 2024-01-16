@@ -725,7 +725,11 @@ def InitOp : EP2_Op<"init", [Pure]> {
 
   let builders = [
     OpBuilder<(ins "Type":$type),
-    [{ build($_builder, $_state, type, {}); }]>
+    [{ build($_builder, $_state, type, {}); }]>,
+
+    OpBuilder<(ins "StringRef":$name, "ArrayRef<Value>":$values),
+    [{ auto types = llvm::map_to_vector(values, [&](auto &val){ return val.getType(); });
+       build($_builder, $_state, $_builder.getType<ep2::StructType>(true, types, name), values); }]>
   ];
   // let hasVerifier = 1;
 }

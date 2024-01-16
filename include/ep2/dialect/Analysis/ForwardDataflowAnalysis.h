@@ -29,6 +29,12 @@ struct DataflowContext {
     table.try_emplace(value, std::move(state));
   }
 
+  void update(Value value, ValueState state) {
+    auto [it, isNew] = table.try_emplace(value, std::move(state));
+    if (!isNew)
+      it->second.merge(state);
+  }
+
   ValueState *query(Value value) {
     auto it = table.find(value);
     if (it == table.end())
@@ -80,7 +86,6 @@ struct ForwardDataflowAnalyis {
 
   void analysisFuncion(FuncOp funcOp) {
     // as context cannot be shared beyond function, its local
-    std::map<Block *, DataflowContext<ValueState>> blockContext;
     for (auto &block : funcOp.getBody()) {
       auto [it, _] = blockContext.try_emplace(&block, inputTable[&block], block);
       auto &context = it->second;
@@ -142,6 +147,7 @@ struct ForwardDataflowAnalyis {
   GlobalState globalState{};
 
   std::map<Block *, InputMapT> inputTable{};
+  std::map<Block *, DataflowContext<ValueState>> blockContext{};
 
   ForwardDataflowAnalyis(Operation *op, mlir::AnalysisManager &am)
       : am(am), dependency(am.getAnalysis<HandlerDependencyAnalysis>()) {
