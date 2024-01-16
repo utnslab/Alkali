@@ -3,12 +3,12 @@
 #include "extern/extern_dma.h"
 #include "extern/extern_net.h"
 
-static struct dma_write_cmd_t _loc_buf_17;
-__xrw static struct dma_write_cmd_t _loc_buf_17_xfer;
-static struct flow_state_t _loc_buf_16;
-__xrw static struct flow_state_t _loc_buf_16_xfer;
-static struct ack_info_t _loc_buf_18;
-__xrw static struct ack_info_t _loc_buf_18_xfer;
+static struct flow_state_t _loc_buf_19;
+__xrw static struct flow_state_t _loc_buf_19_xfer;
+static struct dma_write_cmd_t _loc_buf_20;
+__xrw static struct dma_write_cmd_t _loc_buf_20_xfer;
+static struct ack_info_t _loc_buf_21;
+__xrw static struct ack_info_t _loc_buf_21_xfer;
 __declspec(aligned(4)) struct event_param_OoO_DETECT work;
 __xrw struct event_param_OoO_DETECT work_ref;
 __declspec(aligned(4)) struct event_param_ACK_GEN next_work_ACK_GEN;
@@ -17,7 +17,7 @@ __declspec(aligned(4)) struct event_param_DMA_WRITE_REQ next_work_DMA_WRITE_REQ;
 __xrw struct event_param_DMA_WRITE_REQ next_work_ref_DMA_WRITE_REQ;
 
 __forceinline
-void __event___handler_OoO_DETECT_OoO_detection_1() {
+void __event___handler_OoO_DETECT_OoO_detection_2() {
   uint64_t v1;
   uint32_t v2;
   uint32_t v3;
@@ -74,18 +74,18 @@ void __event___handler_OoO_DETECT_OoO_detection_1() {
   v4 = 0;
   v5 = &work;
   v6 = &work_ref;
-  cls_workq_add_thread(WORKQ_ID_OoO_DETECT_1, v6, sizeof(*v6));
+  cls_workq_add_thread(WORKQ_ID_OoO_DETECT_2, v6, sizeof(*v6));
   *(v5) = *(v6);
   v7 = v5->ctx;
   v8 = &v5->f0;
   v9 = v7->f0;
-  v10 = &table_28;
+  v10 = &table_29;
   v11 = v8->f0;
   v12 = (uint16_t) v11;
-  v13 = &_loc_buf_16;
+  v13 = &_loc_buf_19;
   *v13 = v10->table[me_cam_lookup(v12)];
-  v14 = &_loc_buf_17;
-  v15 = &_loc_buf_18;
+  v14 = &_loc_buf_20;
+  v15 = &_loc_buf_21;
   v16 = v13->f5;
   v17 = v8->f2;
   v18 = v16 - v17;
@@ -154,7 +154,7 @@ label6:
   v47->f0 = *v15;
   v48 = &next_work_ref_ACK_GEN;
   *(v48) = *(v47);
-  cls_workq_add_work(WORKQ_ID_ACK_GEN_1, v48, sizeof(*v48));
+  cls_workq_add_work(WORKQ_ID_ACK_GEN_2, v48, sizeof(*v48));
   goto label7;
 label7:
   return;
@@ -163,9 +163,9 @@ label7:
 
 int main(void) {
 	init_me_cam(16);
-	init_recv_event_workq(WORKQ_ID_OoO_DETECT_1, workq_OoO_DETECT_1, WORKQ_TYPE_OoO_DETECT, WORKQ_SIZE_OoO_DETECT, 8);
+	init_recv_event_workq(WORKQ_ID_OoO_DETECT_2, workq_OoO_DETECT_2, WORKQ_TYPE_OoO_DETECT, WORKQ_SIZE_OoO_DETECT, 8);
 	wait_global_start_();
 	for (;;) {
-		__event___handler_OoO_DETECT_OoO_detection_1();
+		__event___handler_OoO_DETECT_OoO_detection_2();
 	}
 }

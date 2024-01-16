@@ -77,10 +77,10 @@ __packed struct ack_info_t {
 
 __packed struct context_chain_1_t {
 	struct __buf_t f0;
-	uint16_t f1;
+	struct tcp_header_t f1;
 	struct ip_header_t f2;
 	struct eth_header_t f3;
-	struct tcp_header_t f4;
+	uint16_t f4;
 	uint32_t ctx_id;
 };
 
@@ -117,15 +117,22 @@ __packed struct event_param_NET_SEND {
 #define WORKQ_ID_ACK_GEN_1 10
 CLS_WORKQ_DECLARE(workq_ACK_GEN_1, WORKQ_SIZE_ACK_GEN);
 
+#define WORKQ_ID_ACK_GEN_2 11
+CLS_WORKQ_DECLARE(workq_ACK_GEN_2, WORKQ_SIZE_ACK_GEN);
+
 #define WORKQ_SIZE_OoO_DETECT 256
 #define WORKQ_TYPE_OoO_DETECT MEM_TYEP_CLS
-#define WORKQ_ID_OoO_DETECT_1 11
+#define WORKQ_ID_OoO_DETECT_1 12
 CLS_WORKQ_DECLARE(workq_OoO_DETECT_1, WORKQ_SIZE_OoO_DETECT);
+
+#define WORKQ_ID_OoO_DETECT_2 13
+CLS_WORKQ_DECLARE(workq_OoO_DETECT_2, WORKQ_SIZE_OoO_DETECT);
 
 __packed struct table_i16_flow_state_t_16_t {
 	struct flow_state_t table[16];
 };
-__shared __lmem struct table_i16_flow_state_t_16_t table_10;
+__shared __lmem struct table_i16_flow_state_t_16_t table_28;
+__shared __lmem struct table_i16_flow_state_t_16_t table_29;
 
 CLS_CONTEXTQ_DECLARE(context_chain_1_t, context_chain_pool, 128);
 __shared __cls int context_chain_ring_qHead = 0;

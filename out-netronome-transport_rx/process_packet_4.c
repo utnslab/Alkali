@@ -3,20 +3,20 @@
 #include "extern/extern_dma.h"
 #include "extern/extern_net.h"
 
-static struct eth_header_t _loc_buf_1;
-__xrw static struct eth_header_t _loc_buf_1_xfer;
-static struct tcp_header_t _loc_buf_3;
-__xrw static struct tcp_header_t _loc_buf_3_xfer;
-static struct ip_header_t _loc_buf_2;
-__xrw static struct ip_header_t _loc_buf_2_xfer;
-static struct eth_header_t _loc_buf_1;
-__xrw static struct eth_header_t _loc_buf_1_xfer;
-static struct ip_header_t _loc_buf_2;
-__xrw static struct ip_header_t _loc_buf_2_xfer;
-static struct pkt_info_t _loc_buf_0;
-__xrw static struct pkt_info_t _loc_buf_0_xfer;
-static struct tcp_header_t _loc_buf_3;
-__xrw static struct tcp_header_t _loc_buf_3_xfer;
+static struct tcp_header_t _loc_buf_15;
+__xrw static struct tcp_header_t _loc_buf_15_xfer;
+static struct eth_header_t _loc_buf_13;
+__xrw static struct eth_header_t _loc_buf_13_xfer;
+static struct ip_header_t _loc_buf_14;
+__xrw static struct ip_header_t _loc_buf_14_xfer;
+static struct pkt_info_t _loc_buf_12;
+__xrw static struct pkt_info_t _loc_buf_12_xfer;
+static struct ip_header_t _loc_buf_14;
+__xrw static struct ip_header_t _loc_buf_14_xfer;
+static struct tcp_header_t _loc_buf_15;
+__xrw static struct tcp_header_t _loc_buf_15_xfer;
+static struct eth_header_t _loc_buf_13;
+__xrw static struct eth_header_t _loc_buf_13_xfer;
 __declspec(aligned(4)) struct event_param_NET_RECV work;
 __xrw struct event_param_NET_RECV work_ref;
 __declspec(aligned(4)) struct event_param_OoO_DETECT next_work_OoO_DETECT;
@@ -34,7 +34,7 @@ __forceinline static void dispatch1 () {
 }
 
 __forceinline
-void __event___handler_NET_RECV_process_packet_1() {
+void __event___handler_NET_RECV_process_packet_4() {
   uint32_t v1;
   uint64_t v2;
   __declspec(aligned(4)) struct event_param_NET_RECV* v3;
@@ -76,19 +76,19 @@ void __event___handler_NET_RECV_process_packet_1() {
   v3->ctx = v4;
   v5 = v3->ctx;
   v6 = v3->f0;
-  v7 = &_loc_buf_0;
-  v8 = &_loc_buf_1;
-  v9 = &_loc_buf_1_xfer;
+  v7 = &_loc_buf_12;
+  v8 = &_loc_buf_13;
+  v9 = &_loc_buf_13_xfer;
   v6.offs = 0;
   mem_read32(&v9->f0, v6.buf + v6.offs, 16);
   *(v8) = *(v9);
-  v10 = &_loc_buf_2;
-  v11 = &_loc_buf_2_xfer;
+  v10 = &_loc_buf_14;
+  v11 = &_loc_buf_14_xfer;
   v6.offs = 14;
   mem_read32(&v11->f0, v6.buf + v6.offs, 24);
   *(v10) = *(v11);
-  v12 = &_loc_buf_3;
-  v13 = &_loc_buf_3_xfer;
+  v12 = &_loc_buf_15;
+  v13 = &_loc_buf_15_xfer;
   v6.offs = 38;
   mem_read32(&v13->f0, v6.buf + v6.offs, 20);
   *(v12) = *(v13);
@@ -104,18 +104,18 @@ void __event___handler_NET_RECV_process_packet_1() {
   v5->f0 = v6;
   v5->f4 = v20;
   v23 = &v5->f2;
-  v24 = &_loc_buf_2;
-  v25 = &_loc_buf_2_xfer;
+  v24 = &_loc_buf_14;
+  v25 = &_loc_buf_14_xfer;
   *(v25) = *(v24);
   cls_write(&v25->f0, &v23->f0, 24);
   v26 = &v5->f3;
-  v27 = &_loc_buf_1;
-  v28 = &_loc_buf_1_xfer;
+  v27 = &_loc_buf_13;
+  v28 = &_loc_buf_13_xfer;
   *(v28) = *(v27);
   cls_write(&v28->f0, &v26->f0, 16);
   v29 = &v5->f1;
-  v30 = &_loc_buf_3;
-  v31 = &_loc_buf_3_xfer;
+  v30 = &_loc_buf_15;
+  v31 = &_loc_buf_15_xfer;
   *(v31) = *(v30);
   cls_write(&v31->f0, &v29->f0, 20);
   v32 = &next_work_OoO_DETECT;
@@ -132,6 +132,6 @@ int main(void) {
 	init_me_cam(16);
 	wait_global_start_();
 	for (;;) {
-		__event___handler_NET_RECV_process_packet_1();
+		__event___handler_NET_RECV_process_packet_4();
 	}
 }
