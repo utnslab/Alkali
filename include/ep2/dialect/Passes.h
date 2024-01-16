@@ -472,6 +472,16 @@ struct DeadParameterEliminatePass :
     StringRef getDescription() const final { return "Remove the dead parameter in generate calls between handlers"; }
 };
 
+struct CanonicalizePass :
+        public PassWrapper<CanonicalizePass, OperationPass<ModuleOp>> {
+    void runOnOperation() final;
+    void getDependentDialects(DialectRegistry &registry) const override {
+        registry.insert<EP2Dialect, func::FuncDialect, cf::ControlFlowDialect>();
+    }
+    StringRef getArgument() const final { return "ep2-canon"; }
+    StringRef getDescription() const final { return "conversion level connonlicalize pass for ep2"; }
+};
+
 } // namespace ep2
 } // namespace mlir
 
