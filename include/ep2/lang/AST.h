@@ -324,7 +324,7 @@ public:
 
   std::unique_ptr<PathExprAST> &getCallee() { return callee; }
   std::string printCallee() { return callee->print(); }
-  llvm::ArrayRef<std::unique_ptr<ExprAST>> getArgs() { return args; }
+  llvm::ArrayRef<std::unique_ptr<ExprAST>> getArgs() { return args; };
 
   std::vector<std::string> ins{};
   std::vector<std::string> outs{};

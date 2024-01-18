@@ -324,6 +324,34 @@ def SubOp : EP2_Op<"sub",
 }
 
 //===----------------------------------------------------------------------===//
+// bit set op
+//===----------------------------------------------------------------------===//
+
+def BitSetOp : EP2_Op<"bitset",
+    [Pure]> {
+  let summary = "Get a bit from bits";
+  let description = [{
+    The "sub" operation performs element-wise sub between two tensors.
+    The shapes of the tensor operands are expected to match.
+  }];
+
+  let arguments = (ins EP2_Integer:$input, I64Attr:$offset, AnyI1:$bits);
+  let results = (outs EP2_Integer);
+}
+
+def BitGetOp : EP2_Op<"bitget",
+    [Pure]> {
+  let summary = "Get a bit from bits";
+  let description = [{
+    The "sub" operation performs element-wise sub between two tensors.
+    The shapes of the tensor operands are expected to match.
+  }];
+
+  let arguments = (ins EP2_Integer:$input, I64Attr:$offset);
+  let results = (outs AnyI1:$output);
+}
+
+//===----------------------------------------------------------------------===//
 // Compare Ops
 //===----------------------------------------------------------------------===//
 

@@ -643,6 +643,42 @@ private:
       auto &value = operands[1];
       builder.create<UpdateOp>(location, toRValue(caller), toRValue(key), toRValue(value));
       return builder.create<NopOp>(location);
+    } else if (callee == "set") {
+      if (!caller || operands.size() != 2) {
+        emitError(location) << "callop: invalid bitset";
+        return nullptr;
+      }
+      auto target = operands[0].getDefiningOp();
+      if (!target || !isa<ConstantOp>(target) || !cast<ConstantOp>(target).getValueAttr().isa<mlir::IntegerAttr>()) {
+        emitError(location) << "callop: invalid bitget operand";
+        return nullptr;
+      }
+      auto offset = cast<ConstantOp>(target).getValueAttr().cast<mlir::IntegerAttr>();
+
+      auto &value = operands[1];
+      if (!value.getType().isa<mlir::IntegerType>()) {
+        emitError(location) << "callop: invalid operand";
+        return nullptr;
+      }
+      auto bitsetOp =
+          builder.create<BitSetOp>(location, caller.getType(), caller, offset,
+                                   toRValue(value, builder.getIntegerType(1)));
+      update(*call.getCallee(), bitsetOp);
+      return bitsetOp;
+    } else if (callee == "get") {
+      if (!caller || operands.size() != 1) {
+        emitError(location) << "callop: invalid bitget";
+        return nullptr;
+      }
+
+      auto target = operands[0].getDefiningOp();
+      if (!target || !isa<ConstantOp>(target) || !cast<ConstantOp>(target).getValueAttr().isa<mlir::IntegerAttr>()) {
+        emitError(location) << "callop: invalid bitget operand";
+        return nullptr;
+      }
+      auto offset = cast<ConstantOp>(target).getValueAttr().cast<mlir::IntegerAttr>();
+
+      return builder.create<BitGetOp>(location, builder.getIntegerType(1), caller, offset);
     }
     // Otherwise this is a call to a user-defined function. Calls to
     // user-defined functions are mapped to a custom call that takes the callee
