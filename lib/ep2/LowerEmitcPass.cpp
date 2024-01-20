@@ -408,6 +408,15 @@ struct InitPattern : public OpConversionPattern<ep2::InitOp> {
 
       if (!cast<ep2::StructType>(resType).getIsEvent()) {
         auto alloc = rewriter.create<emitc::VariableOp>(loc, newType, emitc::OpaqueAttr::get(getContext(), std::string{"&"} + allocAnalyzer.localAllocs[initOp]));
+
+        unsigned p = 0;
+        for (const auto& opd : adaptor.getOperands()) {
+          llvm::SmallVector<Type> resTypes2 = {};
+          mlir::ArrayAttr args2 = rewriter.getI32ArrayAttr({p, isa<ep2::StructType>(initOp->getOperand(p).getType())});
+          mlir::ArrayAttr templ_args2;
+          rewriter.create<emitc::CallOp>(loc, resTypes2, rewriter.getStringAttr("__ep2_intrin_struct_write"), args2, templ_args2, ValueRange{opd, alloc});
+          p += 1;
+        }
         rewriter.replaceOp(initOp, alloc);
         return success();
       }

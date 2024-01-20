@@ -173,11 +173,15 @@ CollectInfoAnalysis::CollectInfoAnalysis(Operation* module, AnalysisManager& am)
       funcOp->walk([&](ep2::ConnectOp op) {
         assert(op.getMethod() == "Queue" || op.getMethod() == "PartitionByScope");
         std::string eventName = funcOp->getAttr("event").cast<mlir::StringAttr>().getValue().str();
-
         auto& qInfo = this->eventQueues[eventName];
+        
+        if (op.getMethod() == "Queue" && op.getParameters()) {
+          qInfo.size = op.getParameters()->getValue()[0].cast<mlir::IntegerAttr>().getValue().getSExtValue();
+        } else {
+          qInfo.size = 256;
+        }
+
         qInfo.memType = MemType::CLS;
-        // TODO do not hardcode queue size=256
-        qInfo.size = 256;
         qInfo.replicas.push_back(cast<ep2::ConstantOp>(
           op.getOuts()[0].getDefiningOp()).getValue().cast<ep2::PortAttr>().getInstance());
       });
@@ -199,7 +203,7 @@ CollectInfoAnalysis::CollectInfoAnalysis(Operation* module, AnalysisManager& am)
 
     mlir::Type ty = isa<ep2::StoreOp>(pr.first) ? pr.first->getOperand(1).getType() : pr.first->getResult(0).getType();
 
-    if (isa<ep2::StructType>(ty)) {
+    if (isa<ep2::StructType>(ty) && !isa<ep2::StoreOp>(pr.first)) {
       std::pair<std::string, std::string> prOut;
       prOut.first = cast<ep2::StructType>(ty).getName().str();
       prOut.second = pr.second;

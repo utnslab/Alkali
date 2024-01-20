@@ -136,6 +136,8 @@ void EmitNetronomePass::runOnOperation() {
     fout_prog_hdr << "\tunsigned sz;\n";
     fout_prog_hdr << "};\n\n";
     
+    std::unordered_map<std::string, int> sizeMap;
+
     // emit structs
     for (const auto& pr : info.structDefs) {
       fout_prog_hdr << (pr.second.isPacked() ? "__packed " : "") << "struct " << pr.first << " {\n";
@@ -145,6 +147,7 @@ void EmitNetronomePass::runOnOperation() {
 
       std::vector<std::pair<int, unsigned>> padding = calcPadding(pr.second, isContext || isEvent);
       unsigned padPos = 0;
+      unsigned sz = calcSize(pr.second);
       for (int i = 0; i<pr.second.getBody().size(); ++i) {
         mlir::Type ty = pr.second.getBody()[i];
         if (isa<LLVM::LLVMStructType>(ty)) {
@@ -159,25 +162,36 @@ void EmitNetronomePass::runOnOperation() {
         }
         if (padPos < padding.size() && padding[padPos].first == i) {
           fout_prog_hdr << "\tuint8_t pad" << padPos << "[" << padding[padPos].second << "];\n";
+          sz += padding[padPos].second;
           padPos += 1;
         }
       }
-      if (isContext) {
-        fout_prog_hdr << "\tuint32_t ctx_id;\n";
-      } else if (isEvent) {
+      if (isEvent) {
         if (pr.first == "event_param_NET_RECV") fout_prog_hdr << "\tstruct recv_meta_t meta;\n";
         if (pr.first == "event_param_NET_SEND") fout_prog_hdr << "\tstruct send_meta_t meta;\n";
         fout_prog_hdr << "\t__shared __cls struct context_chain_1_t* ctx;\n";
       }
       fout_prog_hdr << "};\n\n";
+      sizeMap[pr.first] = sz;
     }
+
+    auto nextPow2 = [](unsigned x) {
+      x -= 1;
+      x |= (x >> 1);
+      x |= (x >> 2);
+      x |= (x >> 4);
+      x |= (x >> 8);
+      x |= (x >> 16);
+      return x+1;
+    };
 
     // emit work queues
     int workq_id_incr = 10;
     for (const auto& q : info.eventQueues) {
       std::string eventName = q.first;
+      int sz = sizeMap[std::string{"event_param_"} + eventName];
 
-      fout_prog_hdr << "#define WORKQ_SIZE_" << eventName << " " << q.second.size << '\n';
+      fout_prog_hdr << "#define WORKQ_SIZE_" << eventName << " " << nextPow2(sz * q.second.size) << '\n';
       fout_prog_hdr << "#define WORKQ_TYPE_" << eventName << " " << "MEM_TYEP_" << toStringDecl(q.second.memType) << '\n';
 
       for (int replica : q.second.replicas) {
@@ -207,7 +221,11 @@ void EmitNetronomePass::runOnOperation() {
     std::string declPlace = toStringDecl(MemType::CLS);
 
     fout_prog_hdr << declPlace << "_CONTEXTQ_DECLARE(" << declType << ", " << declId << ", " << declSize << ");\n";
-    fout_prog_hdr << "__shared __cls int " << declName << "_qHead = 0;\n\n";
+    fout_prog_hdr << "#ifdef DO_CTXQ_INIT\n";
+    fout_prog_hdr << "__export __shared __cls int " << declName << "_qHead = 0;\n";
+    fout_prog_hdr << "#else\n";
+    fout_prog_hdr << "__import __shared __cls int " << declName << "_qHead;\n";
+    fout_prog_hdr << "#endif\n\n";
 
     fout_prog_hdr << "__forceinline static __shared __cls struct " << declType << "* alloc_" << declName << "_entry() {\n";
     fout_prog_hdr << "\t__xrw int context_idx = 1;\n";
@@ -290,17 +308,34 @@ void EmitNetronomePass::runOnOperation() {
       nameToFunc[fop.getName().str()] = fop;
     });
 
+    std::unordered_set<std::string> firstVisited;
+
     // each event is a stage in the pipeline.
     for (const auto& pr : info.eventAllocs) {
       std::string eventName = extractEventName(pr.first);
       std::string atomName = extractAtomName(pr.first);
       std::string funcName = extractHandlerName(pr.first);
       int id = std::stoi(funcName.substr(funcName.rfind("_") + 1));
+
+      bool isFirstStage = true;
+      for (const auto& pr : info.eventDeps) {
+        for (const auto& s : pr.second) {
+          if (s == eventName) {
+            isFirstStage = false;
+          }
+        }
+      }
       
       // TODO add code to wait for initialization
 
       std::string filePath = basePath + std::string{"/"} + makeFileName(pr.first) + ".c";
       std::ofstream fout_stage(filePath);
+
+      if (isFirstStage && firstVisited.find(eventName + atomName) == firstVisited.end()) {
+        fout_stage << "#define DO_CTXQ_INIT\n\n";
+        firstVisited.insert(eventName + atomName);
+      }
+      
       fout_stage << "#include \"nfplib.h\"\n";
       fout_stage << "#include \"prog_hdr.h\"\n";
       fout_stage << "#include \"extern/extern_dma.h\"\n";
@@ -311,6 +346,7 @@ void EmitNetronomePass::runOnOperation() {
         fout_stage << "__xrw static struct " << localAlloc.first << " " << localAlloc.second << "_xfer;\n";
       }
 
+      fout_stage << "static int rr_ctr = 0;\n";
       fout_stage << "__declspec(aligned(4)) struct event_param_" << eventName << " work;\n";
       fout_stage << "__xrw struct event_param_" << eventName << " work_ref;\n";
 
@@ -357,18 +393,30 @@ void EmitNetronomePass::runOnOperation() {
           dispatchCtr += 1;
 
           std::string field = (*callOp.getArgs())[2].cast<StringAttr>().getValue().str();
-          assert(field != "-1" && "round-robin unsupported");
-
           fout_stage << "\n__forceinline static void dispatch" << dispatchCtr << " () {\n";
-          fout_stage << "\tswitch (hash(work.ctx->f" << field << ") % " << queues.size() << ") {\n";
+          if (field != "-1") {
+            fout_stage << "\tswitch (hash(work.ctx->f" << field << ") % " << queues.size() << ") {\n";
+          } else {
+            fout_stage << "\tswitch (rr_ctr) {\n";
+          }
           for (int i = 0; i<queues.size(); ++i) {
             fout_stage << "\tcase " << i << ":\n";
             fout_stage << "\t\tcls_workq_add_work(WORKQ_ID_" << event << "_" << (i+1) << ", &next_work_ref_" << event << ", sizeof(next_work_ref_" << event << "));\n";
             fout_stage << "\t\tbreak;\n";
           }
           fout_stage << "\t}\n";
-          fout_stage << "}\n";
 
+          auto isPow2 = [](unsigned x) {
+            return (x & -x) == x;
+          };
+          fout_stage << "\trr_ctr = ";
+          if (isPow2(queues.size())) {
+            fout_stage << "(rr_ctr + 1) & " << (queues.size()-1) << ";\n";
+          } else {
+            fout_stage << "rr_ctr == " << (queues.size()-1) << " ? 0 : (rr_ctr + 1);\n";
+          }
+
+          fout_stage << "}\n";
           callOp->setAttr("func", builder.getStringAttr(std::string{"dispatch"} + std::to_string(dispatchCtr)));
         }
       });
@@ -381,16 +429,6 @@ void EmitNetronomePass::runOnOperation() {
       }
 
       fout_stage << "\nint main(void) {\n";
-
-      bool isFirstStage = true;
-      for (const auto& pr : info.eventDeps) {
-        for (const auto& s : pr.second) {
-          if (s == eventName) {
-            isFirstStage = false;
-          }
-        }
-      }
-
       fout_stage << "\tinit_me_cam(16);\n";
       if (eventName != "NET_RECV") {
         fout_stage << "\tinit_recv_event_workq(WORKQ_ID_" << eventName << "_" << id << ", workq_" << eventName << "_" << id << ", WORKQ_TYPE_" << eventName << ", WORKQ_SIZE_" << eventName << ", 8);\n";

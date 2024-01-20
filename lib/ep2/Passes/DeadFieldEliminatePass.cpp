@@ -166,6 +166,25 @@ void DeadFieldEliminatePass::runOnOperation() {
       SmallVector<Type> fields;
       bool write = false;
 
+      auto finalize = [&](int i) {
+        if ((i == -1 || !usage.used[i]) && !fields.empty()) {
+          // or if we have some value collected..
+          // TODO(zhiyuang): after loop
+          std::string newName =  usage.type.getName().str() + "_sub_" + std::to_string(map.newTypes.size());
+          auto structType = builder.getType<StructType>(
+              false, fields, newName);
+
+          unsigned realOffset = offset;
+          for (auto& field : fields) {
+            realOffset -= getEP2TypeSize(field);
+          }
+              
+          map.newTypes.push_back({structType, realOffset, write});
+          fields.clear();
+          write = false;
+        }
+      };
+
       for (auto [i, field] : llvm::enumerate(usage.type.getElementTypes())) {
         if (usage.used[i]) {
           // we collect the fields
@@ -174,20 +193,10 @@ void DeadFieldEliminatePass::runOnOperation() {
           fields.push_back(field);
           write |= usage.writed[i];
         }
-
-        if (!usage.used[i] && !fields.empty()) {
-          // or if we have some value collected..
-          // TODO(zhiyuang): after loop
-          std::string newName =  usage.type.getName().str() + "_sub_" + std::to_string(map.newTypes.size());
-          auto structType = builder.getType<StructType>(
-              false, fields, newName);
-              
-          map.newTypes.push_back({structType, offset, write});
-          fields.clear();
-          write = false;
-        }
+        finalize(i);
         offset += getEP2TypeSize(field);
       }
+      finalize(-1);
     }
   }
 

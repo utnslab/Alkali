@@ -21,35 +21,26 @@ __packed struct pkt_info_t {
 	uint32_t f2;
 };
 
-__packed struct eth_header_t {
+__packed struct eth_header_t_sub_0 {
 	uint48_t f0;
 	uint48_t f1;
-	uint16_t f2;
+};
+
+__packed struct repack_type_0 {
+	uint16_t f0;
 	uint8_t pad0[2];
 };
 
-__packed struct ip_header_t {
-	uint16_t f0;
-	uint16_t f1;
-	uint16_t f2;
-	uint16_t f3;
-	uint16_t f4;
-	uint16_t f5;
-	uint32_t f6;
-	uint32_t f7;
-	uint32_t f8;
+__packed struct ip_header_t_sub_1 {
+	uint32_t f0;
+	uint32_t f1;
 };
 
-__packed struct tcp_header_t {
+__packed struct tcp_header_t_sub_0 {
 	uint16_t f0;
 	uint16_t f1;
 	uint32_t f2;
 	uint32_t f3;
-	uint8_t f4;
-	uint8_t f5;
-	uint16_t f6;
-	uint16_t f7;
-	uint16_t f8;
 };
 
 __packed struct flow_state_t {
@@ -75,13 +66,17 @@ __packed struct ack_info_t {
 	uint32_t f2;
 };
 
+__packed struct repack_type_1 {
+	uint16_t f0;
+	uint8_t pad0[2];
+};
+
 __packed struct context_chain_1_t {
 	struct __buf_t f0;
-	struct tcp_header_t f1;
-	struct ip_header_t f2;
-	struct eth_header_t f3;
+	struct ip_header_t_sub_1 f1;
+	struct eth_header_t_sub_0 f2;
+	struct tcp_header_t_sub_0 f3;
 	uint16_t f4;
-	uint32_t ctx_id;
 };
 
 __packed struct event_param_NET_RECV {
@@ -112,7 +107,7 @@ __packed struct event_param_NET_SEND {
 	__shared __cls struct context_chain_1_t* ctx;
 };
 
-#define WORKQ_SIZE_ACK_GEN 256
+#define WORKQ_SIZE_ACK_GEN 2048
 #define WORKQ_TYPE_ACK_GEN MEM_TYEP_CLS
 #define WORKQ_ID_ACK_GEN_1 10
 CLS_WORKQ_DECLARE(workq_ACK_GEN_1, WORKQ_SIZE_ACK_GEN);
@@ -120,7 +115,7 @@ CLS_WORKQ_DECLARE(workq_ACK_GEN_1, WORKQ_SIZE_ACK_GEN);
 #define WORKQ_ID_ACK_GEN_2 11
 CLS_WORKQ_DECLARE(workq_ACK_GEN_2, WORKQ_SIZE_ACK_GEN);
 
-#define WORKQ_SIZE_OoO_DETECT 256
+#define WORKQ_SIZE_OoO_DETECT 4096
 #define WORKQ_TYPE_OoO_DETECT MEM_TYEP_CLS
 #define WORKQ_ID_OoO_DETECT_1 12
 CLS_WORKQ_DECLARE(workq_OoO_DETECT_1, WORKQ_SIZE_OoO_DETECT);
@@ -131,11 +126,15 @@ CLS_WORKQ_DECLARE(workq_OoO_DETECT_2, WORKQ_SIZE_OoO_DETECT);
 __packed struct table_i16_flow_state_t_16_t {
 	struct flow_state_t table[16];
 };
-__shared __lmem struct table_i16_flow_state_t_16_t table_28;
-__shared __lmem struct table_i16_flow_state_t_16_t table_29;
+__shared __lmem struct table_i16_flow_state_t_16_t table_34;
+__shared __lmem struct table_i16_flow_state_t_16_t table_35;
 
 CLS_CONTEXTQ_DECLARE(context_chain_1_t, context_chain_pool, 128);
-__shared __cls int context_chain_ring_qHead = 0;
+#ifdef DO_CTXQ_INIT
+__export __shared __cls int context_chain_ring_qHead = 0;
+#else
+__import __shared __cls int context_chain_ring_qHead;
+#endif
 
 __forceinline static __shared __cls struct context_chain_1_t* alloc_context_chain_ring_entry() {
 	__xrw int context_idx = 1;

@@ -3,12 +3,13 @@
 #include "extern/extern_dma.h"
 #include "extern/extern_net.h"
 
-static struct dma_write_cmd_t _loc_buf_17;
-__xrw static struct dma_write_cmd_t _loc_buf_17_xfer;
-static struct flow_state_t _loc_buf_16;
-__xrw static struct flow_state_t _loc_buf_16_xfer;
-static struct ack_info_t _loc_buf_18;
-__xrw static struct ack_info_t _loc_buf_18_xfer;
+static struct ack_info_t _loc_buf_22;
+__xrw static struct ack_info_t _loc_buf_22_xfer;
+static struct dma_write_cmd_t _loc_buf_21;
+__xrw static struct dma_write_cmd_t _loc_buf_21_xfer;
+static struct flow_state_t _loc_buf_20;
+__xrw static struct flow_state_t _loc_buf_20_xfer;
+static int rr_ctr = 0;
 __declspec(aligned(4)) struct event_param_OoO_DETECT work;
 __xrw struct event_param_OoO_DETECT work_ref;
 __declspec(aligned(4)) struct event_param_ACK_GEN next_work_ACK_GEN;
@@ -79,13 +80,13 @@ void __event___handler_OoO_DETECT_OoO_detection_1() {
   v7 = v5->ctx;
   v8 = &v5->f0;
   v9 = v7->f0;
-  v10 = &table_28;
+  v10 = &table_34;
   v11 = v8->f0;
   v12 = (uint16_t) v11;
-  v13 = &_loc_buf_16;
+  v13 = &_loc_buf_20;
   *v13 = v10->table[me_cam_lookup(v12)];
-  v14 = &_loc_buf_17;
-  v15 = &_loc_buf_18;
+  v14 = &_loc_buf_21;
+  v15 = &_loc_buf_22;
   v16 = v13->f5;
   v17 = v8->f2;
   v18 = v16 - v17;

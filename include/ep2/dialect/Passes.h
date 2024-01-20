@@ -482,6 +482,16 @@ struct CanonicalizePass :
     StringRef getDescription() const final { return "conversion level connonlicalize pass for ep2"; }
 };
 
+struct RepackStructTypesPass :
+        public PassWrapper<RepackStructTypesPass, OperationPass<ModuleOp>> {
+    void runOnOperation() final;
+    void getDependentDialects(DialectRegistry &registry) const override {
+        registry.insert<EP2Dialect, func::FuncDialect, cf::ControlFlowDialect>();
+    }
+    StringRef getArgument() const final { return "ep2-repack"; }
+    StringRef getDescription() const final { return "Repack struct types"; }
+};
+
 } // namespace ep2
 } // namespace mlir
 

@@ -105,6 +105,7 @@ struct ContextVariableResult {
       it->second.merge(info);
   }
   bool isUnused(std::string name) {
+    if (name == "flow_id") return false;
     auto it = finalInfo.find(name);
     if (it != finalInfo.end())
       return !it->second.used;
