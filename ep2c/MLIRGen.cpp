@@ -419,6 +419,12 @@ private:
     // For assignment, change this to RValue (with reference to lvalue type)
     rhs = toRValue(rhs, lhs.getType());
 
+    // try cast either rhs or lhs if its a constant
+    if (lhs.getDefiningOp() && isa<ConstantOp>(lhs.getDefiningOp()))
+      lhs = tryCast(lhs, rhs.getType());
+    else if (rhs.getDefiningOp() && isa<ConstantOp>(rhs.getDefiningOp()))
+      rhs = tryCast(rhs, lhs.getType());
+
     auto location = loc(binop.loc());
 
     // Derive the operation name from the binary operator. At the moment we only

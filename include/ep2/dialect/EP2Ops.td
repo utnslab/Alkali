@@ -712,7 +712,7 @@ def GuardOp : EP2_Op<"guard", [NoTerminator]> {
 //===----------------------------------------------------------------------===//
 
 def GlobalOp : EP2_Op<"global", [
-    Pure, HasParent<"ModuleOp">]> {
+    HasParent<"ModuleOp">]> {
   let summary = "define a global op by symbol name";
   let description = [{
     Creation of a global veriable.

@@ -193,14 +193,22 @@ struct ContextBufferizationAnalysis {
 
 struct ContextToArgumentPass :
         public PassWrapper<ContextToArgumentPass, OperationPass<ModuleOp>> {
-    void runOnOperation() final;
-    void runOnFunction(FuncOp funcOp, ContextBufferizationAnalysis &analysis,
-                       HandlerDependencyAnalysis &dependency);
-    void getDependentDialects(DialectRegistry &registry) const override {
-        registry.insert<EP2Dialect, scf::SCFDialect, cf::ControlFlowDialect>();
-    }
-    StringRef getArgument() const final { return "ep2-context-to-argument"; }
-    StringRef getDescription() const final { return "Dump all ep2 context to value"; }
+  ContextToArgumentPass() = default;
+  ContextToArgumentPass(const ContextToArgumentPass &pass) {}
+  void runOnOperation() final;
+  void runOnFunction(FuncOp funcOp, ContextBufferizationAnalysis &analysis,
+                     HandlerDependencyAnalysis &dependency);
+  void getDependentDialects(DialectRegistry &registry) const override {
+    registry.insert<EP2Dialect, scf::SCFDialect, cf::ControlFlowDialect>();
+  }
+  StringRef getArgument() const final { return "ep2-context-to-argument"; }
+  StringRef getDescription() const final {
+    return "Dump all ep2 context to value";
+  }
+  Option<bool> keepLastContext{
+      *this, "keep-last",
+      llvm::cl::desc("Keep the last context in function call"),
+      llvm::cl::init(false)};
 };
 
 struct BufferToValuePass :
@@ -437,18 +445,25 @@ struct LocalAllocAnalysis {
 
 struct LowerLLVMPass :
         public PassWrapper<LowerLLVMPass, OperationPass<ModuleOp>> {
-    void runOnOperation() final;
-    void getDependentDialects(DialectRegistry &registry) const override {
-      registry.insert<EP2Dialect, func::FuncDialect, LLVM::LLVMDialect,
-                      scf::SCFDialect, cf::ControlFlowDialect>();
-    }
-    StringRef getArgument() const final { return "ep2-lower-llvm"; }
-    StringRef getDescription() const final { return "Rewrite to LLVM dialect"; }
+  LowerLLVMPass() = default;
+  LowerLLVMPass(const LowerLLVMPass &pass) {}
+  void runOnOperation() final;
+  void getDependentDialects(DialectRegistry &registry) const override {
+    registry.insert<EP2Dialect, func::FuncDialect, LLVM::LLVMDialect,
+                    scf::SCFDialect, cf::ControlFlowDialect>();
+  }
+  StringRef getArgument() const final { return "ep2-lower-llvm"; }
+  StringRef getDescription() const final { return "Rewrite to LLVM dialect"; }
 
-    using TableT = std::map<std::string, LLVM::LLVMFuncOp>;
-    TableT apiFunctions{};
-  private:
-    void populateAPIFunctions(mlir::TypeConverter &converter);
+  using TableT = std::map<std::string, LLVM::LLVMFuncOp>;
+  TableT apiFunctions{};
+  Option<std::string> generateMode{
+      *this, "generate",
+      llvm::cl::desc("Modes for handling event generating: event, call, raw"),
+      llvm::cl::init("call")};
+
+private:
+  void populateAPIFunctions(mlir::TypeConverter &converter);
 };
 
 struct EmitLLVMHeaderPass

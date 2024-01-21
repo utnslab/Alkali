@@ -6,9 +6,9 @@
 mkdir llvm-project/build && cd llvm-project/build
 cmake -G Ninja ../llvm \
  -DLLVM_ENABLE_PROJECTS="mlir;clang" \
- -DLLVM_TARGETS_TO_BUILD="host" \
+ -DLLVM_TARGETS_TO_BUILD="AArch64;AMDGPU;ARM;AVR;BPF;Hexagon;Lanai;LoongArch;Mips;MSP430;NVPTX;PowerPC;RISCV;Sparc;SystemZ;VE;WebAssembly;X86;XCore" \
  -DLLVM_ENABLE_ASSERTIONS=ON \
- -DCMAKE_BUILD_TYPE=DEBUG 
+ -DCMAKE_BUILD_TYPE=Release 
 
 ```
 

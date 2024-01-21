@@ -68,14 +68,10 @@ void insertContextRefs(FuncOp funcOp, std::map<StringRef, ContextRefOp> &refs,
 }
 
 void rewriteEventInit(InitOp initOp, ContextBufferizationAnalysis &analysis,
-                      HandlerDependencyAnalysis &dependency) {
+                      HandlerDependencyAnalysis &dependency, bool noContext) {
   OpBuilder builder(initOp);
 
-  // filter out non-event inits
-  auto result = initOp.getResult();
-  auto type = result.getType().dyn_cast<StructType>();
-  if (!type || !type.getIsEvent())
-    return;
+  auto type = initOp.getType().cast<StructType>();
 
   auto argList = llvm::to_vector(initOp.getArgs());
   auto it = llvm::find_if(
@@ -92,15 +88,16 @@ void rewriteEventInit(InitOp initOp, ContextBufferizationAnalysis &analysis,
   auto &table = analysis.getContextTable(funcOp);
   // TODO(zhiyuang): switch to a initOp-driven method
   // auto &table = analysis.getContextTable(initOp);
-  for (auto &pair : table) {
-    auto valueType = builder.getType<ContextRefType>(pair.second.second);
-    auto ref = builder.create<ContextRefOp>(initOp.getLoc(), valueType,
-                                            pair.first(), context);
-    auto load =
-        builder.create<LoadOp>(initOp.getLoc(), pair.second.second, ref);
-    argList.push_back(load.getResult());
-    strings.push_back(pair.first().str());
-  }
+  if (!noContext)
+    for (auto &pair : table) {
+      auto valueType = builder.getType<ContextRefType>(pair.second.second);
+      auto ref = builder.create<ContextRefOp>(initOp.getLoc(), valueType,
+                                              pair.first(), context);
+      auto load =
+          builder.create<LoadOp>(initOp.getLoc(), pair.second.second, ref);
+      argList.push_back(load.getResult());
+      strings.push_back(pair.first().str());
+    }
 
   // build
   auto typeList =
@@ -138,7 +135,12 @@ void ContextToArgumentPass::runOnFunction(FuncOp funcOp, ContextBufferizationAna
 
   // rewrite all return with context read
   funcOp.walk([&](InitOp initOp) {
-    rewriteEventInit(initOp, analysis, dependency);
+    auto type = initOp.getType().dyn_cast<StructType>();
+    if (!type || !type.getIsEvent())
+      return;
+
+    bool noContext = !keepLastContext.getValue() && dependency.lookupHandler(initOp).isExtern();
+    rewriteEventInit(initOp, analysis, dependency, noContext);
   });
 
   // rewrite all return with context read
