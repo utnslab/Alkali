@@ -29,3 +29,13 @@ void * __extern_sink_NET_SEND(extern_worker_t *worker) {
   }
   pthread_exit(NULL);
 }
+
+// empty implementation
+void __handler_DMA_WRITE_REQ_dma_write(void * buf) {
+
+}
+
+void __handler_NET_SEND_net_send(void *buf, void *dma_msg) {
+
+}
+

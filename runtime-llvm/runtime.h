@@ -47,6 +47,14 @@ void __rt_buf_emit(buf_t *buf, int size, void *data);
 void __rt_buf_concat(buf_t *buf, buf_t *other);
 
 // Standard libs
+typedef struct {
+  int vsize;
+  void * el;
+} table_t;
+
+void __rt_table_init(table_t * table, int vsize);
+void * __rt_table_lookup(table_t * table, int key);
+void __rt_table_update(table_t * table, int key, void * value);
 
 
 #endif // _EP2_LLVM_RUNTIME_H_

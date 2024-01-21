@@ -51,3 +51,15 @@ void __rt_buf_concat(buf_t *buf, buf_t *other) {
   buf->offset += other->offset;
   __rt_buf_free(other);
 }
+
+
+void __rt_table_init(table_t * table, int vsize) {
+  table->vsize = vsize;
+  table->el = malloc(vsize);
+}
+void * __rt_table_lookup(table_t * table, int key) {
+  return table->el;
+}
+void __rt_table_update(table_t * table, int key, void * value) {
+  memcpy(table->el, value, table->vsize);
+}
