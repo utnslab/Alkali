@@ -39,6 +39,7 @@ namespace ep2 {
 void LowerNoctxswapPass::runOnOperation() {
   auto module = getOperation();
 
+  /*
   auto findDependentOps = [&](mlir::Operation* baseOp) {
     std::unordered_set<mlir::Value> v;
     std::queue<mlir::Operation*> q;
@@ -116,6 +117,7 @@ void LowerNoctxswapPass::runOnOperation() {
     }
   });
   // todo finish
+  */
 }
 
 } // namespace ep2

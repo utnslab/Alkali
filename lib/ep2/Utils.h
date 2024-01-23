@@ -47,7 +47,7 @@ static TableInfo getTableStr(ep2::TableType type) {
   if (isa<ep2::StructType>(valTy)) {
     valStr = cast<ep2::StructType>(valTy).getName().str();
   } else if (isa<ep2::BufferType>(valTy)) {
-    valStr = "buf";
+    valStr = "__buf_t";
   } else if (isa<mlir::IntegerType>(valTy)) {
     valStr = getIntTypeStr(valTy);
   } else {

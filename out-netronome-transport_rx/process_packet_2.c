@@ -3,16 +3,16 @@
 #include "extern/extern_dma.h"
 #include "extern/extern_net.h"
 
-static struct tcp_header_t_sub_0 _loc_buf_9;
-__xrw static struct tcp_header_t_sub_0 _loc_buf_9_xfer;
-static struct ip_header_t_sub_1 _loc_buf_8;
-__xrw static struct ip_header_t_sub_1 _loc_buf_8_xfer;
 static struct repack_type_0 _loc_buf_7;
 __xrw static struct repack_type_0 _loc_buf_7_xfer;
-static struct eth_header_t_sub_0 _loc_buf_6;
-__xrw static struct eth_header_t_sub_0 _loc_buf_6_xfer;
+static struct tcp_header_t_sub_0 _loc_buf_9;
+__xrw static struct tcp_header_t_sub_0 _loc_buf_9_xfer;
 static struct pkt_info_t _loc_buf_5;
 __xrw static struct pkt_info_t _loc_buf_5_xfer;
+static struct ip_header_t_sub_1 _loc_buf_8;
+__xrw static struct ip_header_t_sub_1 _loc_buf_8_xfer;
+static struct eth_header_t_sub_0 _loc_buf_6;
+__xrw static struct eth_header_t_sub_0 _loc_buf_6_xfer;
 static int rr_ctr = 0;
 __declspec(aligned(4)) struct event_param_NET_RECV work;
 __xrw struct event_param_NET_RECV work_ref;
@@ -33,8 +33,8 @@ __forceinline static void dispatch1 () {
 
 __forceinline
 void __event___handler_NET_RECV_process_packet_2() {
-  uint32_t v1;
-  uint64_t v2;
+  uint16_t v1;
+  uint32_t v2;
   __declspec(aligned(4)) struct event_param_NET_RECV* v3;
   __shared __cls struct context_chain_1_t* v4;
   __shared __cls struct context_chain_1_t* v5;
@@ -68,8 +68,8 @@ void __event___handler_NET_RECV_process_packet_2() {
   __xrw struct tcp_header_t_sub_0* v26;
   __declspec(aligned(4)) struct event_param_OoO_DETECT* v27;
   __xrw struct event_param_OoO_DETECT* v28;
-  v1 = 3;
-  v2 = 14;
+  v1 = 14;
+  v2 = 3;
   v3 = &work;
   inlined_net_recv(v3);
   v4 = alloc_context_chain_ring_entry();
@@ -98,7 +98,7 @@ void __event___handler_NET_RECV_process_packet_2() {
   v6.offs = 38;
   mem_read32(&v12->f0, v6.buf + v6.offs, 12);
   _loc_buf_9 = *(v12);
-  v13 = v10 + v2;
+  v13 = v10 + v1;
   v14 = (uint32_t) v13;
   v7->f1 = v14;
   v16 = _loc_buf_9.f2;

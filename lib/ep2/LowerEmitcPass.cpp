@@ -675,7 +675,7 @@ struct TableLookupPattern : public OpConversionPattern<ep2::LookupOp> {
   matchAndRewrite(ep2::LookupOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter &rewriter) const final {
 
-    if (cast<ep2::StructType>(op.getValue().getType())) {
+    if (isa<ep2::StructType>(op.getValue().getType())) {
       auto buf = rewriter.create<emitc::VariableOp>(op->getLoc(), typeConverter->convertType(op.getValue().getType()), emitc::OpaqueAttr::get(getContext(), std::string{"&"} + allocAnalyzer.localAllocs[op]));
 
       llvm::SmallVector<Type> resTypes = {};
@@ -688,7 +688,7 @@ struct TableLookupPattern : public OpConversionPattern<ep2::LookupOp> {
       llvm::SmallVector<Type> resTypes = {typeConverter->convertType(op.getValue().getType())};
       mlir::ArrayAttr args = rewriter.getI32ArrayAttr({false});
       mlir::ArrayAttr templ_args;
-      rewriter.create<emitc::CallOp>(op->getLoc(), resTypes, rewriter.getStringAttr("__ep2_intrin_table_lookup"), args, templ_args, ValueRange{adaptor.getOperands()});
+      rewriter.replaceOpWithNewOp<emitc::CallOp>(op, resTypes, rewriter.getStringAttr("__ep2_intrin_table_lookup"), args, templ_args, ValueRange{adaptor.getOperands()});
     }
 
     return success();

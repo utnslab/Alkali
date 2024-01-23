@@ -85,6 +85,10 @@ static std::vector<std::pair<int, unsigned>> calcPadding(const mlir::LLVM::LLVMS
 }
 
 void EmitNetronomePass::runOnOperation() {
+  auto isPow2 = [](unsigned x) {
+    return (x & -x) == x;
+  };
+
   auto module = getOperation();
 
   if (basePathOpt.empty()) {
@@ -217,7 +221,7 @@ void EmitNetronomePass::runOnOperation() {
     std::string declType = "context_chain_1_t";
     std::string declId = "context_chain_pool";
     std::string declName = "context_chain_ring";
-    std::string declSize = "128";
+    int declSize = 128;
     std::string declPlace = toStringDecl(MemType::CLS);
 
     fout_prog_hdr << declPlace << "_CONTEXTQ_DECLARE(" << declType << ", " << declId << ", " << declSize << ");\n";
@@ -227,10 +231,11 @@ void EmitNetronomePass::runOnOperation() {
     fout_prog_hdr << "__import __shared __cls int " << declName << "_qHead;\n";
     fout_prog_hdr << "#endif\n\n";
 
+    assert(isPow2(declSize));
     fout_prog_hdr << "__forceinline static __shared __cls struct " << declType << "* alloc_" << declName << "_entry() {\n";
     fout_prog_hdr << "\t__xrw int context_idx = 1;\n";
     fout_prog_hdr << "\tcls_test_add(&context_idx, &" << declName << "_qHead, sizeof(context_idx));\n";
-    fout_prog_hdr << "\treturn &" << declId << "[context_idx];\n";
+    fout_prog_hdr << "\treturn &" << declId << "[context_idx & " << (declSize-1)  << "];\n";
     fout_prog_hdr << "}\n\n";
 
     fout_prog_hdr << "__forceinline static struct __buf_t alloc_packet_buf() {\n";
@@ -406,9 +411,6 @@ void EmitNetronomePass::runOnOperation() {
           }
           fout_stage << "\t}\n";
 
-          auto isPow2 = [](unsigned x) {
-            return (x & -x) == x;
-          };
           fout_stage << "\trr_ctr = ";
           if (isPow2(queues.size())) {
             fout_stage << "(rr_ctr + 1) & " << (queues.size()-1) << ";\n";

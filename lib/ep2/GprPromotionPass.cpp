@@ -21,6 +21,7 @@ namespace mlir {
 namespace ep2 {
 
 void GprPromotionPass::runOnOperation() {
+  /*
   getOperation()->walk([&](func::FuncOp fop) {
     if (fop.getName().starts_with("__event___handler")) {
       Block& b = fop.getRegion().front();
@@ -67,6 +68,7 @@ void GprPromotionPass::runOnOperation() {
       });
     }
   });
+  */
 }
 
 } // namespace ep2
