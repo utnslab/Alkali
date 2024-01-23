@@ -38,7 +38,7 @@ struct decrypt_cmd_t {
 }
 
 extern event NET_RECV {context ctx; buf packet;}
-extern event NET_SEND{context ctx; buf packet;}
+extern event NET_SEND {context ctx; buf packet;}
 
 
 extern event DMA_SEND{context ctx; buf data; dma_desc_t desc;}

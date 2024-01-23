@@ -7,6 +7,7 @@ TARGET=${1:-x86_64}-unknown-linux-gnu
 EP2_SOURCE=${2:-tests/experiments/transport_rx.ep2.txt}
 
 set -x
+set -e
 
 $EP2_BINS/ep2c $EP2_SOURCE -o tmp.mlir
 make TARGET=$TARGET -C runtime-llvm clean
