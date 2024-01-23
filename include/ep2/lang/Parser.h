@@ -734,41 +734,23 @@ private:
 
     if (lexer.getCurToken() != '(')
       return parseError<PrototypeAST>("(", "in prototype");
-    lexer.consume(Token('('));
 
     std::vector<std::unique_ptr<VarDeclExprAST>> args;
-    if (lexer.getCurToken() != ')') {
-      do {
-        VarType type;
-        std::string name;
+    do {
+      lexer.getNextToken(); // eat '(' or ','
+      auto type = parseType();
+      if (type == nullptr)
+        return parseError<PrototypeAST>("type", "in function parameter list");
+      
+      if (lexer.getCurToken() != tok_identifier)
+        return parseError<PrototypeAST>("identifier", "in function parameter list");
 
-        // Parse either the name of the variable, or its type.
-        std::string nameOrType(lexer.getId());
-        auto loc = lexer.getLastLocation();
-        lexer.consume(tok_identifier);
+      auto name = std::string(lexer.getId());
+      lexer.checkConsume(tok_identifier);
+      args.push_back(
+          std::make_unique<VarDeclExprAST>(lexer.getLastLocation(), name, *type));
+    } while (lexer.getCurToken() == ',');
 
-        // If the next token is an identifier, we just parsed the type.
-        if (lexer.getCurToken() == tok_identifier) {
-          type.name = std::move(nameOrType);
-
-          // Parse the name.
-          name = std::string(lexer.getId());
-          lexer.consume(tok_identifier);
-        } else {
-          // Otherwise, we just parsed the name.
-          name = std::move(nameOrType);
-        }
-
-        args.push_back(
-            std::make_unique<VarDeclExprAST>(std::move(loc), name, std::move(type)));
-        if (lexer.getCurToken() != ',')
-          break;
-        lexer.consume(Token(','));
-        if (lexer.getCurToken() != tok_identifier)
-          return parseError<PrototypeAST>(
-              "identifier", "after ',' in function parameter list");
-      } while (true);
-    }
     if (lexer.getCurToken() != ')')
       return parseError<PrototypeAST>(")", "to end function prototype");
 

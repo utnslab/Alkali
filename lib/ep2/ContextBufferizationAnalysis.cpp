@@ -21,16 +21,18 @@ ContextBufferizationAnalysis::ContextBufferizationAnalysis(Operation *op,
       [&, this](size_t i, HandlerDependencyAnalysis::GraphType &graph,
                 HandlerDependencyAnalysis::OrderType &order) {
         // create a context table for all connected nodes
+        auto table_idx = contextTables.size();
         auto &table = contextTables.emplace_back();
         int ctr = 0;
         for (auto funcOp : order) {
-          contextMap.try_emplace(funcOp.getSymName().str(), table);
+          contextMap.try_emplace(funcOp.getSymName().str(), table_idx);
           funcOp->walk([&](ContextRefOp refOp) {
             llvm::StringRef field = refOp.getName();
             auto type = refOp.getType().getValueType();
+            // TODO(zhiyaung): bug?
 
             const std::pair<int, mlir::Type> pr = {ctr, type};
-            auto [it, isNew] = table.try_emplace(field, pr);
+            auto [it, isNew] = table.try_emplace(field.str(), pr);
             if (!isNew) {
               if (it->second.second.isa<AnyType>())
                 it->second.second = type;
@@ -56,7 +58,7 @@ ContextBufferizationAnalysis::TableT & ContextBufferizationAnalysis::getContextT
     dump();
     assert(false && "Cannot find funcOp in context analysis");
   }
-  return opIt->second;
+  return contextTables[opIt->second];
 }
 
 ContextBufferizationAnalysis::TableT & ContextBufferizationAnalysis::getContextTable(InitOp initOp) {
@@ -79,8 +81,9 @@ std::pair<int, mlir::Type> ContextBufferizationAnalysis::getContextType(Function
     return {0, mlir::Type{}};
   }
 
-  auto it = opIt->second.find(name);
-  if (it == opIt->second.end()) {
+  auto &table = contextTables[opIt->second];
+  auto it = table.find(name);
+  if (it == table.end()) {
     funcOp->emitError("Context field not found");
     return {0, mlir::Type{}};
   }

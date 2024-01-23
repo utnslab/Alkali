@@ -159,8 +159,8 @@ struct BufferAnalysis {
 struct ContextBufferizationAnalysis {
   using TableT = llvm::StringMap<std::pair<int, mlir::Type>>;
 
-  std::vector<TableT> contextTables;
-  std::map<std::string, TableT&> contextMap;
+  std::vector<TableT> contextTables{};
+  std::map<std::string, size_t> contextMap;
   AnalysisManager& am;
 
   ContextBufferizationAnalysis(Operation* op, AnalysisManager& am);
@@ -176,9 +176,9 @@ struct ContextBufferizationAnalysis {
     am.invalidate(preserved);
   }
   void dump() {
-    for (auto &[opName, table] : contextMap) {
+    for (auto &[opName, idx] : contextMap) {
       llvm::errs() << "Context table for " << opName << "\n";
-      for (auto &[name, pr] : table) {
+      for (auto &[name, pr] : contextTables[idx]) {
         llvm::errs() << "  " << name << " : ";
         pr.second.dump();
       }
@@ -468,6 +468,8 @@ private:
 
 struct EmitLLVMHeaderPass
     : public PassWrapper<EmitLLVMHeaderPass, OperationPass<ModuleOp>> {
+  EmitLLVMHeaderPass() = default;
+  EmitLLVMHeaderPass(const EmitLLVMHeaderPass &pass) {}
   void runOnOperation() final;
   void getDependentDialects(DialectRegistry &registry) const override {
     registry.insert<EP2Dialect, func::FuncDialect, LLVM::LLVMDialect,
@@ -475,6 +477,10 @@ struct EmitLLVMHeaderPass
   }
   StringRef getArgument() const final { return "ep2-emit-llvm-header"; }
   StringRef getDescription() const final { return "Emit LLVM header"; }
+  Option<std::string> outputDir{
+      *this, "dir",
+      llvm::cl::desc("The directory for output 'ep2.inc.cpp' and 'ep2.inc.h'"),
+      llvm::cl::Required};
 };
 
 struct ContextToMemPass :

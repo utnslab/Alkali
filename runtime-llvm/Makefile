@@ -4,7 +4,7 @@ CC := $(CLANG_BIN)/clang
 LDFLAGS = $(shell pkgconf -libs glib-2.0) -lpthread -target $(TARGET)
 CFLAGS = -O2 $(shell pkgconf --cflags glib-2.0) -gdwarf-4 -target $(TARGET)
 
-OBJECTS = runtime.o driver.o externs.o ep2.o
+OBJECTS = runtime.o driver.o externs.o ep2.o ep2.inc.o
 BIN = runep2
 
 all : $(BIN)
@@ -19,4 +19,4 @@ ep2.o : ;
 	$(CC) $(CFLAGS) -c -o $@ $<
 
 clean :
-	rm -f *.o $(BIN)
+	rm -f *.o *.inc.* $(BIN)

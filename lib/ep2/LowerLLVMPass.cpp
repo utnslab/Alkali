@@ -13,6 +13,9 @@
 #include "mlir/Transforms/DialectConversion.h"
 #include "mlir/Transforms/GreedyPatternRewriteDriver.h"
 
+#include "mlir/Conversion/LLVMCommon/TypeConverter.h"
+#include "mlir/Conversion/ArithToLLVM/ArithToLLVM.h"
+
 #include "llvm/ADT/SmallSet.h"
 #include "llvm/Support/raw_ostream.h"
 
@@ -942,6 +945,8 @@ void LowerLLVMPass::runOnOperation() {
 
   // apply rules
   mlir::RewritePatternSet patterns(&getContext());
+  LLVMTypeConverter llvmConverter(&getContext());
+  mlir::arith::populateArithToLLVMConversionPatterns(llvmConverter, patterns);
   patterns.add<ControllerPattern, TerminatePattern, StructAccessOpPattern,
                StructUpdateOpPattern, CFCondBranchPattern, CFBranchPattern, ConstantPattern>(typeConverter, &getContext());
   patterns.add<ExtractOpPattern, EmitOpPattern, EmitBufferPattern,

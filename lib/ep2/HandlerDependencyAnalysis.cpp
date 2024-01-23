@@ -193,18 +193,18 @@ HandlerDependencyAnalysis::HandlerDependencyAnalysis(Operation *module) {
 
         // try to find extern forward
         // TODO(zhiyuang): move this to extern
-        // auto it2 = externForwards.find(target.event);
-        // if (it2 != externForwards.end()) {
-        //   for (auto &target2 : it2->second) {
-        //     HandlerFullName newTarget(target2);
-        //     newTarget.atom = target.atom;
-        //     auto it = handlersMap.find(target);
-        //     if (it != handlersMap.end()) {
-        //       targets.push_back(it->second);
-        //       continue;
-        //     }
-        //   }
-        // }
+        auto it2 = externForwards.find(target.event);
+        if (it2 != externForwards.end()) {
+          for (auto &target2 : it2->second) {
+            HandlerFullName newTarget(target2);
+            newTarget.atom = target.atom;
+            auto it = handlersMap.find(target);
+            if (it != handlersMap.end()) {
+              targets.push_back(it->second);
+              continue;
+            }
+          }
+        }
       }
 
       // insert back to graph

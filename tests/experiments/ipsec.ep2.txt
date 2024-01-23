@@ -85,7 +85,7 @@ struct esp_h {
   bits<32> seq;
 }
 
-handler NET_RECV: process_packet(context ctx, buf packet) {
+handler NET_RECV:process_packet(context ctx, buf packet) {
   eth_header_t eth_header;
   ip_header_t ip_header;
   esp_h esp_header;
@@ -110,7 +110,7 @@ controller DECRYPT_REQ() {
     Queue(100, 4);
 }
 
-handler DECRYPT_CMPL : dma_to_host(context ctx, buf data) {
+handler DECRYPT_CMPL:dma_to_host(context ctx, buf data) {
   eth_header_t eth_header;
   ip_header_t ip_header;
   esp_h esp_header;
