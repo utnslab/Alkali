@@ -53,6 +53,11 @@ void __rt_buf_concat(buf_t *buf, buf_t *other) {
 }
 
 
+void * __rt_table_alloc(int vsize) {
+  table_t *table = malloc(sizeof(table_t));
+  __rt_table_init(table, vsize);
+  return (void *)table;
+}
 void __rt_table_init(table_t * table, int vsize) {
   table->vsize = vsize;
   table->el = malloc(vsize);

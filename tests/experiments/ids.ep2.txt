@@ -1,32 +1,30 @@
 #Specify the functionality of the target archiecture
 
+# Totoal 24 bytes
+struct ip_header_t {
+    # Version (4),  IHL (4), DSCP (6), ECN(2)
+    bits<16> misc; 
+    bits<16> length;
+    bits<16> identification;
+    # Flags (3), Fragment Offset (13)
+    bits<16> fragment_offset;
+    
+    # TTL (8), Transport Protocol (8)
+    bits<16> TTL_transport;
+    bits<16> checksum;
+    bits<32> source_ip;
+    bits<32> dst_ip;
+    bits<32> options;
+}
+
 struct dma_desc_t {
   bits<16> queue_id;
   bits<16> meta;
 }
 
-# assume 256 bits key
-struct decrypt_cmd_t {
-  bits<16> length;
-  bits<256> key;
-}
-
 extern event NET_RECV {context ctx; buf packet;}
-extern event NET_SEND{context ctx; buf packet;}
-
-
-extern event DMA_SEND{context ctx; buf data; dma_desc_t desc;}
-extern event DMA_RECV{context ctx; buf data; dma_desc_t desc;}
-
-extern event DECRYPT_REQ {context ctx; buf data; decrypt_cmd_t cmd;}
-extern event DECRYPT_CMPL {context ctx; buf data;}
-
-extern handler NET_SEND(context ctx, buf packet) {}
-extern handler DECRYPT_REQ(context ctx, buf data, decrypt_cmd_t cmd) {
-  buf decrypted_data;
-  generate DECRYPT_CMPL{ctx, decrypted_data};
-}
-extern handler DMA_SEND(context ctx, buf data, dma_desc_t desc) {}
+extern event NET_SEND {context ctx; buf packet;}
+extern handler NET_SEND:net_send (context ctx, buf packet) { }
 
 
 ##############main program########## #
@@ -44,7 +42,7 @@ struct udp_header_t {
 
     bits<16> len;                      
     bits<16> sum;                      
-};
+}
 
 struct rpc_header_t {
   bits<32> channel_id;
@@ -53,21 +51,27 @@ struct rpc_header_t {
   bits<32> total_size;
 }
 
-handler NET_RECV : process_packet(context ctx, buf packet) {
+extern event MSG_REASSEMBLE {
+  context ctx;
+  buf packet;
+  rpc_header_t rpc;
+}
+
+handler NET_RECV:process_packet(context ctx, buf packet) {
   eth_header_t eth_header;
   ip_header_t ip_header;
+  udp_header_t udp_header_t;
   rpc_header_t rpc_header;
 
   packet.extract(eth_header);
   packet.extract(ip_header);
+  packet.extract(udp_header_t);
   packet.extract(rpc_header);
 
   ctx.eth_header = eth_header;
   ctx.ip_header = ip_header;
 
-  ## Remove protocol specific header (E.g. RFC4106)
-  cmd.length = ip_header.length - 24 - 8;
-  generate MSG_REASSEMBLE{ctx, packet, rpc_header};
+  generate MSG_REASSEMBLE:msg_reassemble{ctx, packet, rpc_header};
 }
 
 struct agg_buf_t {
@@ -76,9 +80,10 @@ struct agg_buf_t {
   buf tmp_buf;
 }
 
-handler MSG_REASSEMBLE: msg_reassemble(context ctx, buf data, rpc_header_t rpc_header) {
-  table <bits<16> a; agg_buf_t b;>(16) buf_reassemble;
+handler MSG_REASSEMBLE:msg_reassemble(context ctx, buf data, rpc_header_t rpc_header) {
+  table <bits<16>, agg_buf_t, 16> buf_reassemble;
   agg_buf_t agg_buf;
+  # here do we init the buffer? check the generated code (for __buf_init)
   agg_buf_t new_buf;
 
   agg_buf = buf_reassemble.lookup(rpc_header.channel_id); 
@@ -88,7 +93,7 @@ handler MSG_REASSEMBLE: msg_reassemble(context ctx, buf data, rpc_header_t rpc_h
 
   if(agg_buf.next_seq + 1 == rpc_header.seq){
     agg_buf.next_seq = agg_buf.next_seq + 1;
-    agg_buf.emit(data);
+    agg_buf.tmp_buf.emit(data);
     agg_buf.rest_bytes = agg_buf.rest_bytes - rpc_header.seg_size;
   }
 
@@ -100,6 +105,6 @@ handler MSG_REASSEMBLE: msg_reassemble(context ctx, buf data, rpc_header_t rpc_h
     new_buf.rest_bytes = 0;
     buf_reassemble.update(rpc_header.channel_id, new_buf);
 
-    generate IDS_REQ{ctx, agg_buf};
+    generate NET_SEND:net_send{ctx, agg_buf.tmp_buf};
   }
 }

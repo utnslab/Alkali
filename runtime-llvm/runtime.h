@@ -53,6 +53,7 @@ typedef struct {
 } table_t;
 
 void __rt_table_init(table_t * table, int vsize);
+void * __rt_table_alloc(int vsize);
 void * __rt_table_lookup(table_t * table, int key);
 void __rt_table_update(table_t * table, int key, void * value);
 

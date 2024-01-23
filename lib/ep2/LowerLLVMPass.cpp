@@ -31,6 +31,7 @@ Type getI8PtrType(OpBuilder &builder) {
 }
 
 // The struct in EP2 is *never* nested. It is always a flat struct
+// the only exception is, there's a buf inside
 bool isStructPointer(Type type) {
   if (auto ptr = type.dyn_cast<LLVM::LLVMPointerType>()) {
     // We need to exclude void *. void * is a value rather than a pointer
@@ -124,7 +125,11 @@ struct StructAccessOpPattern : public OpConversionPattern<ep2::StructAccessOp> {
     auto resType = getTypeConverter()->convertType(structAccessOp.getType());
     auto gepOp = emitGEP(rewriter, resType, adaptor.getInput(),
                          static_cast<int>(structAccessOp.getIndex()));
-    rewriter.replaceOpWithNewOp<LLVM::LoadOp>(structAccessOp, gepOp);
+    // The struct in EP2 is *never* nested. It is always a flat struct
+    if (isStructPointer(gepOp.getType()))
+      rewriter.replaceOp(structAccessOp, gepOp);
+    else // its a value type (e.g. int
+      rewriter.replaceOpWithNewOp<LLVM::LoadOp>(structAccessOp, gepOp);
 
     return success();
   }
@@ -235,14 +240,31 @@ struct InitOpToBufPattern : public ConversionToCallPattern<ep2::InitOp> {
   }
 };
 
-struct InitOpToStructPattern : public OpConversionPattern<ep2::InitOp> {
-  using OpConversionPattern<ep2::InitOp>::OpConversionPattern;
+struct InitOpToTablePattern : public ConversionToCallPattern<ep2::InitOp> {
+  using ConversionToCallPattern<ep2::InitOp>::ConversionToCallPattern;
 
   LogicalResult
   matchAndRewrite(ep2::InitOp initOp, OpAdaptor adaptor,
                   ConversionPatternRewriter &rewriter) const final {
-    if (!initOp.getType().isa<ep2::StructType>() ||
-        initOp.getType().dyn_cast<ep2::StructType>().getIsEvent())
+    auto table = initOp.getType().dyn_cast<ep2::TableType>();
+    if (!table)
+      return rewriter.notifyMatchFailure(initOp, "Not a table type");
+
+    auto size = rewriter.create<LLVM::ConstantOp>(
+        initOp.getLoc(), rewriter.getIntegerType(32), table.getSize());
+    rewriter.replaceOpWithNewOp<LLVM::CallOp>(initOp, apiFunctions["__rt_table_alloc"], ValueRange{size});
+    return success();
+  }
+};
+
+struct InitOpToStructPattern : public ConversionToCallPattern<ep2::InitOp> {
+  using ConversionToCallPattern<ep2::InitOp>::ConversionToCallPattern;
+
+  LogicalResult
+  matchAndRewrite(ep2::InitOp initOp, OpAdaptor adaptor,
+                  ConversionPatternRewriter &rewriter) const final {
+    auto structType = initOp.getType().dyn_cast<ep2::StructType>();
+    if (!structType || structType.getIsEvent())
       return rewriter.notifyMatchFailure(initOp, "init a struct but not event");
 
     if (initOp.getNumOperands() != 0)
@@ -254,7 +276,20 @@ struct InitOpToStructPattern : public OpConversionPattern<ep2::InitOp> {
         initOp.getLoc(), rewriter.getIntegerType(32), 1);
 
     // return
-    rewriter.replaceOpWithNewOp<LLVM::AllocaOp>(initOp, retType, value1, 0);
+    auto structPtr = rewriter.create<LLVM::AllocaOp>(initOp.getLoc(), retType, value1, 0);
+    
+    // TODO(zhiyuang): check this!
+    // other value init. currently we only allow buffer inside the language
+    for (auto [i, type] : llvm::enumerate(structType.getElementTypes())) {
+      if (isa<BufferType>(type)) {
+        // call buffer init funcion
+        auto bufp = emitGEP(rewriter, getTypeConverter()->convertType(type), structPtr, i);
+        rewriter.create<LLVM::CallOp>(
+            initOp.getLoc(), apiFunctions["__rt_buf_init"], ValueRange{bufp});
+      }
+    }
+
+    rewriter.replaceOp(initOp, structPtr);
     return success();
   }
 };
@@ -890,6 +925,9 @@ void LowerLLVMPass::populateAPIFunctions(TypeConverter &converter) {
       module.getLoc(), "__rt_generate",
       LLVM::LLVMFunctionType::get(Void, {I32, I32, VoidPtr}));
   // table related
+  apiFunctions["__rt_table_alloc"] = builder.create<LLVM::LLVMFuncOp>(
+      module.getLoc(), "__rt_table_alloc",
+      LLVM::LLVMFunctionType::get(VoidPtr, {I32}));
   apiFunctions["__rt_table_lookup"] = builder.create<LLVM::LLVMFuncOp>(
       module.getLoc(), "__rt_table_lookup",
       LLVM::LLVMFunctionType::get(VoidPtr, {VoidPtr, I32}));
@@ -939,9 +977,6 @@ void LowerLLVMPass::runOnOperation() {
   target.addDynamicallyLegalDialect<cf::ControlFlowDialect>([&](mlir::Operation* op){
     return typeConverter.isLegal(op);
   });
-  target.addDynamicallyLegalOp<ep2::InitOp>([&](ep2::InitOp op) {
-    return !op.getType().isa<BufferType,StructType>();
-  });
 
   // apply rules
   mlir::RewritePatternSet patterns(&getContext());
@@ -952,10 +987,10 @@ void LowerLLVMPass::runOnOperation() {
   patterns.add<ExtractOpPattern, EmitOpPattern, EmitBufferPattern,
                InitOpToBufPattern>(
       typeConverter, &getContext(), apiFunctions);
-  patterns.add<LookupPattern, UpdatePattern>(typeConverter, &getContext(), apiFunctions);
+  patterns.add<InitOpToTablePattern, InitOpToStructPattern, LookupPattern,
+               UpdatePattern>(typeConverter, &getContext(), apiFunctions);
   patterns.add<AtomConstantPattern>(typeConverter, &getContext(), am);
 
-  patterns.add<InitOpToStructPattern>(typeConverter, &getContext());
   // TODO: use runtime?
   patterns.add<EmitOffsetPattern, ExtractOffsetPattern>(typeConverter, &getContext());
   patterns.add<AddPattern, SubPattern, CmpPattern, BitCastPattern, GlobalImportPattern, GlobalPattern>(typeConverter, &getContext());
