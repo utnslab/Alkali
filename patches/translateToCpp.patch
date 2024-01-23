@@ -1,5 +1,5 @@
 diff --git a/mlir/lib/Target/Cpp/TranslateToCpp.cpp b/mlir/lib/Target/Cpp/TranslateToCpp.cpp
-index 4645ca4b206e..9009ec4faedb 100644
+index 4645ca4b206e..c9be3401418e 100644
 --- a/mlir/lib/Target/Cpp/TranslateToCpp.cpp
 +++ b/mlir/lib/Target/Cpp/TranslateToCpp.cpp
 @@ -24,6 +24,7 @@
@@ -10,7 +10,20 @@ index 4645ca4b206e..9009ec4faedb 100644
  
  #define DEBUG_TYPE "translate-to-cpp"
  
-@@ -417,9 +418,197 @@ static LogicalResult printOperation(CppEmitter &emitter, emitc::CallOp callOp) {
+@@ -227,7 +228,11 @@ static LogicalResult printOperation(CppEmitter &emitter,
+   Operation *operation = variableOp.getOperation();
+   Attribute value = variableOp.getValue();
+ 
+-  return printConstantOp(emitter, operation, value);
++  if (operation->hasAttr("doFold")) {
++    return success();
++  } else {
++    return printConstantOp(emitter, operation, value);
++  }
+ }
+ 
+ static LogicalResult printOperation(CppEmitter &emitter,
+@@ -417,9 +422,224 @@ static LogicalResult printOperation(CppEmitter &emitter, emitc::CallOp callOp) {
    raw_ostream &os = emitter.ostream();
    Operation &op = *callOp.getOperation();
  
@@ -22,9 +35,20 @@ index 4645ca4b206e..9009ec4faedb 100644
 +      return failure();
 +  }
 +
++  auto isFolded = [&](mlir::Value v) {
++    llvm::StringRef name = emitter.getOrCreateName(v);
++    return name[0] != 'v';
++  };
++
 +  if (callOp.getCallee() == "__ep2_intrin_struct_access") {
 +    os << ((*callOp.getArgs()).size() > 1 && (*callOp.getArgs())[1].cast<IntegerAttr>().getValue().getSExtValue() ? "&" : "");
-+    os << emitter.getOrCreateName(op.getOperand(0)) << "->";
++
++    os << emitter.getOrCreateName(op.getOperand(0));
++    if (isFolded(op.getOperand(0))) {
++      os << ".";
++    } else {
++      os << "->";
++    }
 +    if (isa<IntegerAttr>((*callOp.getArgs())[0])) {
 +      os << "f" << (*callOp.getArgs())[0].cast<IntegerAttr>().getValue();
 +    } else {
@@ -32,7 +56,12 @@ index 4645ca4b206e..9009ec4faedb 100644
 +    }
 +    return success();
 +  } else if (callOp.getCallee() == "__ep2_intrin_struct_write") {
-+    os << emitter.getOrCreateName(op.getOperand(1)) << "->";
++    os << emitter.getOrCreateName(op.getOperand(1));
++    if (isFolded(op.getOperand(1))) {
++      os << ".";
++    } else {
++      os << "->";
++    }
 +    if (isa<IntegerAttr>((*callOp.getArgs())[0])) {
 +      os << "f" << (*callOp.getArgs())[0].cast<IntegerAttr>().getValue();
 +    } else {
@@ -52,8 +81,8 @@ index 4645ca4b206e..9009ec4faedb 100644
 +    os << " = ";
 +    // support an embedded struct access.
 +    if ((*callOp.getArgs()).size() >= 3 && (*callOp.getArgs())[2].cast<IntegerAttr>().getValue().getSExtValue()) {
-+      os << emitter.getOrCreateName(op.getOperand(0)) << "->f";
-+      os << (*callOp.getArgs())[0].cast<IntegerAttr>().getValue();
++      os << emitter.getOrCreateName(op.getOperand(0)) << "->";
++      os << "f" << (*callOp.getArgs())[0].cast<IntegerAttr>().getValue();
 +    } else {
 +      os << ((*callOp.getArgs()).size() > 1 && (*callOp.getArgs())[1].cast<IntegerAttr>().getValue().getSExtValue() ? "*" : "");
 +      os << emitter.getOrCreateName(op.getOperand(0));
@@ -180,10 +209,21 @@ index 4645ca4b206e..9009ec4faedb 100644
 +      os << callOp->getAttr("func").cast<mlir::StringAttr>().getValue().str() << "()";
 +    }
 +    return success();
-+  } else if (callOp.getCallee() == "__ep2_intrin_xfer2gpr" ||
-+             callOp.getCallee() == "__ep2_intrin_gpr2xfer") {
-+    os << "*(" << emitter.getOrCreateName(op.getOperand(1)) << ") = *(";
-+    os << emitter.getOrCreateName(op.getOperand(0)) << ")";
++  } else if (callOp.getCallee() == "__ep2_intrin_xfer2gpr") {
++    if (isFolded(op.getOperand(1))) {
++      os << emitter.getOrCreateName(op.getOperand(1));
++    } else {
++      os << "*(" << emitter.getOrCreateName(op.getOperand(1)) << ")";
++    }
++    os << " = *(" << emitter.getOrCreateName(op.getOperand(0)) << ")";
++    return success();
++  } else if (callOp.getCallee() == "__ep2_intrin_gpr2xfer") {
++    os << "*(" << emitter.getOrCreateName(op.getOperand(1)) << ") = ";
++    if (isFolded(op.getOperand(0))) {
++      os << emitter.getOrCreateName(op.getOperand(0));
++    } else {
++      os << "*(" << emitter.getOrCreateName(op.getOperand(0)) << ")";
++    }
 +    return success();
 +  } else if (callOp.getCallee() == "__ep2_intrin_incr_offs") {
 +    int sz = (*callOp.getArgs())[1].cast<IntegerAttr>().getValue().getSExtValue();
@@ -211,7 +251,7 @@ index 4645ca4b206e..9009ec4faedb 100644
  
    auto emitArgs = [&](Attribute attr) -> LogicalResult {
      if (auto t = dyn_cast<IntegerAttr>(attr)) {
-@@ -451,10 +640,15 @@ static LogicalResult printOperation(CppEmitter &emitter, emitc::CallOp callOp) {
+@@ -451,10 +671,15 @@ static LogicalResult printOperation(CppEmitter &emitter, emitc::CallOp callOp) {
  
    os << "(";
  
@@ -231,7 +271,21 @@ index 4645ca4b206e..9009ec4faedb 100644
    if (failed(emittedArgs))
      return failure();
    os << ")";
-@@ -787,7 +981,7 @@ StringRef CppEmitter::getOrCreateName(Block &block) {
+@@ -772,6 +997,13 @@ CppEmitter::CppEmitter(raw_ostream &os, bool declareVariablesAtTop)
+ StringRef CppEmitter::getOrCreateName(Value val) {
+   if (auto literal = dyn_cast_if_present<emitc::LiteralOp>(val.getDefiningOp()))
+     return literal.getValue();
++  if (auto var = dyn_cast_if_present<emitc::VariableOp>(val.getDefiningOp()) &&
++      val.getDefiningOp()->hasAttr("doFold")) {
++    auto name = cast<emitc::OpaqueAttr>(cast<emitc::VariableOp>(val.getDefiningOp()).getValue()).getValue();
++    assert(name[0] == '&');
++    return name.substr(1);
++  }
++
+   if (!valueMapper.count(val))
+     valueMapper.insert(val, formatv("v{0}", ++valueInScopeCount.top()));
+   return *valueMapper.begin(val);
+@@ -787,7 +1019,7 @@ StringRef CppEmitter::getOrCreateName(Block &block) {
  bool CppEmitter::shouldMapToUnsigned(IntegerType::SignednessSemantics val) {
    switch (val) {
    case IntegerType::Signless:
@@ -240,7 +294,7 @@ index 4645ca4b206e..9009ec4faedb 100644
    case IntegerType::Signed:
      return false;
    case IntegerType::Unsigned:
-@@ -1046,10 +1240,11 @@ LogicalResult CppEmitter::emitType(Location loc, Type type) {
+@@ -1046,10 +1278,11 @@ LogicalResult CppEmitter::emitType(Location loc, Type type) {
    if (auto iType = dyn_cast<IntegerType>(type)) {
      switch (iType.getWidth()) {
      case 1:

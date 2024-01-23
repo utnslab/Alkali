@@ -354,6 +354,16 @@ struct StructUpdatePropagationPass :
     StringRef getDescription() const final { return "Struct update propagation file"; }
 };
 
+struct GprPromotionPass :
+        public PassWrapper<GprPromotionPass, OperationPass<ModuleOp>> {
+    void runOnOperation() final;
+    void getDependentDialects(DialectRegistry &registry) const override {
+        registry.insert<EP2Dialect, func::FuncDialect, LLVM::LLVMDialect, emitc::EmitCDialect>();
+    }
+    StringRef getArgument() const final { return "ep2-gpr-promote"; }
+    StringRef getDescription() const final { return "Gpr promotion pass file"; }
+};
+
 struct HandlerReplicationPass :
         public PassWrapper<HandlerReplicationPass, OperationPass<ModuleOp>> {
     void runOnOperation() final;

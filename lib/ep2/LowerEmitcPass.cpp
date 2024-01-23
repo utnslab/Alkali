@@ -505,7 +505,10 @@ struct InitPattern : public OpConversionPattern<ep2::InitOp> {
       auto varOp = rewriter.create<emitc::VariableOp>(loc, newType, emitc::OpaqueAttr::get(getContext(), std::string{"&"} + allocAnalyzer.localAllocs[initOp]));
       rewriter.replaceOp(initOp, varOp);
     } else {
-      return rewriter.notifyMatchFailure(initOp, "Currently only support init op on struct");
+      // just declare a dummy variable.
+      auto newType = typeConverter->convertType(resType);
+      auto varOp = rewriter.create<emitc::VariableOp>(loc, newType, emitc::OpaqueAttr::get(getContext(), std::string{"rr_ctr"}));
+      rewriter.replaceOp(initOp, varOp);
     }
     return success();
   }
@@ -817,13 +820,16 @@ struct FunctionPattern : public OpConversionPattern<ep2::FuncOp> {
       }
     }
 
-    llvm::SmallVector<Type> resTypes3 = {contextType};
-    mlir::ArrayAttr args3 = rewriter.getStrArrayAttr({"ctx"});
-    mlir::ArrayAttr templ_args3;
-    auto structPtr = rewriter.create<emitc::CallOp>(loc, resTypes3, rewriter.getStringAttr("__ep2_intrin_struct_access"), args3, templ_args3, ValueRange{eventPtr.getResult()});
-    signatureConversion.remapInput(0, structPtr.getResult(0));
+    int sourceIdx = 0;
+    if (isa<ep2::ContextType>(funcOp.getFunctionType().getInputs()[0])) {
+      llvm::SmallVector<Type> resTypes3 = {contextType};
+      mlir::ArrayAttr args3 = rewriter.getStrArrayAttr({"ctx"});
+      mlir::ArrayAttr templ_args3;
+      auto structPtr = rewriter.create<emitc::CallOp>(loc, resTypes3, rewriter.getStringAttr("__ep2_intrin_struct_access"), args3, templ_args3, ValueRange{eventPtr.getResult()});
+      signatureConversion.remapInput(0, structPtr.getResult(0));
+      sourceIdx += 1;
+    }
 
-    auto sourceIdx = 1;
     for (size_t i = 0; i < wrapperTypes[0].getBody().size(); i++) {
       auto convertedType =
           typeConverter->convertType(wrapperTypes[0].getBody()[i]);
@@ -868,6 +874,16 @@ void LowerEmitcPass::runOnOperation() {
 
   // install functions
   auto builder = OpBuilder(getOperation());
+
+  getOperation()->walk([&](mlir::Operation* op) {
+    if (isa<ep2::InitOp>(op) && op->hasOneUse()) {
+      for (mlir::Operation* user : op->getUsers()) {
+        if (isa<ep2::ReturnOp>(user)) {
+          op->moveBefore(user);
+        }
+      }
+    }
+  });
 
   // Dialect Type converter
   TypeConverter typeConverter;

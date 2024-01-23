@@ -37,6 +37,7 @@ add_mlir_dialect_library(MLIREP2
         HandlerReplicationPass.cpp
         LowerNoctxswapPass.cpp
         RepackStructTypesPass.cpp
+        GprPromotionPass.cpp
 
         Passes/ContextToMemPass.cpp
         Passes/BufferReusePass.cpp

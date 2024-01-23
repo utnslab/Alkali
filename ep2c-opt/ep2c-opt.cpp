@@ -52,6 +52,7 @@ int main(int argc, char **argv) {
   mlir::PassRegistration<mlir::ep2::LowerNoctxswapPass>();
   mlir::PassRegistration<mlir::ep2::EmitFPGAPass>();
   mlir::PassRegistration<mlir::ep2::RepackStructTypesPass>();
+  mlir::PassRegistration<mlir::ep2::GprPromotionPass>();
 
   mlir::PassRegistration<mlir::ep2::ContextToMemPass>();
   mlir::PassRegistration<mlir::ep2::BufferReusePass>();

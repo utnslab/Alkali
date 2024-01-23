@@ -50,7 +50,17 @@ struct LowerMemcpyPattern : public OpRewritePattern<emitc::CallOp> {
       if ((op = followUpdateOps(op)) == nullptr) {
         return false;
       }
-      return isa<emitc::VariableOp>(op) && cast<emitc::VariableOp>(op).getValue().cast<emitc::OpaqueAttr>().getValue().starts_with("&_loc_buf");
+      if (isa<emitc::VariableOp>(op) && cast<emitc::VariableOp>(op).getValue().cast<emitc::OpaqueAttr>().getValue().starts_with("&_loc_buf")) return true;
+
+      // check for struct access ops
+      while (op != nullptr) {
+        if (!isa<emitc::CallOp>(op) || cast<emitc::CallOp>(op).getCallee() != "__ep2_intrin_struct_access" || !isa<emitc::PointerType>(op->getResult(0).getType())) {
+          break;
+        }
+        op = cast<emitc::CallOp>(op).getOperands()[0].getDefiningOp();
+      }
+      if (isa<emitc::VariableOp>(op) && cast<emitc::VariableOp>(op).getValue().cast<emitc::OpaqueAttr>().getValue().starts_with("&work")) return true;
+      return false;
     };
 
     auto isRtBuf = [&](mlir::Operation* op) {
@@ -197,6 +207,16 @@ struct LowerMemcpyPattern : public OpRewritePattern<emitc::CallOp> {
     bool isLoc0 = isLocBuf(opd0);
     bool isBuf1 = isRtBuf(opd1);
     bool isLoc1 = isLocBuf(opd1);
+    
+    auto getNewXferName = [&](mlir::Operation* locBuf) {
+      if (isa<emitc::VariableOp>(locBuf)) {
+        return cast<emitc::VariableOp>(locBuf).getValue().cast<emitc::OpaqueAttr>().getValue().str() + "_xfer";
+      } else if (isa<emitc::CallOp>(locBuf) && cast<emitc::CallOp>(locBuf).getCallee() == "__ep2_intrin_struct_access") {
+        return std::string{"_work_"} + std::to_string(cast<emitc::CallOp>(locBuf).getArgs().value().getValue()[0].cast<mlir::IntegerAttr>().getValue().getSExtValue()) + "_xfer";
+      } else {
+        assert(false && "Unreachable");
+      }
+    };
 
     if (isBuf0 && isBuf1) {
       // Bulk copy from one loc to another in MEM.
@@ -215,8 +235,7 @@ struct LowerMemcpyPattern : public OpRewritePattern<emitc::CallOp> {
       // Copy from mem to transfer register (assume packet buffers stored in EMEM).
       // Assume rt_buf is aligned at alloc wide enough.
       mlir::Operation* locBuf = followUpdateOps(opd0);
-      std::string newName = cast<emitc::VariableOp>(locBuf).getValue().cast<emitc::OpaqueAttr>().getValue().str() + "_xfer";
-      mlir::Operation* xferVar = rewriter.create<emitc::VariableOp>(op->getLoc(), convertToXferType(locBuf->getResultTypes()[0]), emitc::OpaqueAttr::get(getContext(), newName));
+      mlir::Operation* xferVar = rewriter.create<emitc::VariableOp>(op->getLoc(), convertToXferType(locBuf->getResultTypes()[0]), emitc::OpaqueAttr::get(getContext(), getNewXferName(locBuf)));
 
       decomposeMemcpy(false, isBuf1, isBuf1 ? MemType::EMEM : MemType::CLS, xferVar);
 
@@ -226,7 +245,7 @@ struct LowerMemcpyPattern : public OpRewritePattern<emitc::CallOp> {
       rewriter.replaceOpWithNewOp<emitc::CallOp>(op, resTypes, rewriter.getStringAttr("__ep2_intrin_xfer2gpr"), args, templ_args, ValueRange{xferVar->getResult(0), locBuf->getResult(0)});
     } else if (isLoc1) {
       mlir::Operation* locBuf = followUpdateOps(opd1);
-      mlir::Operation* xferVar = rewriter.create<emitc::VariableOp>(op->getLoc(), convertToXferType(locBuf->getResultTypes()[0]), emitc::OpaqueAttr::get(getContext(), cast<emitc::VariableOp>(locBuf).getValue().cast<emitc::OpaqueAttr>().getValue().str() + "_xfer"));
+      mlir::Operation* xferVar = rewriter.create<emitc::VariableOp>(op->getLoc(), convertToXferType(locBuf->getResultTypes()[0]), emitc::OpaqueAttr::get(getContext(), getNewXferName(locBuf)));
 
       llvm::SmallVector<Type> resTypes = {};
       mlir::ArrayAttr args;
@@ -237,6 +256,7 @@ struct LowerMemcpyPattern : public OpRewritePattern<emitc::CallOp> {
       rewriter.replaceOp(op, copy);
     } else {
       op->dump();
+      llvm::errs() << "L0: " << isLoc0 << " L1: " << isLoc1 << " B0: " << isBuf0 << " B1: " << isBuf1 << '\n';
       // should be a context/table copy.
       assert(false && "Unhandled memcpy");
       return failure();
