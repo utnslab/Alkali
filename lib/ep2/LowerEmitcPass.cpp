@@ -661,6 +661,18 @@ struct CondBranchPattern : public OpConversionPattern<cf::CondBranchOp> {
   }
 };
 
+struct GlobalImportPattern : public OpConversionPattern<ep2::GlobalImportOp> {
+  using OpConversionPattern<ep2::GlobalImportOp>::OpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(ep2::GlobalImportOp op, OpAdaptor adaptor,
+                  ConversionPatternRewriter &rewriter) const final {
+    auto newType = typeConverter->convertType(op.getOutput().getType());
+    rewriter.replaceOpWithNewOp<emitc::VariableOp>(op, newType, emitc::OpaqueAttr::get(getContext(), std::string{"&"} + op.getName().str()));
+    return success();
+  }
+};
+
 struct TableLookupPattern : public OpConversionPattern<ep2::LookupOp> {
   using OpConversionPattern<ep2::LookupOp>::OpConversionPattern;
 
@@ -869,6 +881,7 @@ void LowerEmitcPass::runOnOperation() {
   AtomAnalysis &atomAnalysis = getAnalysis<AtomAnalysis>();
   LocalAllocAnalysis &allocAnalysis = getAnalysis<LocalAllocAnalysis>();
   TableAnalysis &tableAnalysis = getAnalysis<TableAnalysis>();
+  const CollectInfoAnalysis& info = getCachedAnalysis<CollectInfoAnalysis>().value();
 
   markAnalysesPreserved<LocalAllocAnalysis>();
 
@@ -900,7 +913,13 @@ void LowerEmitcPass::runOnOperation() {
 
   typeConverter.addConversion([&](ep2::TableType type) {
     TableInfo tInfo = getTableStr(type);
-    return builder.getType<emitc::PointerType>(builder.getType<emitc::OpaqueType>(std::string{"__shared __lmem "} + tInfo.tableType));
+    std::string qualifier;
+    if (info.tableInfos.find(tInfo.tableType)->second.first.isLocal) {
+      qualifier = "__shared __lmem ";
+    } else {
+      qualifier = "__export __shared __cls ";
+    }
+    return builder.getType<emitc::PointerType>(builder.getType<emitc::OpaqueType>(qualifier + tInfo.tableType));
   });
   typeConverter.addConversion([&](ep2::AtomType type) {
     return mlir::IntegerType::get(type.getContext(), 32);
@@ -946,7 +965,7 @@ void LowerEmitcPass::runOnOperation() {
     ep2::CallOp, ep2::FuncOp, ep2::ReturnOp, ep2::StructUpdateOp, ep2::NopOp, ep2::InitOp,
     ep2::StructAccessOp, ep2::ExtractOp, ep2::EmitOp, ep2::BitCastOp, ep2::SubOp, ep2::AddOp,
     ep2::CmpOp, ep2::MulOp, arith::SelectOp, ep2::LookupOp, ep2::UpdateOp, ep2::LoadOp,
-    ep2::ExtractOffsetOp, ep2::EmitOffsetOp>();
+    ep2::ExtractOffsetOp, ep2::EmitOffsetOp, ep2::GlobalImportOp>();
   target.addDynamicallyLegalDialect<cf::ControlFlowDialect>([&](mlir::Operation* op){
     return typeConverter.isLegal(op);
   });
@@ -956,7 +975,7 @@ void LowerEmitcPass::runOnOperation() {
   patterns.add<CallPattern, ReturnPattern, ControllerPattern, StructUpdatePattern, EmitPattern,
                ContextRefPattern, StructAccessPattern, TerminatePattern, NopPattern, BitCastPattern,
                SubPattern, AddPattern, MulPattern, CmpPattern, SelectPattern, EmitOffsetPattern,
-               TableUpdatePattern, BranchPattern, CondBranchPattern>(typeConverter, &getContext());
+               TableUpdatePattern, BranchPattern, CondBranchPattern, GlobalImportPattern>(typeConverter, &getContext());
   patterns.add<ExtractPattern>(typeConverter, &getContext(),
                                 allocAnalysis);
   patterns.add<ExtractOffsetPattern>(typeConverter, &getContext(),

@@ -215,11 +215,22 @@ CollectInfoAnalysis::CollectInfoAnalysis(Operation* module, AnalysisManager& am)
   module->walk([&](ep2::InitOp initOp){
     if (isa<ep2::TableType>(initOp->getResult(0).getType())) {
       TableInfo ti = getTableStr(cast<ep2::TableType>(initOp->getResult(0).getType()));
-
+      ti.isLocal = true;
       if (this->tableInfos.find(ti.tableType) == this->tableInfos.end()) {
         this->tableInfos[ti.tableType].first = ti;
       }
       this->tableInfos[ti.tableType].second.push_back(laa.localAllocs[initOp]);
+    }
+  });
+
+  module->walk([&](ep2::GlobalOp op) {
+    if (isa<ep2::TableType>(op.getOutput().getType())) {
+      TableInfo ti = getTableStr(cast<ep2::TableType>(op.getOutput().getType()));
+      ti.isLocal = false;
+      if (this->tableInfos.find(ti.tableType) == this->tableInfos.end()) {
+        this->tableInfos[ti.tableType].first = ti;
+      }
+      this->tableInfos[ti.tableType].second.push_back(op.getName().str());
     }
   });
 }

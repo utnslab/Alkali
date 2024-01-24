@@ -296,6 +296,7 @@ struct TableInfo {
   std::string keyType;
   std::string valType;
   int size;
+  bool isLocal;
 };
 
 struct CollectInfoAnalysis {

@@ -212,7 +212,12 @@ void EmitNetronomePass::runOnOperation() {
       fout_prog_hdr << "};\n";
 
       for (const std::string& field : pr.second.second) {
-        fout_prog_hdr << "__shared __lmem " << tInfo.tableType << " " << field << ";\n";
+        if (tInfo.isLocal) {
+          fout_prog_hdr << "__shared __lmem ";
+        } else {
+          fout_prog_hdr << "__export __shared __cls ";
+        }
+        fout_prog_hdr << tInfo.tableType << " " << field << ";\n";
       }
       fout_prog_hdr << "\n";
     }
