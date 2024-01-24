@@ -482,7 +482,7 @@ struct HandlerRawPattern : public OpConversionPattern<ep2::FuncOp> {
     if (!funcOp.isHandler())
       return rewriter.notifyMatchFailure(funcOp, "Not a handler");
 
-    if (funcOp.isExtern()) { // remove all externs in generated function calls
+    if (funcOp.isExtern()) {
       rewriter.eraseOp(funcOp);
       return success();
     }
@@ -905,6 +905,7 @@ void LowerLLVMPass::populateAPIFunctions(TypeConverter &converter) {
 
   // Types
   auto I32 = builder.getIntegerType(32);
+  auto I256 = builder.getIntegerType(256);
   auto Void = builder.getType<LLVM::LLVMVoidType>();
   auto VoidPtr = builder.getType<LLVM::LLVMPointerType>();
   auto Buf = converter.convertType(builder.getType<ep2::BufferType>());
@@ -953,6 +954,15 @@ void LowerLLVMPass::populateAPIFunctions(TypeConverter &converter) {
         builder.create<LLVM::LLVMFuncOp>(
             module.getLoc(), "__handler_DMA_WRITE_REQ_dma_write",
             LLVM::LLVMFunctionType::get( Void, {Buf, DmaType}));
+    apiFunctions["__handler_DMA_SEND_dma_send"] =
+        builder.create<LLVM::LLVMFuncOp>(
+            module.getLoc(), "__handler_DMA_SEND_dma_send",
+            LLVM::LLVMFunctionType::get( Void, {Buf, DmaType}));
+    auto CryptoCmd = LLVM::LLVMPointerType::get( LLVM::LLVMStructType::getLiteral(builder.getContext(), {I256, I32}, true));
+    apiFunctions["__handler_DECRYPT_REQ_decrypt"] =
+        builder.create<LLVM::LLVMFuncOp>(
+            module.getLoc(), "__handler_DECRYPT_REQ_decrypt",
+            LLVM::LLVMFunctionType::get( Void, {Buf, CryptoCmd}));
   }
 }
 

@@ -27,14 +27,14 @@
 ###    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
 
 struct dma_desc_t {
-  bits<16> queue_id;
-  bits<16> meta;
+  int queue_id;
+  int meta;
 }
 
 # assume 256 bits key
 struct decrypt_cmd_t {
-  bits<16> length;
   bits<256> key;
+  bits<32> length;
 }
 
 extern event NET_RECV {context ctx; buf packet;}
@@ -48,11 +48,11 @@ extern event DECRYPT_REQ {context ctx; buf data; decrypt_cmd_t cmd;}
 extern event DECRYPT_CMPL {context ctx; buf data;}
 
 extern handler NET_SEND(context ctx, buf packet) {}
-extern handler DECRYPT_REQ(context ctx, buf data, decrypt_cmd_t cmd) {
+extern handler DECRYPT_REQ:decrypt(context ctx, buf data, decrypt_cmd_t cmd) {
   buf decrypted_data;
-  generate DECRYPT_CMPL{ctx, decrypted_data};
+  generate DECRYPT_CMPL:decrypt{ctx, decrypted_data};
 }
-extern handler DMA_SEND(context ctx, buf data, dma_desc_t desc) {}
+extern handler DMA_SEND:dma_send(context ctx, buf data, dma_desc_t desc) {}
 
 
 ##############main program########## #
@@ -101,7 +101,7 @@ handler NET_RECV:process_packet(context ctx, buf packet) {
   ctx.esp_header = esp_header;
 
   ## Remove protocol specific header (E.g. RFC4106)
-  generate DECRYPT_REQ{ctx, packet, cmd};
+  generate DECRYPT_REQ:decrypt{ctx, packet, cmd};
 }
 
 controller DECRYPT_REQ() {
@@ -110,7 +110,7 @@ controller DECRYPT_REQ() {
     Queue(100, 4);
 }
 
-handler DECRYPT_CMPL:dma_to_host(context ctx, buf data) {
+handler DECRYPT_CMPL:decrypt(context ctx, buf data) {
   eth_header_t eth_header;
   ip_header_t ip_header;
   esp_h esp_header;
@@ -128,5 +128,5 @@ handler DECRYPT_CMPL:dma_to_host(context ctx, buf data) {
 
   desc.queue_id = 0;
 
-  generate DMA_SEND{ctx, dma_out, desc};
+  generate DMA_SEND:dma_send{ctx, dma_out, desc};
 }
