@@ -1,0 +1,146 @@
+#Specify the functionality of the target archiecture
+
+### This example assumes ESP implementaion as described in rfc 4303
+### The packet format for encapsulated packet on the wire is as follows (from RFC)
+###      0                   1                   2                   3
+###      0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
+###    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+###    |               Security Parameters Index (SPI)                 |
+###    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+###    |                      Sequence Number                          |
+###    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+---
+###    |                    IV (optional)                              | ^ p
+###    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+ | a
+###    |                    Rest of Payload Data  (variable)           | | y
+###    ~                                                               ~ | l
+###    |                                                               | | o
+###    +               +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+ | a
+###    |               |         TFC Padding * (optional, variable)    | v d
+###    +-+-+-+-+-+-+-+-+         +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+---
+###    |                         |        Padding (0-255 bytes)        |
+###    +-+-+-+-+-+-+-+-+-+-+-+-+-+     +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+###    |                               |  Pad Length   | Next Header   |
+###    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+###    |         Integrity Check Value-ICV   (variable)                |
+###    ~                                                               ~
+###    |                                                               |
+###    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+
+struct dma_desc_t {
+  bits<16> queue_id;
+  bits<16> meta;
+}
+
+# assume 256 bits key
+struct decrypt_cmd_t {
+  bits<16> length;
+  bits<256> key;
+}
+
+extern event NET_RECV {context ctx; buf packet;}
+extern event NET_SEND{context ctx; buf packet;}
+
+
+extern event DMA_SEND{context ctx; buf data; dma_desc_t desc;}
+extern event DMA_RECV{context ctx; buf data; dma_desc_t desc;}
+
+extern event DECRYPT_REQ {context ctx; buf data; decrypt_cmd_t cmd;}
+extern event DECRYPT_CMPL {context ctx; buf data;}
+
+extern handler NET_SEND(context ctx, buf packet) {}
+[instances=(i1cu3,i2cu3,i3cu3)] extern handler DECRYPT_REQ:crypto(context ctx, buf data, decrypt_cmd_t cmd) {
+
+}
+
+extern handler DMA_SEND:dma_send(context ctx, buf data, dma_desc_t desc) {}
+
+
+##############main program########## #
+
+struct eth_header_t {
+  bits<48> dst_mac;
+  bits<48> src_mac;
+  bits<16> ether_type;
+}
+
+#Totoal 24 bytes
+struct ip_header_t {
+#Version(4), IHL(4), DSCP(6), ECN(2)
+  bits<8> misc;
+  bits<16> length;
+  bits<16> identification;
+#Flags(3), Fragment Offset(13)
+  bits<16> fragment_offset;
+
+#TTL(8), Transport Protocol(8)
+  bits<16> TTL_transport;
+  bits<16> checksum;
+  bits<32> source_ip;
+  bits<32> dst_ip;
+  bits<32> options;
+}
+
+struct esp_h {
+  bits<32> spi;
+  bits<32> seq;
+}
+
+[instances=(i1cu1)] handler NET_RECV: process_packet(context ctx, buf packet) {
+  eth_header_t eth_header;
+  ip_header_t ip_header;
+  esp_h esp_header;
+  decrypt_cmd_t cmd;
+  bits<32> tmp;
+
+  packet.extract(eth_header);
+  packet.extract(ip_header);
+  packet.extract(esp_header);
+
+  ctx.eth_header = eth_header;
+  ctx.ip_header = ip_header;
+  ctx.esp_header = esp_header;
+
+  ## Remove protocol specific header (E.g. RFC4106)
+  generate DECRYPT_REQ:crypto{ctx, packet, cmd};
+}
+
+controller DECRYPT_REQ() {
+    In in1 = [NET_RECV:process_packet, 0];
+    Out out1 = [DECRYPT_REQ:crypto, 0];
+    Out out2 = [DECRYPT_REQ:crypto, 1];
+    Out out3 = [DECRYPT_REQ:crypto, 2];
+
+    # connects
+    PartitionBy()[in1][out1,out2,out3];
+}
+
+#controller DECRYPT_CMPL() {
+#    In in1 = [DECRYPT_CMPL:crypto, 0];
+#    In in2 = [DECRYPT_CMPL:crypto, 1];
+#    In in3 = [DECRYPT_CMPL:crypto, 2];
+#    Out out1 = [DECRYPT_CMPL:dma_to_host, 0];
+#
+#    # connects
+#    Arbitrate(100)[in1,in2,in3][out1];
+#}
+
+#[instances=(i1cu1)] handler DECRYPT_CMPL:dma_to_host(context ctx, buf data) {
+#  eth_header_t eth_header;
+#  ip_header_t ip_header;
+#  esp_h esp_header;
+#  buf dma_out;
+#  dma_desc_t desc;
+#
+#  eth_header = ctx.eth_header;
+#  ip_header = ctx.ip_header;
+#  esp_header = ctx.esp_header;
+#
+#  dma_out.emit(ctx.eth_header);
+#  dma_out.emit(ip_header);
+#  dma_out.emit(esp_header);
+#  dma_out.emit(data);
+#
+#  desc.queue_id = 0;
+#
+#  generate DMA_SEND:dma_send{ctx, dma_out, desc};
+#}
