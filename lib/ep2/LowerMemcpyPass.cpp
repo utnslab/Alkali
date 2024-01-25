@@ -36,6 +36,7 @@ struct LowerMemcpyPattern : public OpRewritePattern<emitc::CallOp> {
     mlir::Operation* opd0 = op->getOperands()[0].getDefiningOp();
     mlir::Operation* opd1 = op->getOperands()[1].getDefiningOp();
 
+    // Struct update ops are SSA in EP2, so follow chain to source.
     auto followUpdateOps = [&](mlir::Operation* op) {
       while (op != nullptr) {
         if (!isa<emitc::CallOp>(op) || cast<emitc::CallOp>(op).getCallee() != "__ep2_intrin_struct_write") {
@@ -46,6 +47,11 @@ struct LowerMemcpyPattern : public OpRewritePattern<emitc::CallOp> {
       return op;
     };
 
+    /*
+    Cases where an op is a local buffer:
+    1) Allocated buffer by LocalAllocAnalysis
+    2) Traces back to an event queue work item (via struct access ops)
+    */
     auto isLocBuf = [&](mlir::Operation* op) {
       if ((op = followUpdateOps(op)) == nullptr) {
         return false;
@@ -63,6 +69,7 @@ struct LowerMemcpyPattern : public OpRewritePattern<emitc::CallOp> {
       return false;
     };
 
+    // Is this a packet buffer?
     auto isRtBuf = [&](mlir::Operation* op) {
       if ((op = followUpdateOps(op)) == nullptr) {
         return false;
@@ -71,6 +78,11 @@ struct LowerMemcpyPattern : public OpRewritePattern<emitc::CallOp> {
       return isa<emitc::OpaqueType>(ty) && cast<emitc::OpaqueType>(ty).getValue() == "struct __buf_t";
     };
 
+    /*
+    Netronome only accepts writes at struct offsets with member variable, e.g.
+    mem_write(&v9->f2), not mem_write(((char*) &v9) + 8) if f2 is at offset=8.
+    Hence, translate offset (e.g. 8) to member offset. If in middle, fail.
+    */
     auto translateStructOffset = [&](unsigned offs, std::string structName) {
       for (const auto& pr : structsInfo.structDefs) {
         if (pr.first.find(structName) != std::string::npos) {
@@ -99,10 +111,24 @@ struct LowerMemcpyPattern : public OpRewritePattern<emitc::CallOp> {
       return memberNum;
     };
 
+    /*
+    Generate actual memory intrinsic (mem_write32, mem_write8, cls_write, cls_read)
+    Args:
+      intrinsic: intrinsic name
+      isWrite: is this a read or write op
+      usePktBuf: does this touch the packet buffer? (e.g. touch buffer offset?)
+      xfer: which op represents the transfer register we are copying to/from?
+      offs: offset in the other operand (not transfer register)
+      szCopy: how many bytes to copy
+      szAdvance: how many bytes to advance pointer from offs (not same sometimes), e.g.
+        read 16 bytes from packet buffer into 4-byte aligned register for faster access,
+        but actually only loading 14 bytes of use. Last 2 bytes are junk.
+    */
     auto emitMemIntrinsic = [&](std::string intrinsic, bool isWrite, bool usePktBuf, mlir::Operation* xfer, int offs, int szCopy, int szAdvance) {
       int memberNum = getMemberPos(xfer, offs);
       int tag = op.getArgs().value().getValue()[2].cast<IntegerAttr>().getValue().getLimitedValue();
 
+      // We set the buffer offset when using zero-copy optimization.
       const auto& opArgs = op.getArgs().value().getValue();
       int setOffset = -1;
       if (opArgs.size() >= 4) {
@@ -145,6 +171,7 @@ struct LowerMemcpyPattern : public OpRewritePattern<emitc::CallOp> {
     };
 
     auto decomposeMemcpy = [&](bool isWrite, bool usePktBuf, MemType mem, mlir::Operation* xfer) {
+      // encodes info for TranslateToCpp file.
       std::string opPrefix = isWrite ? "_write" : "_read";
       opPrefix = std::string{"__ep2_intrin_memcpy"} + (usePktBuf ? "buf_" : "_") + toStringFunc(mem) + opPrefix;
 
@@ -161,6 +188,10 @@ struct LowerMemcpyPattern : public OpRewritePattern<emitc::CallOp> {
 
       int offOrig = args[0].cast<IntegerAttr>().getValue().getLimitedValue();
 
+      /*
+      Emit as much as possible using bigger instructions, e.g. cls_read/mem_read32
+      Then do rest with slower instructions.
+      */
       auto doEmission = [&](bool doEmit, bool& canUseFast, int fastMaxSize, int fastAlign, int slowMaxSize, int slowAlign) {
         int sz = szOrig;
         int off = offOrig;
@@ -218,6 +249,12 @@ struct LowerMemcpyPattern : public OpRewritePattern<emitc::CallOp> {
       }
     };
 
+    /*
+    3 cases for memcpy:
+    1) packet buffer to packet buffer
+    2) local buffer to some memory (cls, mem)
+    3) some memory (cls, mem) to local buffer
+    */
     if (isBuf0 && isBuf1) {
       // Bulk copy from one loc to another in MEM.
       llvm::SmallVector<Type> resTypes = {};

@@ -16,6 +16,11 @@
 
 #include <map>
 
+/*
+Replicate handlers based on instances attribute on original handler. Used to
+specialize per replicated instance later.
+*/
+
 using namespace mlir;
 
 namespace mlir {
@@ -58,6 +63,11 @@ void HandlerReplicationPass::runOnOperation() {
   mlir::Block* parentBlock = nullptr;
   mlir::Builder builder(&getContext());
 
+  /*
+  Clone handlers, set location attribute for each. E.g. if handler
+  is replicated onto island 1, compute units 1,2 then location on
+  handler 1 = i1cu1, handler 2 has i1cu2.
+  */
   module->walk([&](ep2::FuncOp funcOp) {
     if (funcOp->getAttr("type").cast<StringAttr>().getValue() == "handler" && !funcOp.isExtern()) {
       parentBlock = funcOp->getBlock();
@@ -80,7 +90,11 @@ void HandlerReplicationPass::runOnOperation() {
     parentBlock->push_back(op);
   }
 
-  // map from each queue to which return statements feed it
+  /*
+  qMap maintains mapping between pair{specific_in_handler, unreplicated_out_handler} to how we transmit
+  information between the 2- a SprayInfo to tell whether RR or partitioning, and
+  which replicas of out_handler we spray to.
+  */
   std::map<std::pair<std::string, std::string>, std::pair<SprayInfo, llvm::SmallVector<int>>> qMap;
   module->walk([&](ep2::FuncOp funcOp) {
     if (funcOp.isExtern()) {
@@ -112,6 +126,11 @@ void HandlerReplicationPass::runOnOperation() {
     }
   });
 
+  /*
+  Walk through return statements per handler to determine which events we generate,
+  and mark on the initOp feeder of that returnOp those events (since we use InitOp's,
+  not ReturnOp's, for EmitC generation later.
+  */
   module->walk([&](ep2::FuncOp funcOp) {
     if (funcOp->getAttr("type").cast<StringAttr>().getValue() == "handler" && !funcOp.isExtern()) {
       funcOp->walk([&](ep2::ReturnOp retOp) {

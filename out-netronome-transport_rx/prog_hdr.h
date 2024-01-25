@@ -139,7 +139,7 @@ __import __shared __cls int context_chain_ring_qHead;
 __forceinline static __shared __cls struct context_chain_1_t* alloc_context_chain_ring_entry() {
 	__xrw int context_idx = 1;
 	cls_test_add(&context_idx, &context_chain_ring_qHead, sizeof(context_idx));
-	return &context_chain_pool[context_idx];
+	return &context_chain_pool[context_idx & 127];
 }
 
 __forceinline static struct __buf_t alloc_packet_buf() {

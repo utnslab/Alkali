@@ -18,6 +18,12 @@
 
 #include <optional>
 
+/*
+EP2 canonicalize pass demotes operations producing/consuming 1-element
+structs to primitive accesses, and uses that information in dead field
+optimization. We reverse this, to enable some of our optimizations.
+*/
+
 namespace mlir {
 namespace ep2 {
 

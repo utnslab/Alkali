@@ -1,5 +1,5 @@
 diff --git a/mlir/lib/Target/Cpp/TranslateToCpp.cpp b/mlir/lib/Target/Cpp/TranslateToCpp.cpp
-index 4645ca4b206e..c9be3401418e 100644
+index 4645ca4b206e..89edb0594624 100644
 --- a/mlir/lib/Target/Cpp/TranslateToCpp.cpp
 +++ b/mlir/lib/Target/Cpp/TranslateToCpp.cpp
 @@ -24,6 +24,7 @@
@@ -23,24 +23,28 @@ index 4645ca4b206e..c9be3401418e 100644
  }
  
  static LogicalResult printOperation(CppEmitter &emitter,
-@@ -417,9 +422,224 @@ static LogicalResult printOperation(CppEmitter &emitter, emitc::CallOp callOp) {
+@@ -417,9 +422,240 @@ static LogicalResult printOperation(CppEmitter &emitter, emitc::CallOp callOp) {
    raw_ostream &os = emitter.ostream();
    Operation &op = *callOp.getOperation();
  
 -  if (failed(emitter.emitAssignPrefix(op)))
 -    return failure();
 -  os << callOp.getCallee();
++  // struct_write has a result type, make sure not to emit that.
 +  if (callOp.getCallee() != "__ep2_intrin_struct_write") {
 +    if (failed(emitter.emitAssignPrefix(op)))
 +      return failure();
 +  }
 +
++  // Supports folding, currently unused.
 +  auto isFolded = [&](mlir::Value v) {
 +    llvm::StringRef name = emitter.getOrCreateName(v);
 +    return name[0] != 'v';
 +  };
 +
++  // More documentation on intrinsics is in LowerEmitcPass.cpp, where we emit these.
 +  if (callOp.getCallee() == "__ep2_intrin_struct_access") {
++    // args[2] tells whether we are reading out a reference type.
 +    os << ((*callOp.getArgs()).size() > 1 && (*callOp.getArgs())[1].cast<IntegerAttr>().getValue().getSExtValue() ? "&" : "");
 +
 +    os << emitter.getOrCreateName(op.getOperand(0));
@@ -67,6 +71,7 @@ index 4645ca4b206e..c9be3401418e 100644
 +    } else {
 +      os << (*callOp.getArgs())[0].cast<StringAttr>().getValue();
 +    }
++    // args[2] similarly tells whether writing in a reference type.
 +    os << " = ";
 +    os << ((*callOp.getArgs()).size() > 1 && (*callOp.getArgs())[1].cast<IntegerAttr>().getValue().getSExtValue() ? "*" : "");
 +    os << emitter.getOrCreateName(op.getOperand(0));
@@ -126,10 +131,11 @@ index 4645ca4b206e..c9be3401418e 100644
 +    return success();
 +  } else if (callOp.getCallee().starts_with("__ep2_intrin_memcpy_") || 
 +             callOp.getCallee().starts_with("__ep2_intrin_memcpybuf_")) {
-+
++    /* If memcpybuf, we need to emit location e.g. v6.buf + v6.offs, whereas if 
++       not a buf-based copy, then just the pointer, e.g. v6 */
 +    bool notBufCopy = callOp.getCallee().starts_with("__ep2_intrin_memcpy_");
 +
-+    // extract real name
++    // Extract real name (20/23 are length of __ep2_intrin_memcpy_/..buf_
 +    llvm::StringRef realCallee = callOp.getCallee().substr(notBufCopy ? 20 : 23);
 +    os << realCallee << "(";
 +    int xferOffset = (*callOp.getArgs())[0].cast<IntegerAttr>().getValue().getSExtValue();
@@ -144,6 +150,7 @@ index 4645ca4b206e..c9be3401418e 100644
 +        os << xferOffset << ", ";
 +      }
 +    } else {
++      // encode a member-based offset, e.g. &v9->f2
 +      xferOffset = ~xferOffset;
 +      os << "&" << emitter.getOrCreateName(op.getOperand(0)) << "->f" << xferOffset << ", ";
 +    }
@@ -156,9 +163,11 @@ index 4645ca4b206e..c9be3401418e 100644
 +    }
 +
 +    int sz = (*callOp.getArgs())[1].cast<IntegerAttr>().getValue().getSExtValue();
++    // tag == 2 means buffer-based copy
 +    if (tag != 2) {
 +      os << sz;
 +    } else {
++      // buffer based copy
 +      os << emitter.getOrCreateName(op.getOperand(1)) << ".sz - " << emitter.getOrCreateName(op.getOperand(1)) << ".offs";
 +    }
 +    os << ")";
@@ -210,6 +219,7 @@ index 4645ca4b206e..c9be3401418e 100644
 +    }
 +    return success();
 +  } else if (callOp.getCallee() == "__ep2_intrin_xfer2gpr") {
++    // Move data from transfer (xfer) register to gpr (general purpose register)
 +    if (isFolded(op.getOperand(1))) {
 +      os << emitter.getOrCreateName(op.getOperand(1));
 +    } else {
@@ -226,6 +236,12 @@ index 4645ca4b206e..c9be3401418e 100644
 +    }
 +    return success();
 +  } else if (callOp.getCallee() == "__ep2_intrin_incr_offs") {
++    /*
++    If we use zero-copy optimization, we set the offset prior to memcpy from/to buffer,
++      as an abuse of the intrinsic.
++    If not, we use offset field to actually track position in buffer.
++    setVal == -1 means we are NOT setting the value, e.g. no zero copy.
++    */
 +    int sz = (*callOp.getArgs())[1].cast<IntegerAttr>().getValue().getSExtValue();
 +    int tag = (*callOp.getArgs())[0].cast<IntegerAttr>().getValue().getSExtValue();
 +    int setVal = (*callOp.getArgs())[2].cast<IntegerAttr>().getValue().getSExtValue();
@@ -251,7 +267,7 @@ index 4645ca4b206e..c9be3401418e 100644
  
    auto emitArgs = [&](Attribute attr) -> LogicalResult {
      if (auto t = dyn_cast<IntegerAttr>(attr)) {
-@@ -451,10 +671,15 @@ static LogicalResult printOperation(CppEmitter &emitter, emitc::CallOp callOp) {
+@@ -451,10 +687,15 @@ static LogicalResult printOperation(CppEmitter &emitter, emitc::CallOp callOp) {
  
    os << "(";
  
@@ -271,7 +287,7 @@ index 4645ca4b206e..c9be3401418e 100644
    if (failed(emittedArgs))
      return failure();
    os << ")";
-@@ -772,6 +997,13 @@ CppEmitter::CppEmitter(raw_ostream &os, bool declareVariablesAtTop)
+@@ -772,6 +1013,13 @@ CppEmitter::CppEmitter(raw_ostream &os, bool declareVariablesAtTop)
  StringRef CppEmitter::getOrCreateName(Value val) {
    if (auto literal = dyn_cast_if_present<emitc::LiteralOp>(val.getDefiningOp()))
      return literal.getValue();
@@ -285,7 +301,7 @@ index 4645ca4b206e..c9be3401418e 100644
    if (!valueMapper.count(val))
      valueMapper.insert(val, formatv("v{0}", ++valueInScopeCount.top()));
    return *valueMapper.begin(val);
-@@ -787,7 +1019,7 @@ StringRef CppEmitter::getOrCreateName(Block &block) {
+@@ -787,7 +1035,7 @@ StringRef CppEmitter::getOrCreateName(Block &block) {
  bool CppEmitter::shouldMapToUnsigned(IntegerType::SignednessSemantics val) {
    switch (val) {
    case IntegerType::Signless:
@@ -294,7 +310,7 @@ index 4645ca4b206e..c9be3401418e 100644
    case IntegerType::Signed:
      return false;
    case IntegerType::Unsigned:
-@@ -1046,10 +1278,11 @@ LogicalResult CppEmitter::emitType(Location loc, Type type) {
+@@ -1046,10 +1294,11 @@ LogicalResult CppEmitter::emitType(Location loc, Type type) {
    if (auto iType = dyn_cast<IntegerType>(type)) {
      switch (iType.getWidth()) {
      case 1:

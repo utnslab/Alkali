@@ -37,7 +37,11 @@ static unsigned calcSize(mlir::Type ty) {
   }
 };
 
-// for now, no rearranging elements.
+/*
+We assume in previous passes, fields are appropriately aligned to enable optimizations.
+Now, we actually insert padding in the struct declarations.
+For now, no rearranging elements in compiler-defined structures like context.
+*/
 static std::vector<std::pair<int, unsigned>> calcPadding(const mlir::LLVM::LLVMStructType& ty, bool canOptimizeLayout) {
   std::vector<std::pair<int, unsigned>> paddingInfo;
   unsigned sz = calcSize(ty);
@@ -101,6 +105,7 @@ void EmitNetronomePass::runOnOperation() {
   std::string basePath = basePathOpt.getValue();
   const CollectInfoAnalysis& info = getCachedAnalysis<CollectInfoAnalysis>().value();
 
+  //  Extract different fields from handler name
   auto extractEventName = [&](std::string str) {
     return str.substr(0, str.find("_a_"));
   };
@@ -117,6 +122,7 @@ void EmitNetronomePass::runOnOperation() {
     return extractAtomName(str) + "_" + str.substr(str.rfind("_") + 1);
   };
 
+  // Emit header file
   {
     std::ofstream fout_prog_hdr(basePath + "/prog_hdr.h");
     fout_prog_hdr << "#ifndef _PROG_HDR_H_\n";
@@ -142,7 +148,7 @@ void EmitNetronomePass::runOnOperation() {
     
     std::unordered_map<std::string, int> sizeMap;
 
-    // emit structs
+    // Emit structs
     for (const auto& pr : info.structDefs) {
       fout_prog_hdr << (pr.second.isPacked() ? "__packed " : "") << "struct " << pr.first << " {\n";
 
@@ -189,7 +195,7 @@ void EmitNetronomePass::runOnOperation() {
       return x+1;
     };
 
-    // emit work queues
+    // Emit work queues
     int workq_id_incr = 10;
     for (const auto& q : info.eventQueues) {
       std::string eventName = q.first;
@@ -204,6 +210,7 @@ void EmitNetronomePass::runOnOperation() {
       }
     }
 
+    // Emit tables
     unsigned tableCtr = 0;
     for (const auto& pr : info.tableInfos) {
       const auto& tInfo = pr.second.first;
@@ -257,6 +264,8 @@ void EmitNetronomePass::runOnOperation() {
 
     fout_prog_hdr << "#endif\n";
   }
+
+  // Emit makefile
   {
     std::ofstream fout_makefile(basePath + "/Makefile");
 
@@ -266,6 +275,7 @@ void EmitNetronomePass::runOnOperation() {
     unsigned ctr = 1;
     std::unordered_map<std::string, unsigned> atomToCtr;
 
+    // Per ME, emit Makefile target
     for (const auto& pr : info.eventAllocs) {
       std::string atomName = makeFileName(pr.first);
 
@@ -295,7 +305,8 @@ void EmitNetronomePass::runOnOperation() {
         std::string microEngine = instance.substr(instance.find("cu") + 2);
         return "mei" + std::to_string(std::stoi(island)-1) + ".me" + std::to_string(std::stoi(microEngine)-1);
       };
-
+      
+      // Emit mapping from makefile target to island/microengine location
       if (fop->hasAttr("location")) {
         fout_makefile << "\t-u " << getIslandMEStr(fop->getAttr("location").cast<mlir::StringAttr>().getValue().str()) << " -l $(S";
         fout_makefile << atomToCtr[fop->getAttr("atom").cast<mlir::StringAttr>().getValue().str() + "_" + fop.getName().str().substr(fop.getName().str().rfind("_") + 1)];
@@ -312,6 +323,7 @@ void EmitNetronomePass::runOnOperation() {
     std::ifstream fin_suffix("./lib/ep2/MakefileHelpers/netronome.suffix");
     fout_makefile << "\n\n" << fin_suffix.rdbuf();
   }
+  // Emit C files
   {
     std::unordered_map<std::string, func::FuncOp> nameToFunc;
     module->walk([&](func::FuncOp fop){
@@ -320,8 +332,8 @@ void EmitNetronomePass::runOnOperation() {
 
     std::unordered_set<std::string> firstVisited;
 
-    // each event is a stage in the pipeline.
     for (const auto& pr : info.eventAllocs) {
+      // Emit C file per ME.
       std::string eventName = extractEventName(pr.first);
       std::string atomName = extractAtomName(pr.first);
       std::string funcName = extractHandlerName(pr.first);
@@ -336,11 +348,10 @@ void EmitNetronomePass::runOnOperation() {
         }
       }
       
-      // TODO add code to wait for initialization
-
       std::string filePath = basePath + std::string{"/"} + makeFileName(pr.first) + ".c";
       std::ofstream fout_stage(filePath);
 
+      // Ensure only one replica of first stage initializes global variables
       if (isFirstStage && firstVisited.find(eventName + atomName) == firstVisited.end()) {
         fout_stage << "#define DO_CTXQ_INIT\n\n";
         firstVisited.insert(eventName + atomName);
@@ -370,7 +381,7 @@ void EmitNetronomePass::runOnOperation() {
         }
       }
 
-      // emit work dispatching functions, one per func. tell emitc backend which to call via an attribute.
+      // Emit work dispatching functions, one per func. tell emitc backend which to call via an attribute.
       unsigned dispatchCtr = 0;
       mlir::Builder builder(&getContext());
       nameToFunc[funcName]->walk([&](emitc::CallOp callOp) {

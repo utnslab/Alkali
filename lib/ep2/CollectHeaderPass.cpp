@@ -27,6 +27,11 @@ static mlir::Operation* getParentFunction(mlir::Operation* op) {
   return op;
 }
 
+/*
+Collect all the information from EP2 IR that will not exist after lowering to
+Netronome.
+*/
+
 CollectInfoAnalysis::CollectInfoAnalysis(Operation* module, AnalysisManager& am) {
   auto builder = OpBuilder(module);
 
@@ -61,6 +66,7 @@ CollectInfoAnalysis::CollectInfoAnalysis(Operation* module, AnalysisManager& am)
     realStructTypes.push_back(strTy);
   };
 
+  // get all the struct definitions to emit later
   module->walk([&](mlir::Operation* op){
     for (const auto& v : op->getOperands()) {
       if (isa<ep2::StructType>(v.getType())) {
@@ -74,6 +80,7 @@ CollectInfoAnalysis::CollectInfoAnalysis(Operation* module, AnalysisManager& am)
     }
   });
 
+  // Make sure structDefs are unique.
   for (ep2::StructType ty : realStructTypes) {
     auto lty = mlir::LLVM::LLVMStructType::getIdentified(module->getContext(), ty.getName());
     llvm::SmallVector<mlir::Type> types;
@@ -88,7 +95,7 @@ CollectInfoAnalysis::CollectInfoAnalysis(Operation* module, AnalysisManager& am)
     this->structDefs.emplace_back(ty.getName().str(), lty);
   }
 
-
+  // Make context struct
   auto &contextAnalysis = am.getAnalysis<ContextBufferizationAnalysis>();
   std::string context_prefix = "context_chain_";
   std::string context_suffix = "_t";
@@ -115,9 +122,9 @@ CollectInfoAnalysis::CollectInfoAnalysis(Operation* module, AnalysisManager& am)
     ctx_id += 1;
   }
 
+  // Get event structs, add to our struct emission list.
   auto lowerStructAnalysis = am.getAnalysis<LowerStructAnalysis>();
   std::vector<mlir::LLVM::LLVMStructType> emittedStructs;
-
   module->walk([&](ep2::FuncOp funcOp){
     if (funcOp.isExtern()) {
       return;
@@ -161,7 +168,7 @@ CollectInfoAnalysis::CollectInfoAnalysis(Operation* module, AnalysisManager& am)
     }
   });
 
-  // generate event queues
+  // Generate event queues
   auto getOpd = [&](mlir::Value opd){
     return cast<ep2::ConstantOp>(opd.getDefiningOp()).getValue().cast<IntegerAttr>().getValue().getSExtValue();
   };
@@ -188,6 +195,7 @@ CollectInfoAnalysis::CollectInfoAnalysis(Operation* module, AnalysisManager& am)
     } else {
       std::string eventName = funcOp->getAttr("event").cast<StringAttr>().getValue().str();
       std::string stageName = funcOp->hasAttr("atom") ? funcOp->getAttr("atom").cast<StringAttr>().getValue().str() : funcOp->getAttr("event").cast<StringAttr>().getValue().str();
+      // Just a simple encoding to allow combining eventName + stageName
       this->eventAllocs[eventName + "_a_" + stageName + "_a_" + funcOp.getName().str()] = {};
     }
   });
@@ -211,7 +219,7 @@ CollectInfoAnalysis::CollectInfoAnalysis(Operation* module, AnalysisManager& am)
     }
   }
 
-  // tables
+  // Get local tables (note these init's are replicated per handler, thus per ME).
   module->walk([&](ep2::InitOp initOp){
     if (isa<ep2::TableType>(initOp->getResult(0).getType())) {
       TableInfo ti = getTableStr(cast<ep2::TableType>(initOp->getResult(0).getType()));
@@ -223,6 +231,7 @@ CollectInfoAnalysis::CollectInfoAnalysis(Operation* module, AnalysisManager& am)
     }
   });
 
+  // Get global tables (allocated in CLS, assume never replicated).
   module->walk([&](ep2::GlobalOp op) {
     if (isa<ep2::TableType>(op.getOutput().getType())) {
       TableInfo ti = getTableStr(cast<ep2::TableType>(op.getOutput().getType()));

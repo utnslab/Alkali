@@ -24,6 +24,12 @@
 
 // TODO support nested struct/context read/write, e.g. ctx.s.v1 = 1;
 
+/*
+In this pass, we emit lots of intrinsics. We document some of the arguments
+to intrinsics for clarity here, most of the intrinsics' names are
+self-explanatory. More documentation is in TranslateToCpp.cpp file.
+*/
+
 namespace mlir {
 namespace ep2 {
 
@@ -110,6 +116,11 @@ static mlir::Type addClsToEmitcPtrTy(mlir::MLIRContext* ctx, mlir::Type ty) {
   }
 }
 
+/*
+Pattern: get a reference to allocated struct, if a reference type, and generate a
+memcpy intrinsic from the context to that local struct. Else just read out of the
+context, and let the Netronome compiler generate code.
+*/
 struct LoadPattern : public OpConversionPattern<ep2::LoadOp> {
   ContextBufferizationAnalysis &analyzer;
   LocalAllocAnalysis &allocAnalyzer;
@@ -127,26 +138,37 @@ struct LoadPattern : public OpConversionPattern<ep2::LoadOp> {
 
     llvm::SmallVector<Type> resTypes = {addClsToEmitcPtrTy(getContext(), typeConverter->convertType(loadOp->getResult(0).getType()))};
     int pos = analyzer.getContextType(cast<func::FuncOp>(getParentFunction(loadOp)), refOp.getName()).first;
+
+    /*
+    Arg0: context field position, ctx->f{pos}
+    Arg1: are we reading into a reference type? If so, return type
+          of ctx_read should be a POINTER to context. Actual memcpy will
+          do copy from context.
+    */
+
     mlir::ArrayAttr args = rewriter.getI32ArrayAttr({pos, isa<ep2::StructType>(loadOp->getResult(0).getType())});
     mlir::ArrayAttr templ_args;
 
     auto ctxV = rewriter.create<emitc::CallOp>(loc, resTypes, rewriter.getStringAttr("__ep2_intrin_ctx_read"), args, templ_args, ValueRange{contextId});
 
     if (isa<ep2::StructType>(loadOp->getResult(0).getType())) {
-      // get reference to allocated buffer
-      // generate memcpy into it.
-      
       auto resType = loadOp->getResult(0).getType();
-
-      // TODO support dynamically allocated structs too
       assert(allocAnalyzer.localAllocs.find(loadOp) != allocAnalyzer.localAllocs.end());
 
       int memcpySize = calcSize(resType);
       auto varOp = rewriter.create<emitc::VariableOp>(loc, typeConverter->convertType(resType), emitc::OpaqueAttr::get(getContext(), std::string{"&"} + allocAnalyzer.localAllocs[loadOp]));
       rewriter.replaceOp(loadOp, varOp);
 
+      /*
+      Arg0: offset in transfer register to start copying to
+      Arg1: size of copy
+      Arg2: tag.
+        0 means we are copying FROM memory, TO local buffer.
+        1 means we are copying TO memory, FROM local buffer.
+        2 means we are copying FROM memory, TO memory.
+      */
+
       llvm::SmallVector<Type> resTypes2 = {};
-      // xferOffs, size
       mlir::ArrayAttr args2 = rewriter.getI32ArrayAttr({0, memcpySize, 0});
       mlir::ArrayAttr templ_args2;
       rewriter.create<emitc::CallOp>(loc, resTypes2, rewriter.getStringAttr("__ep2_intrin_memcpy"), args2, templ_args2, ValueRange{varOp, ctxV.getResult(0)});
@@ -185,21 +207,25 @@ struct StorePattern : public OpConversionPattern<ep2::StoreOp> {
       // get reference to allocated buffer
       // generate memcpy into it.
       auto resType = vTy;
-
-      // TODO support dynamically allocated structs too
       assert(allocAnalyzer.localAllocs.find(storeOp) != allocAnalyzer.localAllocs.end());
-
       int memcpySize = calcSize(resType);
       auto varOp = rewriter.create<emitc::VariableOp>(loc, typeConverter->convertType(resType), emitc::OpaqueAttr::get(getContext(), std::string{"&"} + allocAnalyzer.localAllocs[storeOp]));
 
       llvm::SmallVector<Type> resTypes2 = {};
-      // xferOffs, size
+
+      // Same encoding as memcpy.
       mlir::ArrayAttr args2 = rewriter.getI32ArrayAttr({0, memcpySize, 1});
       mlir::ArrayAttr templ_args2;
       auto memcpyOp = rewriter.create<emitc::CallOp>(loc, resTypes2, rewriter.getStringAttr("__ep2_intrin_memcpy"), args2, templ_args2, ValueRange{ctxV.getResult(0), varOp});
       rewriter.replaceOp(storeOp, memcpyOp);
     } else {
       llvm::SmallVector<Type> resTypes = {};
+
+      /*
+      Same encoding as ctx_read- position, whether a reference type or not.
+      Instead of ctx_read, where we take address of result if a reference type,
+        here we dereference the incoming operand if a reference type, to store it.
+      */
       mlir::ArrayAttr args = rewriter.getI32ArrayAttr({pos, isa<ep2::StructType>(vTy)});
       mlir::ArrayAttr templ_args;
       auto wr = rewriter.create<emitc::CallOp>(loc, resTypes, rewriter.getStringAttr("__ep2_intrin_ctx_write"), args, templ_args, ValueRange{adaptor.getValue(), contextId});
@@ -238,6 +264,8 @@ struct StructAccessPattern : public OpConversionPattern<ep2::StructAccessOp> {
     }
 
     llvm::SmallVector<Type> resTypes = {typeConverter->convertType(accessOp.getResult().getType())};
+
+    // Same encoding as ctx_read intrinsic.
     mlir::ArrayAttr args = rewriter.getI32ArrayAttr({(uint32_t) accessOp.getIndex(), isa<ep2::StructType>(accessOp->getResult(0).getType())});
     mlir::ArrayAttr templ_args;
     auto load = rewriter.create<emitc::CallOp>(loc, resTypes, rewriter.getStringAttr("__ep2_intrin_struct_access"), args, templ_args, ValueRange{adaptor.getOperands()[0]});
@@ -272,7 +300,7 @@ struct ExtractPattern : public OpConversionPattern<ep2::ExtractOp> {
     rewriter.replaceOp(extractOp, varOp);
 
     llvm::SmallVector<Type> resTypes2 = {};
-    // xferOffs, size
+    // Same encoding as LoadOp.
     mlir::ArrayAttr args2 = rewriter.getI32ArrayAttr({0, memcpySize, 0});
     mlir::ArrayAttr templ_args2;
     rewriter.create<emitc::CallOp>(loc, resTypes2, rewriter.getStringAttr("__ep2_intrin_memcpy"), args2, templ_args2, ValueRange{varOp, adaptor.getBuffer()});
@@ -306,7 +334,12 @@ struct ExtractOffsetPattern : public OpConversionPattern<ep2::ExtractOffsetOp> {
     rewriter.replaceOp(extractOp, varOp);
 
     llvm::SmallVector<Type> resTypes2 = {};
-    // xferOffs, size
+
+    /*
+    Same encoding as regular ExtractOp, except we add an additional arg (arg3)
+    specifying an offset. Regular ExtractOp keeps a dynamic offset, ExtractOffsetOp
+    statically encodes it.
+    */
     mlir::ArrayAttr args2 = rewriter.getI32ArrayAttr({0, memcpySize, 0, extractOp.getOffset() / 8});
     mlir::ArrayAttr templ_args2;
     rewriter.create<emitc::CallOp>(loc, resTypes2, rewriter.getStringAttr("__ep2_intrin_memcpy"), args2, templ_args2, ValueRange{varOp, adaptor.getBuffer()});
@@ -329,6 +362,13 @@ struct EmitPattern : public OpConversionPattern<ep2::EmitOp> {
     unsigned srcOffs = isa<ep2::BufferType>(resType) ? (-memcpySize) : 0;
 
     llvm::SmallVector<Type> resTypes2 = {};
+
+    /*
+    Arg0: offset in target buffer. Still 0 usually, but in buf-to-buf copy, we use
+          buffer size minus srcOffs to get the starting point.
+    Arg1: size of copy
+    Arg2: tag, like usual.
+    */
     mlir::ArrayAttr args2 = rewriter.getI32ArrayAttr({srcOffs, memcpySize, isa<ep2::BufferType>(resType) ? 2 : 1});
     mlir::ArrayAttr templ_args2;
     auto emit = rewriter.create<emitc::CallOp>(loc, resTypes2, rewriter.getStringAttr("__ep2_intrin_memcpy"), args2, templ_args2, ValueRange{adaptor.getBuffer(), adaptor.getValue()});
@@ -352,6 +392,7 @@ struct EmitOffsetPattern : public OpConversionPattern<ep2::EmitOffsetOp> {
     unsigned srcOffs = isa<ep2::BufferType>(resType) ? (-memcpySize) : 0;
 
     llvm::SmallVector<Type> resTypes2 = {};
+    // Same change from EmitOp, as ExtractOp -> ExtractOffsetOp.
     mlir::ArrayAttr args2 = rewriter.getI32ArrayAttr({srcOffs, memcpySize, isa<ep2::BufferType>(resType) ? 2 : 1, emitOp.getOffset() / 8});
     mlir::ArrayAttr templ_args2;
     auto emit = rewriter.create<emitc::CallOp>(loc, resTypes2, rewriter.getStringAttr("__ep2_intrin_memcpy"), args2, templ_args2, ValueRange{adaptor.getBuffer(), adaptor.getValue()});
@@ -369,7 +410,8 @@ struct StructUpdatePattern : public OpConversionPattern<ep2::StructUpdateOp> {
 
     auto loc = updateOp->getLoc();
     llvm::SmallVector<Type> resTypes2 = {typeConverter->convertType(updateOp.getOperand(0).getType())};
-    // todo
+
+    // Same encoding as ctx_write, ctx_read, struct_access_op
     mlir::ArrayAttr args2 = rewriter.getI32ArrayAttr({updateOp.getIndex(), isa<ep2::StructType>(updateOp->getOperand(1).getType())});
     mlir::ArrayAttr templ_args2;
     auto callOp = rewriter.create<emitc::CallOp>(loc, resTypes2, rewriter.getStringAttr("__ep2_intrin_struct_write"), args2, templ_args2, ValueRange{adaptor.getNewValue(), adaptor.getInput()});
@@ -379,7 +421,6 @@ struct StructUpdatePattern : public OpConversionPattern<ep2::StructUpdateOp> {
   }
 };
 
-// convert init op
 struct InitPattern : public OpConversionPattern<ep2::InitOp> {
   ContextBufferizationAnalysis &analyzer;
   LocalAllocAnalysis &allocAnalyzer;
@@ -407,6 +448,7 @@ struct InitPattern : public OpConversionPattern<ep2::InitOp> {
       std::string eventName = resType.cast<ep2::StructType>().getName().str();
 
       if (!cast<ep2::StructType>(resType).getIsEvent()) {
+        // Regular struct initialization.
         auto alloc = rewriter.create<emitc::VariableOp>(loc, newType, emitc::OpaqueAttr::get(getContext(), std::string{"&"} + allocAnalyzer.localAllocs[initOp]));
 
         unsigned p = 0;
@@ -421,9 +463,16 @@ struct InitPattern : public OpConversionPattern<ep2::InitOp> {
         return success();
       }
 
+      // Alignment required for inlined_net_recv/send handlers.
       auto newTypeAligned =
           rewriter.getType<emitc::PointerType>(rewriter.getType<emitc::OpaqueType>(std::string{"__declspec(aligned(4)) struct event_param_" + eventName}));
       auto alloc = rewriter.create<emitc::VariableOp>(loc, newTypeAligned, emitc::OpaqueAttr::get(getContext(), "&next_work_" + eventName));
+
+      /*
+      Initialize like usual- first arg is atom, which we discard- TODO fix this
+      Context is 2nd arg in EP2 init -> map it to named ctx variable.
+      Then the actual args.
+      */
       unsigned p = 0;
       for (const auto& opd : adaptor.getOperands()) {
         if (p == 0) {
@@ -442,9 +491,12 @@ struct InitPattern : public OpConversionPattern<ep2::InitOp> {
         p += 1;
       }
 
-      // copy next_work into an xfer register, and add it to appropriate workQ- OR
-      // do inlined_net_send.
-
+      /*
+      Implement Netronome-specific logic to push next work item to event queue.
+      (OR, for NET_SEND event, just call inlined_net_send
+      1. move work to work_ref (xrw allocation)
+      2. cls_workq_add_work(&next_work_ref_EV_NAME);
+      */
       mlir::Type retType = initOp->getResult(0).getType();
       if (isa<ep2::StructType>(retType) && cast<ep2::StructType>(retType).getIsEvent()) {
         ep2::StructType structTy = cast<ep2::StructType>(retType);
@@ -454,13 +506,17 @@ struct InitPattern : public OpConversionPattern<ep2::InitOp> {
           mlir::ArrayAttr args3;
           mlir::ArrayAttr templ_args3;
 
+          /*
+          Set size of packet. TODO, right now hardcoded as incoming packet's size
+          for zero-copy optimization. Should adapt, if using zero-copy, use .sz,
+          else use .offs. This choice happens in TranslateToCpp code.
+          */
           rewriter.create<emitc::CallOp>(loc, resTypes3, rewriter.getStringAttr("__ep2_intrin_pkt_size_set"), args3, templ_args3, ValueRange{});
           rewriter.create<emitc::CallOp>(loc, resTypes3, rewriter.getStringAttr("inlined_net_send"), args3, templ_args3, ValueRange{alloc});
         } else {
           auto xferType =
               rewriter.getType<emitc::PointerType>(rewriter.getType<emitc::OpaqueType>(std::string{"__xrw struct event_param_" + eventName}));
 
-          // two commands
           auto eventXfer = rewriter.create<emitc::VariableOp>(loc, xferType, emitc::OpaqueAttr::get(getContext(), std::string{"&next_work_ref_"} + eventName));
 
           llvm::SmallVector<Type> resTypes = {};
@@ -468,6 +524,12 @@ struct InitPattern : public OpConversionPattern<ep2::InitOp> {
           mlir::ArrayAttr templ_args;
           auto copy = rewriter.create<emitc::CallOp>(loc, resTypes, rewriter.getStringAttr("__ep2_intrin_gpr2xfer"), args, templ_args, ValueRange{alloc, eventXfer});
 
+          /*
+          Because of handler replication, not as simple as 1 cls_workq_add_work
+          command. If we partition on hash of some key among different queues,
+          or round-robin, need to emit a dispatch() call. We fill out dispatch() call
+          in EmitNetronomePass.cpp.
+          */
           {
             std::string outputQStr;
             int ctxFieldPos = -1;
@@ -497,6 +559,10 @@ struct InitPattern : public OpConversionPattern<ep2::InitOp> {
 
       rewriter.replaceOp(initOp, alloc);
     } else if (resType.isa<ep2::BufferType>()) {
+      /*
+      TODO note buffer allocation works only when buf is its own field.
+      If it is a struct member, will not work.
+      */
       auto newType = typeConverter->convertType(resType);
       auto varOp = rewriter.create<emitc::VariableOp>(loc, newType, emitc::OpaqueAttr::get(getContext(), std::string{"alloc_packet_buf()"}));
       rewriter.replaceOp(initOp, varOp);
@@ -505,7 +571,10 @@ struct InitPattern : public OpConversionPattern<ep2::InitOp> {
       auto varOp = rewriter.create<emitc::VariableOp>(loc, newType, emitc::OpaqueAttr::get(getContext(), std::string{"&"} + allocAnalyzer.localAllocs[initOp]));
       rewriter.replaceOp(initOp, varOp);
     } else {
-      // just declare a dummy variable.
+      /*
+      TODO fix this, just declare a dummy variable for convenience.
+      This code is completely wrong, but shouldn't matter.
+      */
       auto newType = typeConverter->convertType(resType);
       auto varOp = rewriter.create<emitc::VariableOp>(loc, newType, emitc::OpaqueAttr::get(getContext(), std::string{"rr_ctr"}));
       rewriter.replaceOp(initOp, varOp);
@@ -691,6 +760,7 @@ struct TableLookupPattern : public OpConversionPattern<ep2::LookupOp> {
       auto buf = rewriter.create<emitc::VariableOp>(op->getLoc(), typeConverter->convertType(op.getValue().getType()), emitc::OpaqueAttr::get(getContext(), std::string{"&"} + allocAnalyzer.localAllocs[op]));
 
       llvm::SmallVector<Type> resTypes = {};
+      // Arg0 is whether the table element we are reading out is a reference type.
       mlir::ArrayAttr args = rewriter.getI32ArrayAttr({true});
       mlir::ArrayAttr templ_args;
       rewriter.create<emitc::CallOp>(op->getLoc(), resTypes, rewriter.getStringAttr("__ep2_intrin_table_lookup"), args, templ_args, ValueRange{adaptor.getTable(), adaptor.getKey(), buf->getResult(0)});
@@ -715,6 +785,7 @@ struct TableUpdatePattern : public OpConversionPattern<ep2::UpdateOp> {
   matchAndRewrite(ep2::UpdateOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter &rewriter) const final {
     llvm::SmallVector<Type> resTypes = {};
+    // Same arg pattern as table_lookup op
     mlir::ArrayAttr args = rewriter.getI32ArrayAttr({isa<ep2::StructType>(op.getValue().getType())});
     mlir::ArrayAttr templ_args;
     rewriter.replaceOpWithNewOp<emitc::CallOp>(op, resTypes, rewriter.getStringAttr("__ep2_intrin_table_update"), args, templ_args, adaptor.getOperands());
@@ -750,7 +821,7 @@ struct FunctionPattern : public OpConversionPattern<ep2::FuncOp> {
       return failure();
     }
 
-    // empty
+    // no args
     llvm::SmallVector<mlir::Type> newArgTypes;
     TypeConverter::SignatureConversion signatureConversion(
         funcOp.getNumArguments());
@@ -782,6 +853,10 @@ struct FunctionPattern : public OpConversionPattern<ep2::FuncOp> {
       auto eventXfer = rewriter.create<emitc::VariableOp>(loc, inputWrapperXferType, emitc::OpaqueAttr::get(getContext(), std::string{"&work_ref"}));
 
       {
+        /*
+        Every ME has 1 dedicated work queue. Hence, just call deq_work intrinsic for the
+        queue corresponding to our replica id.
+        */
         auto getReplicaId = [](std::string name) {
           std::string id = name.substr(1 + name.rfind("_"));
           for (int i = 0; i<id.size(); ++i) {
@@ -793,13 +868,17 @@ struct FunctionPattern : public OpConversionPattern<ep2::FuncOp> {
         };
 
         llvm::SmallVector<Type> resTypes3 = {};
+        /*
+        Arg0: event class to spray across
+        Arg1: list of queues to spray over, encoded in a string.
+        */
         mlir::ArrayAttr args3 = rewriter.getStrArrayAttr({eventName, getReplicaId(funcOp.getName().str())});
         mlir::ArrayAttr templ_args3;
         rewriter.create<emitc::CallOp>(loc, resTypes3, rewriter.getStringAttr("__ep2_intrin_deq_work"), args3, templ_args3, ValueRange{eventXfer.getResult()});
       }
       {
         llvm::SmallVector<Type> resTypes3 = {};
-        mlir::ArrayAttr args3 = rewriter.getStrArrayAttr({eventName});
+        mlir::ArrayAttr args3 = rewriter.getStrArrayAttr({});
         mlir::ArrayAttr templ_args3;
         rewriter.create<emitc::CallOp>(loc, resTypes3, rewriter.getStringAttr("__ep2_intrin_xfer2gpr"), args3, templ_args3, ValueRange{eventXfer.getResult(), eventPtr.getResult()});
       }
@@ -819,17 +898,16 @@ struct FunctionPattern : public OpConversionPattern<ep2::FuncOp> {
       }
     }
     if (isFirstStage) {
-      {
-        llvm::SmallVector<Type> resTypes3 = {contextType};
-        mlir::ArrayAttr args3;
-        mlir::ArrayAttr templ_args3;
-        auto ctxAlloc = rewriter.create<emitc::CallOp>(loc, resTypes3, rewriter.getStringAttr("alloc_context_chain_ring_entry"), args3, templ_args3, ValueRange{});
+      // initialize context field at start of pipeline.
+      llvm::SmallVector<Type> resTypes3 = {contextType};
+      mlir::ArrayAttr args3;
+      mlir::ArrayAttr templ_args3;
+      auto ctxAlloc = rewriter.create<emitc::CallOp>(loc, resTypes3, rewriter.getStringAttr("alloc_context_chain_ring_entry"), args3, templ_args3, ValueRange{});
 
-        llvm::SmallVector<Type> resTypes4 = {};
-        mlir::ArrayAttr args4 = rewriter.getStrArrayAttr({"ctx"});
-        mlir::ArrayAttr templ_args4;
-        rewriter.create<emitc::CallOp>(loc, resTypes4, rewriter.getStringAttr("__ep2_intrin_struct_write"), args4, templ_args4, ValueRange{ctxAlloc->getResult(0), eventPtr.getResult()});
-      }
+      llvm::SmallVector<Type> resTypes4 = {};
+      mlir::ArrayAttr args4 = rewriter.getStrArrayAttr({"ctx"});
+      mlir::ArrayAttr templ_args4;
+      rewriter.create<emitc::CallOp>(loc, resTypes4, rewriter.getStringAttr("__ep2_intrin_struct_write"), args4, templ_args4, ValueRange{ctxAlloc->getResult(0), eventPtr.getResult()});
     }
 
     int sourceIdx = 0;
@@ -897,6 +975,8 @@ void LowerEmitcPass::runOnOperation() {
       }
     }
   });
+
+  // Type conversion must generate types including memory hierarchy placement
 
   // Dialect Type converter
   TypeConverter typeConverter;
