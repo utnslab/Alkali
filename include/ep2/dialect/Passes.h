@@ -460,8 +460,7 @@ struct LowerLLVMPass :
   LowerLLVMPass(const LowerLLVMPass &pass) {}
   void runOnOperation() final;
   void getDependentDialects(DialectRegistry &registry) const override {
-    registry.insert<EP2Dialect, func::FuncDialect, LLVM::LLVMDialect,
-                    scf::SCFDialect, cf::ControlFlowDialect>();
+    registry.insert<EP2Dialect, LLVM::LLVMDialect, cf::ControlFlowDialect>();
   }
   StringRef getArgument() const final { return "ep2-lower-llvm"; }
   StringRef getDescription() const final { return "Rewrite to LLVM dialect"; }

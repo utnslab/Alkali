@@ -63,22 +63,21 @@ namespace {
         if (LoadOp loadOp = dyn_cast<LoadOp>(user))
           types.push_back(loadOp.getType());
         else if (StoreOp storeOp = dyn_cast<StoreOp>(user))
-          types.push_back(storeOp.getOperand(1).getType());
+          types.push_back(storeOp.getValue().getType());
       }
 
       if (types.empty())
         return failure();
-      
+
       // finding a common value
       auto newType = unifyTypes(rewriter.getContext(), types);
-      if (!newType)
+      if (!newType || newType->isa<AnyType>())
         return failure();
+
       auto newRefType = rewriter.getType<ContextRefType>(*newType);
       rewriter.replaceOpWithNewOp<ContextRefOp>(refOp, newRefType, refOp.getName(), refOp.getContext());
 
-      contextAnalysis.invalidate();
       return success();
-
     }
 
   };
@@ -106,14 +105,22 @@ void ContextTypeInferencePass::runOnOperation() {
     auto module = getOperation();
 
     AnalysisManager am = getAnalysisManager();
+    auto bufferAnalysis = am.getAnalysis<ContextBufferizationAnalysis>();
 
     RewritePatternSet patterns(&getContext());
     patterns.add<ContextRefTypeRewrite>(&getContext(), am);
     patterns.add<LoadTypeRewrite>(&getContext());
     FrozenRewritePatternSet frozenPatterns(std::move(patterns));
 
-    if (failed(applyPatternsAndFoldGreedily(module, frozenPatterns)))
-      signalPassFailure();
+    while (true) {
+      bool changed = false;
+      if (failed(applyPatternsAndFoldGreedily(module, frozenPatterns,
+                                              GreedyRewriteConfig(), &changed)))
+        signalPassFailure();
+      if (changed)
+        break;
+      bufferAnalysis.invalidate();
+    }
 }
 
 }

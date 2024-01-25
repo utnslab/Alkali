@@ -187,6 +187,14 @@ void EmitLLVMHeaderPass::runOnOperation() {
 
     for (auto emitter : emitters)
       emitter->addGlobal(type, name, args);
+    if (auto ins = global->getAttrOfType<ArrayAttr>("instances")) {
+      // with replications. We do the rename
+      for (auto placement : ins.getAsValueRange<StringAttr>()) {
+        auto newName = name + "_" + placement.str();
+        for (auto emitter : emitters)
+          emitter->addGlobal(type, newName, args);
+      }
+    }
   });
 
   for (auto emitter : emitters)

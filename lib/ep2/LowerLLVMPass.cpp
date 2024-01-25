@@ -15,6 +15,8 @@
 
 #include "mlir/Conversion/LLVMCommon/TypeConverter.h"
 #include "mlir/Conversion/ArithToLLVM/ArithToLLVM.h"
+#include "mlir/Transforms/Passes.h"
+#include "mlir/Conversion/Passes.h"
 
 #include "llvm/ADT/SmallSet.h"
 #include "llvm/Support/raw_ostream.h"
@@ -25,6 +27,14 @@ namespace mlir {
 namespace ep2 {
 
 namespace {
+
+void copyAttributes(Operation *src, Operation *dst) {
+  for (auto &attr : src->getAttrs()) {
+    if (attr.getName().str().find("instances") == std::string::npos)
+      continue;
+    dst->setAttr(attr.getName(), attr.getValue());
+  }
+}
 
 Type getI8PtrType(OpBuilder &builder) {
   return LLVM::LLVMPointerType::get(builder.getI8Type());
@@ -50,6 +60,15 @@ int getTypeSize(Value value) {
   return getTypeSize(value.getType());
 }
 
+int getTypeAlignment(Type value) {
+  // TODO(avoid unaligned)
+  // int size = getTypeSize(value);
+  // if (size % 8 == 0) return 8;
+  // if (size % 4 == 0) return 4;
+  // if (size % 2 == 0) return 2;
+  return 1;
+}
+
 void emitStore(OpBuilder &builder, Value value, Value ptr) {
   assert(isa<LLVM::LLVMPointerType>(ptr.getType()) && "Not a pointer");
   auto ptrType = dyn_cast<LLVM::LLVMPointerType>(ptr.getType());
@@ -58,8 +77,10 @@ void emitStore(OpBuilder &builder, Value value, Value ptr) {
     // Both are pointers. Use a memcpy
     auto len = builder.getI32IntegerAttr(getTypeSize(ptrType.getElementType()));
     builder.create<LLVM::MemcpyInlineOp>(value.getLoc(), ptr, value, len, false);
-  } else // assign a value to a pointer
-    builder.create<LLVM::StoreOp>(value.getLoc(), value, ptr);
+  } else { // assign a value to a pointer
+    auto align = getTypeAlignment(ptrType.getElementType());
+    builder.create<LLVM::StoreOp>(value.getLoc(), value, ptr, static_cast<unsigned>(align));
+  }
 }
 
 // helper functions
@@ -128,8 +149,12 @@ struct StructAccessOpPattern : public OpConversionPattern<ep2::StructAccessOp> {
     // The struct in EP2 is *never* nested. It is always a flat struct
     if (isStructPointer(gepOp.getType()))
       rewriter.replaceOp(structAccessOp, gepOp);
-    else // its a value type (e.g. int
-      rewriter.replaceOpWithNewOp<LLVM::LoadOp>(structAccessOp, gepOp);
+    else { // its a value type (e.g. int
+      // TODO(zhiyaung): check this
+      // auto align = getTypeAlignment(resType);
+      auto align = 1;
+      rewriter.replaceOpWithNewOp<LLVM::LoadOp>(structAccessOp, gepOp, static_cast<unsigned>(align));
+    }
 
     return success();
   }
@@ -145,9 +170,8 @@ struct StructUpdateOpPattern : public OpConversionPattern<ep2::StructUpdateOp> {
     auto resType = adaptor.getNewValue().getType();
     auto gepOp = emitGEP(rewriter, resType, adaptor.getInput(),
                          static_cast<int>(updateOp.getIndex()));
-    // TODO(zhiyuang): if its a pointer, we only need GEP (but without load).
-    // Do we have any nested struct?
-    rewriter.create<LLVM::StoreOp>(updateOp.getLoc(), adaptor.getNewValue(), gepOp);
+
+    emitStore(rewriter, adaptor.getNewValue(), gepOp);
     rewriter.replaceOp(updateOp, ValueRange{adaptor.getInput()});
 
     return success();
@@ -497,7 +521,6 @@ struct HandlerRawPattern : public OpConversionPattern<ep2::FuncOp> {
           return t;
       });
 
-
     // empty
     TypeConverter::SignatureConversion signatureConversion(
         funcOp.getNumArguments());
@@ -520,6 +543,8 @@ struct HandlerRawPattern : public OpConversionPattern<ep2::FuncOp> {
       return failure();
     rewriter.mergeBlocks(*newBlock, entryBlock);
     rewriter.inlineRegionBefore(funcOp.getBody(), newFuncOp.getBody(), newFuncOp.end());
+
+    copyAttributes(funcOp, newFuncOp);
 
     // remove original func
     rewriter.replaceOp(funcOp, newFuncOp);
@@ -552,9 +577,11 @@ struct EmitOffsetPattern : public OpConversionPattern<ep2::EmitOffsetOp> {
     } else { // its a value type
       auto casted = rewriter.create<LLVM::BitcastOp>(
           emitOp.getLoc(), LLVM::LLVMPointerType::get(valueType), bufp);
+      // TODO: get value size and alignment
+      auto align = getTypeAlignment(valueType);
       rewriter.create<LLVM::StoreOp>(
           emitOp.getLoc(), adaptor.getValue(),
-          casted);
+          casted, static_cast<unsigned>(align));
     }
     rewriter.eraseOp(emitOp);
     return success();
@@ -579,6 +606,14 @@ struct ExtractOffsetPattern : public OpConversionPattern<ep2::ExtractOffsetOp> {
         ArrayRef<LLVM::GEPArg>{byteOffset});
 
     if (isa<LLVM::LLVMPointerType>(valueType)) {
+      // XXX: prevent the poitner aliasing. do a copy
+      // check is optimized
+      // auto const1 = rewriter.create<LLVM::ConstantOp>(
+      //     extractOp.getLoc(), rewriter.getIntegerType(32), 1);
+      // auto stackPtr = rewriter.create<LLVM::AllocaOp>(extractOp.getLoc(), valueType, const1, 4);
+      // auto dataPtr = rewriter.create<LLVM::BitcastOp>(extractOp.getLoc(), valueType, bufp);
+      // emitStore(rewriter, dataPtr, stackPtr);
+      // rewriter.replaceOp(extractOp, stackPtr);
       rewriter.replaceOpWithNewOp<LLVM::BitcastOp>(extractOp, valueType, bufp);
     } else { // its a value type
       auto casted = rewriter.create<LLVM::BitcastOp>(
@@ -643,8 +678,9 @@ struct GlobalPattern : public OpConversionPattern<ep2::GlobalOp> {
   LogicalResult
   matchAndRewrite(ep2::GlobalOp globalOp, OpAdaptor adaptor,
                   ConversionPatternRewriter &rewriter) const final {
-    auto resType = getTypeConverter()->convertType(globalOp.getType());
-    rewriter.create<LLVM::GlobalOp>(globalOp.getLoc(), resType, false, LLVM::Linkage::External, globalOp.getName(), nullptr);
+    auto resType = getI8PtrType(rewriter);
+    auto newOp = rewriter.create<LLVM::GlobalOp>(globalOp.getLoc(), resType, false, LLVM::Linkage::External, globalOp.getName(), nullptr);
+    copyAttributes(globalOp, newOp);
     rewriter.eraseOp(globalOp);
     return success();
   }
@@ -773,7 +809,7 @@ struct SubPattern : public OpConversionPattern<ep2::SubOp> {
   LogicalResult
   matchAndRewrite(ep2::SubOp subOp, OpAdaptor adaptor,
                   ConversionPatternRewriter &rewriter) const final {
-    rewriter.replaceOpWithNewOp<LLVM::AddOp>(subOp, adaptor.getLhs(), adaptor.getRhs());
+    rewriter.replaceOpWithNewOp<LLVM::SubOp>(subOp, adaptor.getLhs(), adaptor.getRhs());
     return success();
   }
 };
@@ -1023,6 +1059,74 @@ void LowerLLVMPass::runOnOperation() {
 
   if (failed(applyPartialConversion(getOperation(), target, patternSet)))
     signalPassFailure();
+
+  // Create a inline pass
+  OpPassManager pm;
+  pm.addPass(createCanonicalizerPass());
+  pm.addPass(createCSEPass());
+  pm.addPass(createCanonicalizerPass());
+  pm.addPass(createInlinerPass());
+  if (failed(runPipeline(pm, getOperation())))
+    return signalPassFailure();
+  
+  // replicate global
+
+  std::vector<LLVM::GlobalOp> newGlobals;
+  getOperation()->walk([&](LLVM::GlobalOp globalOp){
+    if (auto instances = globalOp->getAttrOfType<ArrayAttr>("instances")) {
+      for (auto [index,instance] : llvm::enumerate(instances.getAsValueRange<StringAttr>())) {
+        auto newOp = globalOp.clone();
+        newOp.setName((globalOp.getName() + "_" + instance).str());
+        newGlobals.push_back(newOp);
+      }
+    }
+  });
+  builder.setInsertionPointToStart(getOperation().getBody());
+  for (auto global : newGlobals)
+    builder.insert(global);
+
+  // finally, we replicate the functions
+  std::vector<LLVM::LLVMFuncOp> toInsert;
+  std::vector<LLVM::LLVMFuncOp> toRemove;
+  getOperation()->walk([&](LLVM::LLVMFuncOp funcOp){
+    if (auto instances = funcOp->getAttrOfType<ArrayAttr>("instances")) {
+      // Collect global vars
+      std::map<std::string, SmallVector<StringRef>> globalPartitions;
+      for (auto &attr : funcOp->getAttrs()) {
+        if (attr.getName().str().find("instances_") != std::string::npos) {
+          auto globalName = attr.getName().str().substr(10);
+          auto array = attr.getValue().dyn_cast<ArrayAttr>();
+          if (!array) continue;
+          auto vec = llvm::to_vector(array.getAsValueRange<StringAttr>());
+          if (vec.size() != 0)
+            globalPartitions[globalName] = std::move(vec);
+        }
+      }
+
+      // rewrite the global names
+      for (auto [index,instance] : llvm::enumerate(instances.getAsValueRange<StringAttr>())) {
+        auto newFunc = funcOp.clone();
+        newFunc->walk([&](LLVM::AddressOfOp importOp){
+          auto name = importOp.getGlobalName().str();
+          auto it = globalPartitions.find(name);
+          if (it != globalPartitions.end()) {
+            importOp.setGlobalName(name + "_" + it->second[index].str());
+          }
+        });
+        newFunc.setName((funcOp.getName() + "_" + instance).str());
+        toInsert.push_back(newFunc);
+      }
+
+      // todo: consider other replications
+      toRemove.push_back(funcOp);
+    }
+  });
+
+  builder.setInsertionPointToEnd(getOperation().getBody());
+  for (auto func : toInsert)
+    builder.insert(func);
+
+
 }
 
 } // namespace ep2

@@ -14,7 +14,6 @@ struct ip_header_t {
     bits<16> checksum;
     bits<32> source_ip;
     bits<32> dst_ip;
-    bits<32> options;
 }
 
 struct dma_desc_t {
@@ -30,8 +29,10 @@ extern handler NET_SEND:net_send (context ctx, buf packet) { }
 ##############main program########## #
 
 struct eth_header_t {
-  bits<48> dst_mac;
-  bits<48> src_mac;
+  bits<32> dst_mac_1;
+  bits<16> dst_mac_2;
+  bits<32> src_mac_1;
+  bits<16> src_mac_2;
   bits<16> ether_type;
 }
 
@@ -47,8 +48,8 @@ struct udp_header_t {
 struct rpc_header_t {
   bits<32> channel_id;
   bits<32> seq;
-  bits<32> seg_size;
-  bits<32> total_size;
+  bits<32> seg_size;   # let's do 32
+  bits<32> total_size; # let's do 4 * 32
 }
 
 extern event MSG_REASSEMBLE {
@@ -60,16 +61,17 @@ extern event MSG_REASSEMBLE {
 handler NET_RECV:process_packet(context ctx, buf packet) {
   eth_header_t eth_header;
   ip_header_t ip_header;
-  udp_header_t udp_header_t;
+  udp_header_t udp_header;
   rpc_header_t rpc_header;
 
   packet.extract(eth_header);
   packet.extract(ip_header);
-  packet.extract(udp_header_t);
+  packet.extract(udp_header);
   packet.extract(rpc_header);
 
   ctx.eth_header = eth_header;
   ctx.ip_header = ip_header;
+  ctx.udp_header = udp_header;
 
   generate MSG_REASSEMBLE:msg_reassemble{ctx, packet, rpc_header};
 }
@@ -80,31 +82,52 @@ struct agg_buf_t {
   buf tmp_buf;
 }
 
+global table <bits<32>, agg_buf_t, 16> buf_reassemble;
+
 handler MSG_REASSEMBLE:msg_reassemble(context ctx, buf data, rpc_header_t rpc_header) {
-  table <bits<16>, agg_buf_t, 16> buf_reassemble;
   agg_buf_t agg_buf;
   # here do we init the buffer? check the generated code (for __buf_init)
-  agg_buf_t new_buf;
+
+  eth_header_t tmp_header;
+  bits<32> tmp_mac_1;
+  bits<16> tmp_mac_2;
 
   agg_buf = buf_reassemble.lookup(rpc_header.channel_id); 
   if(agg_buf.rest_bytes == 0){
     agg_buf.rest_bytes = rpc_header.total_size;
+
+    buf new_buffer;
+    
+    # swap the fields
+    tmp_header = ctx.eth_header;
+    tmp_mac_1 = tmp_header.dst_mac_1;
+    tmp_mac_2 = tmp_header.dst_mac_2;
+    tmp_header.dst_mac_1 = tmp_header.src_mac_1;
+    tmp_header.dst_mac_2 = tmp_header.src_mac_2;
+    tmp_header.src_mac_1 = tmp_mac_1;
+    tmp_header.src_mac_2 = tmp_mac_2;
+
+    new_buffer.emit(tmp_header);
+    new_buffer.emit(ctx.ip_header);
+    new_buffer.emit(ctx.udp_header);
+    
+    agg_buf.tmp_buf = new_buffer;
   }
 
-  if(agg_buf.next_seq + 1 == rpc_header.seq){
-    agg_buf.next_seq = agg_buf.next_seq + 1;
-    agg_buf.tmp_buf.emit(data);
-    agg_buf.rest_bytes = agg_buf.rest_bytes - rpc_header.seg_size;
-  }
+  # if(agg_buf.next_seq + 1 == rpc_header.seq){
+  agg_buf.next_seq = agg_buf.next_seq + 1;
+  agg_buf.tmp_buf.emit(data);
+  agg_buf.rest_bytes = agg_buf.rest_bytes - rpc_header.seg_size;
+  # }
 
   if(agg_buf.rest_bytes > 0){
     buf_reassemble.update(rpc_header.channel_id, agg_buf);
-  }
-  else{
-    # assume aligned case
-    new_buf.rest_bytes = 0;
-    buf_reassemble.update(rpc_header.channel_id, new_buf);
-
+  } else {
     generate NET_SEND:net_send{ctx, agg_buf.tmp_buf};
+
+    agg_buf.rest_bytes = 0;
+    agg_buf.next_seq = 0;
+
+    buf_reassemble.update(rpc_header.channel_id, agg_buf);
   }
 }

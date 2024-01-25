@@ -630,7 +630,7 @@ private:
         return nullptr;
       }
       auto &target = operands[0];
-      builder.create<EmitOp>(location, caller, toRValue(target, builder.getType<BufferType>()));
+      builder.create<EmitOp>(location, caller, toRValue(target));
       return builder.create<NopOp>(location);
     } else if(callee == "lookup"){
       if (!caller || !isa<TableType>(caller.getType()) || operands.size() != 1) {
@@ -946,17 +946,19 @@ private:
       // print. These can only appear in block list and not in nested
       // expressions.
       if (auto *vardecl = dyn_cast<VarDeclExprAST>(expr.get())) {
-        if (!newScope) {
-          emitError(loc(vardecl->loc()))
-              << "error: variable declaration not allowed in this context";
-          return mlir::failure();
-        }
+        // TODO(zhiyuang): what's the implication on this?
+        // if (!newScope) {
+        //   emitError(loc(vardecl->loc()))
+        //       << "error: variable declaration not allowed in this context";
+        //   return mlir::failure();
+        // }
         if (!mlirGen(*vardecl))
           return mlir::failure();
         continue;
-      } else if (auto *ret = dyn_cast<ReturnExprAST>(expr.get()))
-        return mlirGen(*ret);
-      else if (auto *ifelse = dyn_cast<IfElseExprAST>(expr.get())) {
+      } else if (auto *ret = dyn_cast<ReturnExprAST>(expr.get())) {
+        mlirGen(*ret);
+        continue;
+      } else if (auto *ifelse = dyn_cast<IfElseExprAST>(expr.get())) {
         if (mlirGen(*ifelse, newScope).failed())
           return mlir::failure();
         continue;
