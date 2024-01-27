@@ -1,9 +1,8 @@
 # Specify the functionality of the target archiecture
 
 struct dma_desc_t {
-    bits<16> queue_id; 
-    bits<16> service_id; 
-    bits<16> scale_up_or_down; # 1 scale up, 2 scale down
+    bits<32> queue_id; 
+    bits<32> service_id; 
 }
 
 extern event NET_RECV {context ctx; buf packet;}
@@ -21,9 +20,11 @@ extern handler DMA_SEND:dma_send (context ctx, buf data, dma_desc_t desc) {
 ############## main program ###########
 
 struct eth_header_t {
-    bits<48> dst_mac;
-    bits<48> src_mac;
-    bits<16> ether_type;
+  bits<32> dst_mac_1;
+  bits<16> dst_mac_2;
+  bits<32> src_mac_1;
+  bits<16> src_mac_2;
+  bits<16> ether_type;
 }
 
 # Totoal 24 bytes
@@ -44,8 +45,8 @@ struct ip_header_t {
 }
 
 
-event LOAD_TABLE_ADD {context ctx; bits<16> service_id; bits<16> target_core;}
-event LOAD_TABLE_SUB {context ctx; bits<16> service_id; bits<16> target_core;}
+event LOAD_TABLE_ADD {context ctx; bits<32> service_id; bits<32> target_core;}
+event LOAD_TABLE_SUB {context ctx; bits<32> service_id; bits<32> target_core;}
 
 struct coremap_t {
    bits<16> c1;
@@ -55,14 +56,14 @@ struct coremap_t {
 }
 
 scope s1 <LOAD_TABLE_ADD:load_table_add, LOAD_TABLE_SUB:load_table>;
-[sync=s1] global table <int, coremap_t, 16> service_load;
+[sync=s1, instances=(t1,t2,t3,t4,t5,t6,t7,t8)] global table <int, coremap_t, 16> service_load;
 
 handler DMA_RECV:process_loadupdate (context ctx, buf packet,  dma_desc_t desc) {
     generate LOAD_TABLE_SUB:load_table_sub{ctx, desc.service_id, desc.queue_id};
 }
 
-handler NET_RECV:process_packet (context ctx, buf packet) {
-    bits<16> service_id;
+[instances=(t1,t2,t3,t4,t5,t6,t7,t8), instances_service_load=(t1,t2,t3,t4,t5,t6,t7,t8)] handler NET_RECV:process_packet (context ctx, buf packet) {
+    bits<32> service_id;
     # decode packet
     service_id = 0;
 
@@ -75,7 +76,7 @@ handler NET_RECV:process_packet (context ctx, buf packet) {
 
     bits<16> q1;
     bits<16> q2;
-    bits<16> target_queue;
+    bits<32> target_queue;
 
     int l1;
     int l2;
@@ -107,15 +108,35 @@ handler NET_RECV:process_packet (context ctx, buf packet) {
 
     desc.queue_id = target_queue;
     desc.service_id = service_id;
-    if(target_core > 16) {
-        desc.scale_up_or_down = 1;
-    }
+    # if(target_core > 16) {
+    #     desc.scale_up_or_down = 1;
+    # }
     
     generate LOAD_TABLE_ADD:load_table_add{ctx, service_id, target_queue};
-    generate DMA_SEND:dma_send{ctx, packet, desc};
+    # generate DMA_SEND:dma_send{ctx, packet, desc};
+
+
+    eth_header_t tmp_header;
+    bits<32> tmp_mac_1;
+    bits<16> tmp_mac_2;
+    buf new_buffer;
+
+    packet.extract(tmp_header);
+
+    tmp_mac_1 = tmp_header.dst_mac_1;
+    tmp_mac_2 = tmp_header.dst_mac_2;
+    tmp_header.dst_mac_1 = tmp_header.src_mac_1;
+    tmp_header.dst_mac_2 = tmp_header.src_mac_2;
+    tmp_header.src_mac_1 = tmp_mac_1;
+    tmp_header.src_mac_2 = tmp_mac_2;
+
+    new_buffer.emit(tmp_header);
+    new_buffer.emit(packet);
+    generate NET_SEND:net_send{ctx, new_buffer};
 }
 
-[sync=s1] handler LOAD_TABLE_ADD:load_table_add (context ctx, bits<16> service_id, bits<16> target) {
+global mutex add_mutex;
+[sync=s1] handler LOAD_TABLE_ADD:load_table_add (context ctx, bits<32> service_id, bits<32> target) {
     coremap_t cores;
     cores = service_load.lookup(service_id);
     if (target == 1) {cores.c1 = cores.c1 + 1;}
@@ -123,9 +144,10 @@ handler NET_RECV:process_packet (context ctx, buf packet) {
     if (target == 3) {cores.c3 = cores.c3 + 1;}
     if (target == 4) {cores.c4 = cores.c4 + 1;}
     service_load.update(service_id, cores);
+
 }
 
-[sync=s1] handler LOAD_TABLE_SUB:load_table_sub (context ctx, bits<16> service_id, bits<16> target) {
+[sync=s1] handler LOAD_TABLE_SUB:load_table_sub (context ctx, bits<32> service_id, bits<32> target) {
     coremap_t cores;
     cores = service_load.lookup(service_id);
     if (target == 1) {cores.c1 = cores.c1 - 1;}

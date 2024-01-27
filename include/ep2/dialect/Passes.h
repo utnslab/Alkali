@@ -114,6 +114,14 @@ struct HandlerDependencyAnalysis {
              llvm::count_if(pr.second, [&](FuncOp op) { return op == funcOp; });
     });
   }
+  // TODO(zhiyuang): a strict definition of this is we do not have any function as input
+  bool isStartOfChain(FuncOp funcOp) {
+    HandlerFullName name(funcOp);
+    return llvm::count_if(graph, [&](auto &pr){
+      // cast away const
+      return !llvm::count_if(pr.second, [&](FuncOp op) { return op == funcOp; });
+    });
+  }
 
   HandlerDependencyAnalysis(Operation *op);
 

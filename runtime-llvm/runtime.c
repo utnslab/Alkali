@@ -77,3 +77,6 @@ void __rt_table_update(table_t * table, int key, void * value) {
   memcpy(table->el, value, table->vsize);
   printf("+ <table> update: %d:[%d,%d]\n", key, ((int *)table->el)[0], ((int *)table->el)[1]);
 }
+
+
+void __rt_pthread_mutex_init(pthread_mutex_t * mutex) { }

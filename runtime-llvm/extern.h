@@ -17,7 +17,8 @@ typedef void * (*pthread_worker_t)(void *);
 void * __extern_source_NET_RECV(extern_worker_t *worker);
 void * __extern_sink_NET_SEND(extern_worker_t *worker);
 
-void __handler_DMA_WRITE_REQ_dma_write(void *);
-void __handler_NET_SEND_net_send(void *, void *);
+void __handler_DMA_WRITE_REQ_dma_write(void *, void *);
+void __handler_DMA_SEND_dma_send(void *, void *);
+void __handler_NET_SEND_net_send(void *);
 
 #endif // _EP2_RUNTIME_EXTERN_H_

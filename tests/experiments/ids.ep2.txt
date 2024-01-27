@@ -58,7 +58,15 @@ extern event MSG_REASSEMBLE {
   rpc_header_t rpc;
 }
 
-handler NET_RECV:process_packet(context ctx, buf packet) {
+struct agg_buf_t {
+  bits<32> rest_bytes;
+  bits<32> next_seq;
+  buf tmp_buf;
+}
+
+[instances=(t1,t2,t3,t4,t5,t6,t7,t8)] global table <bits<32>, agg_buf_t, 16> buf_reassemble;
+
+[instances=(t1,t2,t3,t4,t5,t6,t7,t8), instances_buf_reassemble=(t1,t2,t3,t4,t5,t6,t7,t8)] handler NET_RECV:process_packet(context ctx, buf packet) {
   eth_header_t eth_header;
   ip_header_t ip_header;
   udp_header_t udp_header;
@@ -76,14 +84,6 @@ handler NET_RECV:process_packet(context ctx, buf packet) {
   generate MSG_REASSEMBLE:msg_reassemble{ctx, packet, rpc_header};
 }
 
-struct agg_buf_t {
-  bits<32> rest_bytes;
-  bits<32> next_seq;
-  buf tmp_buf;
-}
-
-global table <bits<32>, agg_buf_t, 16> buf_reassemble;
-
 handler MSG_REASSEMBLE:msg_reassemble(context ctx, buf data, rpc_header_t rpc_header) {
   agg_buf_t agg_buf;
   # here do we init the buffer? check the generated code (for __buf_init)
@@ -91,6 +91,9 @@ handler MSG_REASSEMBLE:msg_reassemble(context ctx, buf data, rpc_header_t rpc_he
   eth_header_t tmp_header;
   bits<32> tmp_mac_1;
   bits<16> tmp_mac_2;
+
+  udp_header_t tmp_udp;
+  bits<16> port;
 
   agg_buf = buf_reassemble.lookup(rpc_header.channel_id); 
   if(agg_buf.rest_bytes == 0){
@@ -107,9 +110,14 @@ handler MSG_REASSEMBLE:msg_reassemble(context ctx, buf data, rpc_header_t rpc_he
     tmp_header.src_mac_1 = tmp_mac_1;
     tmp_header.src_mac_2 = tmp_mac_2;
 
+    tmp_udp = ctx.udp_header;
+    port = tmp_udp.sport;
+    tmp_udp.sport = tmp_udp.dport;
+    tmp_udp.dport = port;
+
     new_buffer.emit(tmp_header);
     new_buffer.emit(ctx.ip_header);
-    new_buffer.emit(ctx.udp_header);
+    new_buffer.emit(tmp_udp);
     
     agg_buf.tmp_buf = new_buffer;
   }

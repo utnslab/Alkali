@@ -178,6 +178,11 @@ void EmitLLVMHeaderPass::runOnOperation() {
         args.push_back(std::to_string(type.getSize()));
         return "table";
       })
+      .Case([&](OpaqueType type) {
+        // TODO(zhiyuang): 
+        if (type.getName() == "mutex")
+        return "pthread_mutex";
+      })
       .Default([&](Type type) {
         type.dump();
         llvm_unreachable("unsupported global type");

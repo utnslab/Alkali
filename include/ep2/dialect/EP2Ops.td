@@ -200,10 +200,19 @@ def EP2_PortType: EP2_BaseType<"Port", "port"> {
   let assemblyFormat = "`<` $in `,` $out `>`";
 }
 
+def EP2_OpaqueType: EP2_BaseType<"Opaque", "opaque"> {
+  let summary = "EP2 unknown type";
+  let description = [{
+    The Type for unknown datastructures
+  }];
+  let parameters = (ins StringRefParameter<>:$name);
+  let assemblyFormat = "`<` $name `>`";
+}
+
 // Type collections
 // Provide a definition of the types that are used within the EP2 dialect.
 def EP2_Type : AnyTypeOf<[AnyInteger, EP2_AnyType, EP2_StructType, EP2_BufferType, EP2_TableType,
-                          EP2_AtomType, EP2_ContextType, EP2_ContextRefType]>;
+                          EP2_AtomType, EP2_ContextType, EP2_ContextRefType, EP2_OpaqueType]>;
 
 def EP2_Integer : AnyTypeOf<[AnyInteger, EP2_AnyType]>;
 

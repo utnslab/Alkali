@@ -58,8 +58,10 @@ extern handler DMA_SEND:dma_send(context ctx, buf data, dma_desc_t desc) {}
 ##############main program########## #
 
 struct eth_header_t {
-  bits<48> dst_mac;
-  bits<48> src_mac;
+  bits<32> dst_mac_1;
+  bits<16> dst_mac_2;
+  bits<32> src_mac_1;
+  bits<16> src_mac_2;
   bits<16> ether_type;
 }
 
@@ -85,7 +87,7 @@ struct esp_h {
   bits<32> seq;
 }
 
-handler NET_RECV:process_packet(context ctx, buf packet) {
+[instances=(t1,t2,t3,t4,t5,t6,t7,t8)] handler NET_RECV:process_packet(context ctx, buf packet) {
   eth_header_t eth_header;
   ip_header_t ip_header;
   esp_h esp_header;
@@ -111,22 +113,30 @@ controller DECRYPT_REQ() {
 }
 
 handler DECRYPT_CMPL:decrypt(context ctx, buf data) {
-  eth_header_t eth_header;
+  eth_header_t tmp_header;
   ip_header_t ip_header;
   esp_h esp_header;
   buf dma_out;
-  dma_desc_t desc;
+  # dma_desc_t desc;
 
-  eth_header = ctx.eth_header;
+  tmp_header = ctx.eth_header;
   ip_header = ctx.ip_header;
   esp_header = ctx.esp_header;
 
-  dma_out.emit(ctx.eth_header);
+  bits<32> tmp_mac_1;
+  bits<16> tmp_mac_2;
+
+  tmp_mac_1 = tmp_header.dst_mac_1;
+  tmp_mac_2 = tmp_header.dst_mac_2;
+  tmp_header.dst_mac_1 = tmp_header.src_mac_1;
+  tmp_header.dst_mac_2 = tmp_header.src_mac_2;
+  tmp_header.src_mac_1 = tmp_mac_1;
+  tmp_header.src_mac_2 = tmp_mac_2;
+
+  dma_out.emit(tmp_header);
   dma_out.emit(ip_header);
   dma_out.emit(esp_header);
   dma_out.emit(data);
 
-  desc.queue_id = 0;
-
-  generate DMA_SEND:dma_send{ctx, dma_out, desc};
+  generate NET_SEND:net_send{ctx, dma_out};
 }

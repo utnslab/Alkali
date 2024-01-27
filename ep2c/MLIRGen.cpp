@@ -1014,6 +1014,8 @@ private:
         bool in = type.name == "In" || type.name == "InOut";
         bool out = type.name == "Out" || type.name == "InOut";
         return builder.getType<PortType>(in, out);
+      } else if (type.name == "mutex") {
+        return builder.getType<OpaqueType>(type.name);
       }
 
       auto it = structMap.find(type.name);

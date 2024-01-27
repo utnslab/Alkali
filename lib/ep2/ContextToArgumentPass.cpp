@@ -129,7 +129,7 @@ void ContextToArgumentPass::runOnFunction(FuncOp funcOp, ContextBufferizationAna
 
   // per-function reference map
   std::map<StringRef, ContextRefOp> topRefs;
-  if (dependency.hasPredecessor(funcOp))
+  if (dependency.hasPredecessor(funcOp) || funcOp->hasAttr("extern_forward"))
     insertContextToArguments(funcOp, analysis);
   insertContextRefs(funcOp, topRefs, analysis);
 
@@ -139,7 +139,10 @@ void ContextToArgumentPass::runOnFunction(FuncOp funcOp, ContextBufferizationAna
     if (!type || !type.getIsEvent())
       return;
 
-    bool noContext = !keepLastContext.getValue() && dependency.lookupHandler(initOp).isExtern();
+    auto nextHandler = dependency.lookupHandler(initOp);
+    bool noContext =
+        !keepLastContext.getValue() &&
+        (nextHandler.isExtern() && !nextHandler->hasAttr("extern_forward"));
     rewriteEventInit(initOp, analysis, dependency, noContext);
   });
 

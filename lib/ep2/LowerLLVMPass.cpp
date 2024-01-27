@@ -30,9 +30,14 @@ namespace {
 
 void copyAttributes(Operation *src, Operation *dst) {
   for (auto &attr : src->getAttrs()) {
-    if (attr.getName().str().find("instances") == std::string::npos)
-      continue;
-    dst->setAttr(attr.getName(), attr.getValue());
+    bool copy = false;
+    if (attr.getName().str().find("instances") != std::string::npos)
+      copy = true;
+    if (attr.getName().str().find("sync_mutex") != std::string::npos)
+      copy = true;
+
+    if (copy)
+      dst->setAttr(attr.getName(), attr.getValue());
   }
 }
 
@@ -941,7 +946,7 @@ void LowerLLVMPass::populateAPIFunctions(TypeConverter &converter) {
 
   // Types
   auto I32 = builder.getIntegerType(32);
-  auto I256 = builder.getIntegerType(256);
+  // auto I256 = builder.getIntegerType(256);
   auto Void = builder.getType<LLVM::LLVMVoidType>();
   auto VoidPtr = builder.getType<LLVM::LLVMPointerType>();
   auto Buf = converter.convertType(builder.getType<ep2::BufferType>());
@@ -971,6 +976,13 @@ void LowerLLVMPass::populateAPIFunctions(TypeConverter &converter) {
   apiFunctions["__rt_table_update"] = builder.create<LLVM::LLVMFuncOp>(
       module.getLoc(), "__rt_table_update",
       LLVM::LLVMFunctionType::get(Void, {VoidPtr, I32, VoidPtr}));
+  // sync
+  apiFunctions["__rt_sync_lock"] = builder.create<LLVM::LLVMFuncOp>(
+      module.getLoc(), "pthread_mutex_lock",
+      LLVM::LLVMFunctionType::get(Void, {VoidPtr}));
+  apiFunctions["__rt_sync_unlock"] = builder.create<LLVM::LLVMFuncOp>(
+      module.getLoc(), "pthread_mutex_unlock",
+      LLVM::LLVMFunctionType::get(Void, {VoidPtr}));
 
   // TODO(zhiyuang): change to enum
   // external handlers. Only for call and raw mode
@@ -994,11 +1006,29 @@ void LowerLLVMPass::populateAPIFunctions(TypeConverter &converter) {
         builder.create<LLVM::LLVMFuncOp>(
             module.getLoc(), "__handler_DMA_SEND_dma_send",
             LLVM::LLVMFunctionType::get( Void, {Buf, DmaType}));
-    auto CryptoCmd = LLVM::LLVMPointerType::get( LLVM::LLVMStructType::getLiteral(builder.getContext(), {I256, I32}, true));
-    apiFunctions["__handler_DECRYPT_REQ_decrypt"] =
-        builder.create<LLVM::LLVMFuncOp>(
-            module.getLoc(), "__handler_DECRYPT_REQ_decrypt",
-            LLVM::LLVMFunctionType::get( Void, {Buf, CryptoCmd}));
+    // TODO(zhiyuang): extern forward? generate signature for all
+    auto &analysis = getAnalysis<HandlerDependencyAnalysis>();
+    getOperation()->walk([&](ReturnOp returnOp){
+      auto callee = analysis.lookupHandler(returnOp);
+      if (callee.isExtern() && callee->hasAttr("extern_forward")) {
+        // process type
+        auto initOp = returnOp.getInput().front().getDefiningOp<ep2::InitOp>();
+        if (!initOp) return;
+
+        auto operands = llvm::map_to_vector(initOp.getOperands(), [](Value v) -> Type { return v.getType(); });
+        if (operands.size() > 0 && operands.front().isa<ep2::AtomType>())
+          operands.erase(operands.begin());
+        auto newTypes = llvm::map_to_vector(
+            operands, [&](Type t) -> Type { return converter.convertType(t); });
+
+        // create a forward function
+        auto func = builder.create<LLVM::LLVMFuncOp>(
+            module.getLoc(), callee.getName(),
+            LLVM::LLVMFunctionType::get( Void, newTypes));
+        // try implace
+        apiFunctions.try_emplace(callee.getName().str(), func);
+      }
+    });
   }
 }
 
@@ -1059,6 +1089,24 @@ void LowerLLVMPass::runOnOperation() {
 
   if (failed(applyPartialConversion(getOperation(), target, patternSet)))
     signalPassFailure();
+
+  // Passes before inlining
+  // Insert MUTEX for MUTEX synced function
+  getOperation()->walk([&](LLVM::LLVMFuncOp funcOp){
+    auto mutex = funcOp->getAttrOfType<StringAttr>("sync_mutex");
+    if (!mutex)
+      return;
+    builder.setInsertionPointToStart(&funcOp.getBody().front());
+    auto mutexPtr = builder.create<LLVM::AddressOfOp>(
+        funcOp.getLoc(), LLVM::LLVMPointerType::get(builder.getContext()),
+        mutex.getValue());
+    // Lock at the begining
+    builder.create<LLVM::CallOp>(funcOp.getLoc(), apiFunctions["__rt_sync_lock"], ValueRange{mutexPtr});
+
+    auto ret = funcOp.getBlocks().back().getTerminator();
+    builder.setInsertionPoint(ret);
+    builder.create<LLVM::CallOp>(funcOp.getLoc(), apiFunctions["__rt_sync_unlock"], ValueRange{mutexPtr});
+  });
 
   // Create a inline pass
   OpPassManager pm;

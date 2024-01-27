@@ -4,13 +4,6 @@
 #include <pthread.h>
 #include "glib.h"
 
-#define NDEBUG
-#ifndef NDEBUG
-  #define dprintf(...) printf(__VA_ARGS__)
-#else
-  #define dprintf(...)
-#endif
-
 // Queues.
 extern GAsyncQueue **queues;
 
@@ -56,6 +49,8 @@ void __rt_table_init(table_t * table, int vsize);
 void * __rt_table_alloc(int vsize);
 void * __rt_table_lookup(table_t * table, int key);
 void __rt_table_update(table_t * table, int key, void * value);
+
+void __rt_pthread_mutex_init(pthread_mutex_t * mutex);
 
 
 #endif // _EP2_LLVM_RUNTIME_H_

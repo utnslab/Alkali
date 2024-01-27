@@ -167,6 +167,14 @@ HandlerDependencyAnalysis::HandlerDependencyAnalysis(Operation *module) {
     });
 
     if (funcOp.isExtern()) {
+      // TODO(zhiyuang): need to build correct graph. fix later
+      if (!to.empty())
+        funcOp->setAttr("extern_forward", BoolAttr::get(funcOp.getContext(), true));
+      for (auto &target : to) {
+        if (auto nextFunc = lookupHandler(target)) {
+          nextFunc->setAttr("extern_forward", BoolAttr::get(nextFunc.getContext(), true));
+        }
+      }
       externForwards.emplace(from.event, std::move(to));
     } else { // this is a full handler
       std::vector<FuncOp> targets;
@@ -192,12 +200,14 @@ HandlerDependencyAnalysis::HandlerDependencyAnalysis(Operation *module) {
           continue;
 
         // try to find extern forward
+        // TODO(zhiyuang): fix this. we should include dependency on extern
         // TODO(zhiyuang): move this to extern
         auto it2 = externForwards.find(target.event);
         if (it2 != externForwards.end()) {
           for (auto &target2 : it2->second) {
             HandlerFullName newTarget(target2);
             newTarget.atom = target.atom;
+            llvm::errs() << "  " << newTarget.mangle() << "\n";
             auto it = handlersMap.find(target);
             if (it != handlersMap.end()) {
               targets.push_back(it->second);

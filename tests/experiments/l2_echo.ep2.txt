@@ -50,5 +50,5 @@ struct ip_header_t {
     packet_out.emit(ip_header);
     packet_out.emit(packet);
 
-    generate NET_SEND{ctx, packet_out};
+    generate NET_SEND:net_send{ctx, new_buffer};
 }
