@@ -565,6 +565,16 @@ struct RepackStructTypesPass :
     StringRef getDescription() const final { return "Repack struct types"; }
 };
 
+struct AtomicIdentificationPass :
+        public PassWrapper<AtomicIdentificationPass, OperationPass<ModuleOp>> {
+    void runOnOperation() final;
+    void getDependentDialects(DialectRegistry &registry) const override {
+        registry.insert<EP2Dialect, scf::SCFDialect, cf::ControlFlowDialect>();
+    }
+    StringRef getArgument() const final { return "ep2-atomic-id"; }
+    StringRef getDescription() const final { return "Idenfy the possible use of atomic operation on global variables"; }
+};
+
 } // namespace ep2
 } // namespace mlir
 

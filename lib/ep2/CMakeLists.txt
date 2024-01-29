@@ -44,6 +44,7 @@ add_mlir_dialect_library(MLIREP2
         Passes/DeadFieldEliminatePass.cpp
         Passes/DeadParameterEliminatePass.cpp
         Passes/CanonicalizePass.cpp
+        Passes/AtomicIdentificationPass.cpp
 
         DEPENDS
         MLIREP2OpsIncGen

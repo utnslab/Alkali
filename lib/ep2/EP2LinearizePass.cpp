@@ -89,7 +89,7 @@ namespace {
 
           if (isPure(op))
             toMove.emplace_back(op, false);
-          else if (isa<ReturnOp, UpdateOp>(op)) {
+          else if (isa<ReturnOp, UpdateOp, UpdateAtomicOp>(op)) {
             // We could move (and guard) those non-Pure Ops, as long as it do not have any return value
             // we only need to transfer one level: the blocks connects to the entry block
             llvm::SmallVector<Value> preds;
@@ -98,6 +98,11 @@ namespace {
               toMove.emplace_back(op, true, std::move(preds),
                                   std::move(predAttrs));
           }
+        }
+
+        llvm::errs() << "toMove size: " << toMove.size() << " | " << funcOp.getName() << "\n";
+        for (auto &action : toMove) {
+          action.op->dump();
         }
 
         changed |= !toMove.empty();
@@ -129,17 +134,26 @@ void EP2LinearizePass::runOnOperation() {
   OpPassManager pm;
   pm.addPass(createCanonicalizerPass());
   pm.addPass(createCSEPass());
+  pm.addPass(createCanonicalizerPass());
 
   bool changed = false;
+  GreedyRewriteConfig config{};
+  config.maxIterations = GreedyRewriteConfig::kNoLimit;
+
   do {
     // try to lift all ops from the branches
     if (failed(applyPatternsAndFoldGreedily(moduleOp, frozenPatterns,
-                                            GreedyRewriteConfig(), &changed)))
+                                            config, &changed))) {
+
+      moduleOp->emitError("Unexpected failure in lifting pure ops");
       return signalPassFailure();
+    }
 
     // try to fold unused BBs to arith.select
-    if (failed(runPipeline(pm, moduleOp)))
+    if (failed(runPipeline(pm, moduleOp))) {
+      moduleOp->emitError("Unexpected failure in canonicalization");
       return signalPassFailure();
+    }
   } while (changed);
 }
 

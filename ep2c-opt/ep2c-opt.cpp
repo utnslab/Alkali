@@ -61,6 +61,7 @@ int main(int argc, char **argv) {
   mlir::PassRegistration<mlir::ep2::CanonicalizePass>();
   mlir::PassRegistration<mlir::ep2::LowerLLVMPass>();
   mlir::PassRegistration<mlir::ep2::EmitLLVMHeaderPass>();
+  mlir::PassRegistration<mlir::ep2::AtomicIdentificationPass>();
   
 
   mlir::registerAllPasses();

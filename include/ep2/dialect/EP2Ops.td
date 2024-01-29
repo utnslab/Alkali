@@ -641,6 +641,16 @@ def UpdateOp : EP2_Op<"update"> {
   let hasCanonicalizer = 1;
 }
 
+// TODO(zhiyuang: atomic should be apply to all ref type. Change later
+def UpdateAtomicOp : EP2_Op<"update_atomic"> {
+  let summary = "Atomic update on global reference";
+  let description = [{
+    update a table with global reference
+  }];
+
+  let arguments = (ins EP2_TableType:$table, EP2_Type:$key, I32Attr:$opValue, EP2_Type:$value);
+}
+
 //===----------------------------------------------------------------------===//
 // Reference Related Operations
 // LoadOp & StoreOp & Nop
