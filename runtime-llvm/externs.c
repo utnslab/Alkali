@@ -35,11 +35,17 @@ void * __extern_sink_NET_SEND(extern_worker_t *worker) {
 void __handler_DMA_WRITE_REQ_dma_write(void * buf, void *dma) {
 
 }
+void __wrapper____handler_DMA_WRITE_REQ_dma_write(void * buf, void *dma) {
+
+}
 
 void __handler_DMA_SEND_dma_send(void * buf, void *dma) {
 
 }
 
+void __wrapper____handler_NET_SEND_net_send(void *buf) {
+  __handler_NET_SEND_net_send(buf);
+}
 void __handler_NET_SEND_net_send(void *buf) {
   buf_t * buf1 = (buf_t *)buf;
   printf("* A PACKET SEND: %p: [%p,%d,%d] \n", buf, buf1->data, buf1->size, buf1->offset);

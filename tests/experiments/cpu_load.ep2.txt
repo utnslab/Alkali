@@ -49,10 +49,10 @@ event LOAD_TABLE_ADD {context ctx; bits<32> service_id; bits<32> target_core;}
 event LOAD_TABLE_SUB {context ctx; bits<32> service_id; bits<32> target_core;}
 
 struct coremap_t {
-   bits<16> c1;
-   bits<16> c2;
-   bits<16> c3;
-   bits<16> c4;
+   bits<32> c1;
+   bits<32> c2;
+   bits<32> c3;
+   bits<32> c4;
 }
 
 scope s1 <LOAD_TABLE_ADD:load_table_add, LOAD_TABLE_SUB:load_table>;
@@ -62,7 +62,8 @@ handler DMA_RECV:process_loadupdate (context ctx, buf packet,  dma_desc_t desc) 
     generate LOAD_TABLE_SUB:load_table_sub{ctx, desc.service_id, desc.queue_id};
 }
 
-[instances=(t1,t2,t3,t4,t5,t6,t7,t8), instances_service_load=(t1,t2,t3,t4,t5,t6,t7,t8)] handler NET_RECV:process_packet (context ctx, buf packet) {
+# [instances=(t1,t2,t3,t4,t5,t6,t7,t8), instances_service_load=(t1,t2,t3,t4,t5,t6,t7,t8)] handler NET_RECV:process_packet (context ctx, buf packet) {
+handler NET_RECV:process_packet (context ctx, buf packet) {
     bits<32> service_id;
     # decode packet
     service_id = 0;

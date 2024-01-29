@@ -479,6 +479,10 @@ struct LowerLLVMPass :
       *this, "generate",
       llvm::cl::desc("Modes for handling event generating: event, call, raw"),
       llvm::cl::init("call")};
+  Option<bool> inlineHandler {
+      *this, "inline",
+      llvm::cl::desc("Call inline pass on handler"),
+      llvm::cl::init(true)};
 
 private:
   void populateAPIFunctions(mlir::TypeConverter &converter);

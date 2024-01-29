@@ -354,7 +354,21 @@ struct InitOpToEventPattern : public OpConversionPattern<ep2::InitOp> {
 };
 
 struct InitOpToEventRawPattern : public OpConversionPattern<ep2::InitOp> {
-  using OpConversionPattern<ep2::InitOp>::OpConversionPattern;
+  bool createWrapper;
+  InitOpToEventRawPattern(TypeConverter &converter, MLIRContext *context, bool createWrapper = false)
+      : OpConversionPattern<InitOp>(converter, context), createWrapper(createWrapper) {}
+
+  std::string getCallee(InitOp initOp, std::string name, ArrayRef<Type> args) const {
+    if (createWrapper) {
+      name = "__wrapper__" + name;
+      auto moduleOp = initOp->getParentOfType<ModuleOp>();
+      OpBuilder builder(moduleOp.getBodyRegion());
+      builder.create<LLVM::LLVMFuncOp>(
+            initOp.getLoc(), name,
+            LLVM::LLVMFunctionType::get(builder.getType<LLVM::LLVMVoidType>(), args));
+    }
+    return name;
+  }
 
   LogicalResult
   matchAndRewrite(ep2::InitOp initOp, OpAdaptor adaptor,
@@ -369,7 +383,10 @@ struct InitOpToEventRawPattern : public OpConversionPattern<ep2::InitOp> {
       mapped.erase(mapped.begin());
 
     HandlerDependencyAnalysis::HandlerFullName next{initOp};
-    rewriter.create<LLVM::CallOp>(initOp.getLoc(), TypeRange{}, next.mangle(), mapped);
+    auto types = llvm::map_to_vector(mapped, [](Value v) { return v.getType(); });
+    auto callee = getCallee(initOp, next.mangle(), types);
+
+    rewriter.create<LLVM::CallOp>(initOp.getLoc(), TypeRange{}, callee, mapped);
     rewriter.replaceOp(initOp, mapped[0]);
 
     return success();
@@ -1080,8 +1097,13 @@ void LowerLLVMPass::runOnOperation() {
     patterns.add<ReturnOpCallPattern>(typeConverter, &getContext(), am);
   } else if (generateMode == "raw") {
     patterns
-        .add<HandlerRawPattern, ReturnOpRawPattern, InitOpToEventRawPattern>(
+        .add<HandlerRawPattern, ReturnOpRawPattern>(
             typeConverter, &getContext());
+    // use inline to decide if we want to craete wrapper
+    if (inlineHandler.getValue())
+      patterns.add<InitOpToEventRawPattern>(typeConverter, &getContext(), false);
+    else
+      patterns.add<InitOpToEventRawPattern>(typeConverter, &getContext(), true);
   } else
     llvm_unreachable("unknown generate mode");
 
@@ -1113,12 +1135,12 @@ void LowerLLVMPass::runOnOperation() {
   pm.addPass(createCanonicalizerPass());
   pm.addPass(createCSEPass());
   pm.addPass(createCanonicalizerPass());
-  pm.addPass(createInlinerPass());
+  if (inlineHandler.getValue())
+    pm.addPass(createInlinerPass());
   if (failed(runPipeline(pm, getOperation())))
     return signalPassFailure();
-  
-  // replicate global
 
+  // replicate global
   std::vector<LLVM::GlobalOp> newGlobals;
   getOperation()->walk([&](LLVM::GlobalOp globalOp){
     if (auto instances = globalOp->getAttrOfType<ArrayAttr>("instances")) {

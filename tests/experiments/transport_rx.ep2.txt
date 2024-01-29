@@ -17,9 +17,11 @@ extern handler DMA_WRITE_REQ:dma_write (context ctx, buf data, dma_write_cmd_t d
 ############## main program ###########
 
 struct eth_header_t {
-    bits<48> dst_mac;
-    bits<48> src_mac;
-    bits<16> ether_type;
+  bits<32> dst_mac_1;
+  bits<16> dst_mac_2;
+  bits<32> src_mac_1;
+  bits<16> src_mac_2;
+  bits<16> ether_type;
 }
 
 # Totoal 24 bytes
@@ -85,7 +87,8 @@ struct ack_info_t
 event OoO_DETECT {context ctx; pkt_info_t pkt_info;}
 event ACK_GEN {context ctx; ack_info_t ack;}
 
-[instances=(t1,t2,t3,t4,t5,t6,t7,t8), instances_flow_table=(t1,t2,t3,t4,t5,t6,t7,t8)] handler NET_RECV:process_packet (context ctx, buf packet) {
+handler NET_RECV:process_packet (context ctx, buf packet) {
+# [instances=(t1,t2,t3,t4,t5,t6,t7,t8), instances_flow_table=(t1,t2,t3,t4,t5,t6,t7,t8)] handler NET_RECV:process_packet (context ctx, buf packet) {
     eth_header_t eth_header;
     ip_header_t ip_header;
     tcp_header_t tcp_header;
@@ -185,18 +188,22 @@ scope table_sc <OoO_DETECT:OoO_detection>[flow_id];
 }
 
 handler ACK_GEN:ack_gen (context ctx, ack_info_t ack){
-    eth_header_t ack_eth_header;
+    eth_header_t tmp_header;
     ip_header_t ack_ip_header;
     tcp_header_t ack_tcp_header;
     bits<32> tmp_ip;
-    bits<48> tmp_mac;
+    bits<32> tmp_mac_1;
+    bits<16> tmp_mac_2;
     bits<16> tmp_port;
     buf packet_out;
 
-    ack_eth_header = ctx.eth_header;
-    tmp_mac = ack_eth_header.dst_mac;
-    ack_eth_header.dst_mac = ack_eth_header.src_mac;
-    ack_eth_header.src_mac = tmp_mac;
+    tmp_header = ctx.eth_header;
+    tmp_mac_1 = tmp_header.dst_mac_1;
+    tmp_mac_2 = tmp_header.dst_mac_2;
+    tmp_header.dst_mac_1 = tmp_header.src_mac_1;
+    tmp_header.dst_mac_2 = tmp_header.src_mac_2;
+    tmp_header.src_mac_1 = tmp_mac_1;
+    tmp_header.src_mac_2 = tmp_mac_2;
     
     
     ack_ip_header = ctx.ip_header;
@@ -215,7 +222,7 @@ handler ACK_GEN:ack_gen (context ctx, ack_info_t ack){
     ack_tcp_header.ack  = ack.ack;
 
 
-    packet_out.emit(ack_eth_header);
+    packet_out.emit(tmp_header);
     packet_out.emit(ack_ip_header);
     packet_out.emit(ack_tcp_header);
     packet_out.emit(ctx.packet);
