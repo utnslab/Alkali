@@ -138,6 +138,7 @@ void EP2LinearizePass::runOnOperation() {
 
   bool changed = false;
   GreedyRewriteConfig config{};
+  // TODO(zhiyuang): do we need a limit?
   config.maxIterations = GreedyRewriteConfig::kNoLimit;
 
   do {
