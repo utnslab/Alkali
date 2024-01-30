@@ -31,7 +31,6 @@ __packed struct ip_header_t {
 	uint16_t f5;
 	uint32_t f6;
 	uint32_t f7;
-	uint32_t f8;
 };
 
 __packed struct udp_header_t {
@@ -54,6 +53,8 @@ __packed struct agg_t {
 };
 
 __packed struct context_chain_1_t {
+	struct ip_header_t f0;
+	struct eth_header_t f1;
 };
 
 __packed struct event_param_NET_RECV {
@@ -82,12 +83,12 @@ CLS_WORKQ_DECLARE(workq_MSG_REASSEMBLE_1, WORKQ_SIZE_MSG_REASSEMBLE);
 __packed struct table_i16___buf_t_16_t {
 	struct __buf_t table[16];
 };
-__shared __lmem struct table_i16___buf_t_16_t table_7;
+__shared __lmem struct table_i16___buf_t_16_t table_9;
 
 __packed struct table_i16_agg_t_16_t {
 	struct agg_t table[16];
 };
-__shared __lmem struct table_i16_agg_t_16_t table_6;
+__shared __lmem struct table_i16_agg_t_16_t table_8;
 
 CLS_CONTEXTQ_DECLARE(context_chain_1_t, context_chain_pool, 128);
 #ifdef DO_CTXQ_INIT

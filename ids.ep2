@@ -14,7 +14,6 @@ struct ip_header_t {
     bits<16> checksum;
     bits<32> source_ip;
     bits<32> dst_ip;
-    bits<32> options;
 }
 
 struct dma_desc_t {
@@ -95,26 +94,28 @@ struct agg_t {
   buf old_buf;
   # here do we init the buffer? check the generated code (for __buf_init)
   agg_t new_agg;
-  buf new_buf;
 
   old_agg = reassemble_agg.lookup(rpc_header.channel_id); 
   old_buf = reassemble_buf.lookup(rpc_header.channel_id); 
 
   if(old_agg.rest_bytes == 0){
     old_agg.rest_bytes = rpc_header.total_size;
+    old_buf.emit(ctx.eth_header);
+    old_buf.emit(ctx.ip_header);
   }
 
-  if(old_agg.next_seq + 1 == rpc_header.seq){
+  #if(old_agg.next_seq + 1 == rpc_header.seq){
     old_agg.next_seq = old_agg.next_seq + 1;
     old_buf.emit(data);
     old_agg.rest_bytes = old_agg.rest_bytes - rpc_header.seg_size;
-  }
+  #}
 
   if(old_agg.rest_bytes > 0){
     reassemble_agg.update(rpc_header.channel_id, old_agg);
     reassemble_buf.update(rpc_header.channel_id, old_buf);
   }
   else{
+    buf new_buf;
     # assume aligned case
     new_agg.rest_bytes = 0;
     reassemble_agg.update(rpc_header.channel_id, new_agg);

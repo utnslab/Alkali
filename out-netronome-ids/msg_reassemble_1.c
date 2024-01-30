@@ -3,10 +3,14 @@
 #include "extern/extern_dma.h"
 #include "extern/extern_net.h"
 
-static struct agg_t _loc_buf_4;
-__xrw static struct agg_t _loc_buf_4_xfer;
-static struct agg_t _loc_buf_5;
-__xrw static struct agg_t _loc_buf_5_xfer;
+static struct agg_t _loc_buf_7;
+__xrw static struct agg_t _loc_buf_7_xfer;
+static struct agg_t _loc_buf_6;
+__xrw static struct agg_t _loc_buf_6_xfer;
+static struct ip_header_t _loc_buf_5;
+__xrw static struct ip_header_t _loc_buf_5_xfer;
+static struct eth_header_t _loc_buf_4;
+__xrw static struct eth_header_t _loc_buf_4_xfer;
 static int rr_ctr = 0;
 __declspec(aligned(4)) struct event_param_MSG_REASSEMBLE work;
 __xrw struct event_param_MSG_REASSEMBLE work_ref;
@@ -22,33 +26,38 @@ void __event___handler_MSG_REASSEMBLE_msg_reassemble_1() {
   __shared __cls struct context_chain_1_t* v5;
   struct __buf_t v6;
   struct rpc_header_t* v7;
-  __shared __lmem struct table_i16_agg_t_16_t* v8;
-  __shared __lmem struct table_i16___buf_t_16_t* v9;
-  struct agg_t* v10;
-  struct __buf_t v11;
-  uint32_t v12;
-  uint16_t v13;
-  struct agg_t* v14;
-  struct __buf_t v15;
-  uint32_t v16;
-  char v17;
-  uint32_t v18;
+  __shared __cls struct eth_header_t* v8;
+  struct eth_header_t* v9;
+  __xrw struct eth_header_t* v10;
+  __shared __cls struct ip_header_t* v11;
+  struct ip_header_t* v12;
+  __xrw struct ip_header_t* v13;
+  __shared __lmem struct table_i16_agg_t_16_t* v14;
+  __shared __lmem struct table_i16___buf_t_16_t* v15;
+  struct agg_t* v16;
+  uint32_t v17;
+  uint16_t v18;
   struct agg_t* v19;
-  uint32_t v20;
+  struct __buf_t v20;
   uint32_t v21;
-  uint32_t v22;
-  char v23;
+  char v22;
+  uint32_t v23;
   struct agg_t* v24;
-  uint32_t v25;
-  uint32_t v26;
+  __xrw struct eth_header_t* v25;
+  __xrw struct ip_header_t* v26;
   uint32_t v27;
-  struct agg_t* v28;
-  uint32_t v29;
-  char v30;
-  struct agg_t* v31;
-  __declspec(aligned(4)) struct event_param_NET_SEND* v32;
+  uint32_t v28;
+  struct agg_t* v29;
+  uint32_t v30;
+  uint32_t v31;
+  uint32_t v32;
   struct agg_t* v33;
-  struct agg_t* v34;
+  uint32_t v34;
+  char v35;
+  struct __buf_t v36;
+  struct agg_t* v37;
+  __declspec(aligned(4)) struct event_param_NET_SEND* v38;
+  struct agg_t* v39;
   v1 = 1;
   v2 = 0;
   v3 = &work;
@@ -58,72 +67,80 @@ void __event___handler_MSG_REASSEMBLE_msg_reassemble_1() {
   v5 = v3->ctx;
   v6 = v3->f0;
   v7 = &v3->f1;
-  v8 = &table_6;
-  v9 = &table_7;
-  v10 = &_loc_buf_4;
-  v11 = alloc_packet_buf();
-  v12 = v7->f0;
-  v13 = (uint16_t) v12;
-  v14 = &_loc_buf_5;
-  *v14 = v8->table[me_cam_lookup(v13)];
-  v15 = v9->table[me_cam_lookup(v13)];
-  v16 = v14->f0;
-  v17 = v16 == v2;
-  if (v17) {
+  v8 = &v5->f1;
+  v9 = &_loc_buf_4;
+  v10 = &_loc_buf_4_xfer;
+  cls_read(&v10->f0, &v8->f0, 16);
+  *(v9) = *(v10);
+  v11 = &v5->f0;
+  v12 = &_loc_buf_5;
+  v13 = &_loc_buf_5_xfer;
+  cls_read(&v13->f0, &v11->f0, 20);
+  *(v12) = *(v13);
+  v14 = &table_8;
+  v15 = &table_9;
+  v16 = &_loc_buf_6;
+  v17 = v7->f0;
+  v18 = (uint16_t) v17;
+  v19 = &_loc_buf_7;
+  *v19 = v14->table[me_cam_lookup(v18)];
+  v20 = v15->table[me_cam_lookup(v18)];
+  v21 = v19->f0;
+  v22 = v21 == v2;
+  if (v22) {
     goto label2;
   } else {
-    v33 = v14;
+    v39 = v19;
     goto label3;
   }
 label2:
-  v18 = v7->f3;
-  v14->f0 = v18;
-  v33 = v14;
+  v23 = v7->f3;
+  v19->f0 = v23;
+  v25 = &_loc_buf_4_xfer;
+  *(v25) = *(v9);
+  mem_write32(&v25->f0, v20.buf + v20.offs, 12);
+  v20.offs += 12;
+  mem_write8(&v25->f2, v20.buf + v20.offs, 2);
+  v20.offs += 2;
+  v26 = &_loc_buf_5_xfer;
+  *(v26) = *(v12);
+  mem_write32(&v26->f0, v20.buf + v20.offs, 20);
+  v20.offs += 20;
+  v39 = v19;
   goto label3;
 label3:
-  v20 = v33->f1;
-  v21 = v20 + v1;
-  v22 = v7->f1;
-  v23 = v21 == v22;
-  if (v23) {
+  v27 = v39->f1;
+  v28 = v27 + v1;
+  v39->f1 = v28;
+  bulk_memcpy(v20.buf + v20.offs, v6.buf + v6.offs, v6.sz - v6.offs);
+  v20.offs += v6.sz - v6.offs;
+  v30 = v39->f0;
+  v31 = v7->f2;
+  v32 = v30 - v31;
+  v39->f0 = v32;
+  v34 = v39->f0;
+  v35 = v34 > v2;
+  if (v35) {
     goto label4;
   } else {
-    v34 = v33;
     goto label5;
   }
 label4:
-  v33->f1 = v21;
-  bulk_memcpy(v15.buf + v15.offs, v6.buf + v6.offs, v6.sz - v6.offs);
-  v15.offs += v6.sz - v6.offs;
-  v25 = v33->f0;
-  v26 = v7->f2;
-  v27 = v25 - v26;
-  v33->f0 = v27;
-  v34 = v33;
-  goto label5;
+  v14->table[me_cam_update(v18)] = *v39;
+  v15->table[me_cam_update(v18)] = v20;
+  goto label6;
 label5:
-  v29 = v34->f0;
-  v30 = v29 > v2;
-  if (v30) {
-    goto label6;
-  } else {
-    goto label7;
-  }
-label6:
-  v8->table[me_cam_update(v13)] = *v34;
-  v9->table[me_cam_update(v13)] = v15;
-  goto label8;
-label7:
-  v10->f0 = v2;
-  v8->table[me_cam_update(v13)] = *v10;
-  v9->table[me_cam_update(v13)] = v11;
-  v32 = &next_work_NET_SEND;
-  v32->ctx = v5;
-  v32->f0 = v15;
+  v36 = alloc_packet_buf();
+  v16->f0 = v2;
+  v14->table[me_cam_update(v18)] = *v16;
+  v15->table[me_cam_update(v18)] = v36;
+  v38 = &next_work_NET_SEND;
+  v38->ctx = v5;
+  v38->f0 = v20;
   next_work_NET_SEND.meta.len = next_work_NET_SEND.f0.sz;
-  inlined_net_send(v32);
-  goto label8;
-label8:
+  inlined_net_send(v38);
+  goto label6;
+label6:
   return;
 }
 

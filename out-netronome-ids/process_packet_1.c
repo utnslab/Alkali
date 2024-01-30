@@ -7,10 +7,10 @@
 
 static struct rpc_header_t _loc_buf_3;
 __xrw static struct rpc_header_t _loc_buf_3_xfer;
-static struct udp_header_t _loc_buf_2;
-__xrw static struct udp_header_t _loc_buf_2_xfer;
 static struct ip_header_t _loc_buf_1;
 __xrw static struct ip_header_t _loc_buf_1_xfer;
+static struct udp_header_t _loc_buf_2;
+__xrw static struct udp_header_t _loc_buf_2_xfer;
 static struct eth_header_t _loc_buf_0;
 __xrw static struct eth_header_t _loc_buf_0_xfer;
 static int rr_ctr = 0;
@@ -34,8 +34,14 @@ void __event___handler_NET_RECV_process_packet_1() {
   __xrw struct udp_header_t* v11;
   struct rpc_header_t* v12;
   __xrw struct rpc_header_t* v13;
-  __declspec(aligned(4)) struct event_param_MSG_REASSEMBLE* v14;
-  __xrw struct event_param_MSG_REASSEMBLE* v15;
+  __shared __cls struct ip_header_t* v14;
+  struct ip_header_t* v15;
+  __xrw struct ip_header_t* v16;
+  __shared __cls struct eth_header_t* v17;
+  struct eth_header_t* v18;
+  __xrw struct eth_header_t* v19;
+  __declspec(aligned(4)) struct event_param_MSG_REASSEMBLE* v20;
+  __xrw struct event_param_MSG_REASSEMBLE* v21;
   v1 = 2;
   v2 = &work;
   inlined_net_recv(v2);
@@ -50,8 +56,8 @@ void __event___handler_NET_RECV_process_packet_1() {
   *(v6) = *(v7);
   v8 = &_loc_buf_1;
   v9 = &_loc_buf_1_xfer;
-  mem_read32(&v9->f0, v5.buf + v5.offs, 24);
-  v5.offs += 24;
+  mem_read32(&v9->f0, v5.buf + v5.offs, 20);
+  v5.offs += 20;
   *(v8) = *(v9);
   v10 = &_loc_buf_2;
   v11 = &_loc_buf_2_xfer;
@@ -63,13 +69,23 @@ void __event___handler_NET_RECV_process_packet_1() {
   mem_read32(&v13->f0, v5.buf + v5.offs, 16);
   v5.offs += 16;
   *(v12) = *(v13);
-  v14 = &next_work_MSG_REASSEMBLE;
-  v14->ctx = v4;
-  v14->f0 = v5;
-  v14->f1 = *v12;
-  v15 = &next_work_ref_MSG_REASSEMBLE;
-  *(v15) = *(v14);
-  cls_workq_add_work(WORKQ_ID_MSG_REASSEMBLE_1, v15, sizeof(*v15));
+  v14 = &v4->f0;
+  v15 = &_loc_buf_1;
+  v16 = &_loc_buf_1_xfer;
+  *(v16) = *(v15);
+  cls_write(&v16->f0, &v14->f0, 20);
+  v17 = &v4->f1;
+  v18 = &_loc_buf_0;
+  v19 = &_loc_buf_0_xfer;
+  *(v19) = *(v18);
+  cls_write(&v19->f0, &v17->f0, 16);
+  v20 = &next_work_MSG_REASSEMBLE;
+  v20->ctx = v4;
+  v20->f0 = v5;
+  v20->f1 = *v12;
+  v21 = &next_work_ref_MSG_REASSEMBLE;
+  *(v21) = *(v20);
+  cls_workq_add_work(WORKQ_ID_MSG_REASSEMBLE_1, v21, sizeof(*v21));
   return;
 }
 
