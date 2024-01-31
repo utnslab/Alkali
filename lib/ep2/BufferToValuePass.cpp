@@ -35,14 +35,18 @@ namespace {
       }
     }
 
-    // insert all buffers from init ops
-    funcOp.walk([&](InitOp initOp) {
-      if (initOp.getType().isa<BufferType>()) {
-        builder.setInsertionPointAfter(initOp);
-        auto reRefOp = builder.create<ReRefOp>(
-            initOp.getLoc(), builder.getType<BufferType>(), initOp);
-        buffers.emplace_back(initOp.getResult(), reRefOp);
-      }
+    // insert buffer REREF from ops returning a buffer
+    funcOp.walk([&](Operation *op) {
+      if (op->getNumResults() != 1)
+        return;
+      auto ret = op->getResult(0);
+      if (!ret.getType().isa<BufferType>())
+        return;
+
+      builder.setInsertionPointAfter(op);
+      auto reRefOp = builder.create<ReRefOp>(
+          op->getLoc(), builder.getType<BufferType>(), ret);
+      buffers.emplace_back(ret, reRefOp);
     });
 
     // reref all buffers

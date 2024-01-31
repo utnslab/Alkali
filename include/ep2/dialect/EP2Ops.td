@@ -152,6 +152,13 @@ def EP2_BufferType: EP2_BaseType<"Buffer", "buf"> {
   }];
 }
 
+def EP2_BufferPoolType: EP2_BaseType<"BufferPool", "bufpool"> {
+  let summary = "Buffer pool type";
+  let description = [{
+    This is a buffer that contians a pointer to packet data. Only valid in FPGA for now
+  }];
+}
+
 def EP2_TableType: EP2_BaseType<"Table", "table"> {
   let summary = "Table type";
   let description = [{
@@ -212,7 +219,7 @@ def EP2_OpaqueType: EP2_BaseType<"Opaque", "opaque"> {
 // Type collections
 // Provide a definition of the types that are used within the EP2 dialect.
 def EP2_Type : AnyTypeOf<[AnyInteger, EP2_AnyType, EP2_StructType, EP2_BufferType, EP2_TableType,
-                          EP2_AtomType, EP2_ContextType, EP2_ContextRefType, EP2_OpaqueType]>;
+                          EP2_AtomType, EP2_ContextType, EP2_ContextRefType, EP2_OpaqueType, EP2_BufferPoolType]>;
 
 def EP2_Integer : AnyTypeOf<[AnyInteger, EP2_AnyType]>;
 
@@ -649,6 +656,35 @@ def UpdateAtomicOp : EP2_Op<"update_atomic"> {
   }];
 
   let arguments = (ins EP2_TableType:$table, EP2_Type:$key, I32Attr:$opValue, EP2_Type:$value);
+}
+
+//===----------------------------------------------------------------------===//
+// BufferPool
+//===----------------------------------------------------------------------===//
+
+def BufferPoolAllocOp : EP2_Op<"bufferpool_alloc", []> {
+  let summary = "Allocate a buffer from buffer pool";
+  let description = [{
+    Allocate a buffer from buffer pool. Only suppoorted in FPGA.
+  }];
+  let results = (outs AnyI32:$index);
+}
+
+def BufferPoolFetchOp : EP2_Op<"bufferpool_fetch", [Pure]> {
+  let summary = "Fetch a buffer (value) from buffer pool";
+  let description = [{
+    Fetch a buffer from buffer pool. Only suppoorted in FPGA.
+  }];
+  let arguments = (ins EP2_BufferPoolType:$pool, EP2_Integer:$index);
+  let results = (outs EP2_BufferType:$buffer);
+}
+
+def BufferPoolCommitOp : EP2_Op<"bufferpool_commit", []> {
+  let summary = "Commit a buffer (value) to buffer pool";
+  let description = [{
+    Commit a buffer to buffer pool. Only suppoorted in FPGA.
+  }];
+  let arguments = (ins EP2_BufferPoolType:$pool, EP2_Integer:$index, EP2_BufferType:$buffer);
 }
 
 //===----------------------------------------------------------------------===//

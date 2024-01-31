@@ -55,14 +55,14 @@ namespace {
 
   struct LiftPurePattern : public OpRewritePattern<FuncOp> {
     struct OpAction {
-      Operation *op;
+      std::vector<Operation *> op;
       bool guard; // 1->move and guard. 2->move
       // following fields only for guard == 1
       llvm::SmallVector<Value> preds;
       llvm::SmallVector<bool> predAttrs;
       OpAction(Operation *op, bool guard, llvm::SmallVector<Value> preds = {},
                llvm::SmallVector<bool> predAttrs = {})
-          : op(op), guard(guard), preds(std::move(preds)),
+          : op{op}, guard(guard), preds(std::move(preds)),
             predAttrs(std::move(predAttrs)) {}
     };
 
@@ -76,6 +76,7 @@ namespace {
         if (block.hasNoPredecessors())
           continue;
         std::vector<OpAction> toMove{};
+        llvm::DenseMap<Value, int> toMoveMap{};
         for (auto &opRef : block) {
           auto op = &opRef;
           if (isa<cf::BranchOp, cf::CondBranchOp, ep2::TerminateOp>(op))
@@ -89,20 +90,20 @@ namespace {
 
           if (isPure(op))
             toMove.emplace_back(op, false);
-          else if (isa<ReturnOp, UpdateOp, UpdateAtomicOp>(op)) {
+          else if (isa<ReturnOp, UpdateOp, UpdateAtomicOp, BufferPoolCommitOp>(op)) {
+
             // We could move (and guard) those non-Pure Ops, as long as it do not have any return value
             // we only need to transfer one level: the blocks connects to the entry block
             llvm::SmallVector<Value> preds;
             llvm::SmallVector<bool> predAttrs;
-            if (foldPredicates(&block, &entryBlock, preds, predAttrs))
+            if (foldPredicates(&block, &entryBlock, preds, predAttrs)) {
               toMove.emplace_back(op, true, std::move(preds),
                                   std::move(predAttrs));
-          }
-        }
+              for (auto result : op->getResults())
+                toMoveMap.try_emplace(result, toMove.size() - 1);
+            }
 
-        llvm::errs() << "toMove size: " << toMove.size() << " | " << funcOp.getName() << "\n";
-        for (auto &action : toMove) {
-          action.op->dump();
+          } // for ops in block
         }
 
         changed |= !toMove.empty();
@@ -110,12 +111,15 @@ namespace {
           if (action.guard) {
             rewriter.setInsertionPoint(entryBlock.getTerminator());
             auto guardOp = rewriter.create<GuardOp>(
-                action.op->getLoc(), action.preds,
+                action.op[0]->getLoc(), action.preds,
                 rewriter.getBoolArrayAttr(action.predAttrs));
             auto &guardBlock = guardOp.getBody().emplaceBlock();
-            action.op->moveBefore(&guardBlock, guardBlock.end());
-          } else
-            action.op->moveBefore(entryBlock.getTerminator());
+            for (auto innerOp : llvm::reverse(action.op))
+              innerOp->moveBefore(&guardBlock, guardBlock.end());
+          } else {
+            for (auto innerOp : action.op)
+              innerOp->moveBefore(entryBlock.getTerminator());
+          }
         }
       }
       return success(changed);

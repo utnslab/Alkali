@@ -100,5 +100,16 @@ StructType ContextBufferizationAnalysis::getContextAsStruct(FunctionOpInterface 
   return StructType::get(funcOp.getContext(), false, types, name);
 }
 
+void ContextBufferizationAnalysis::dump() {
+  for (auto &[opName, idx] : contextMap) {
+    llvm::errs() << "Context table for " << opName << "\n";
+    for (auto &[name, pr] : contextTables[idx]) {
+      llvm::errs() << "  " << name << " : ";
+      pr.second.dump();
+    }
+  }
+  llvm::errs() << "\n";
+}
+
 } // namespace ep2
 } // namespace mlir

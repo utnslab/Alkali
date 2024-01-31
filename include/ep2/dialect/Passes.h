@@ -183,16 +183,7 @@ struct ContextBufferizationAnalysis {
     preserved.preserve<HandlerDependencyAnalysis>();
     am.invalidate(preserved);
   }
-  void dump() {
-    for (auto &[opName, idx] : contextMap) {
-      llvm::errs() << "Context table for " << opName << "\n";
-      for (auto &[name, pr] : contextTables[idx]) {
-        llvm::errs() << "  " << name << " : ";
-        pr.second.dump();
-      }
-    }
-    llvm::errs() << "\n";
-  }
+  void dump(); 
 };
 
 ///////////////////
@@ -573,6 +564,16 @@ struct AtomicIdentificationPass :
     }
     StringRef getArgument() const final { return "ep2-atomic-id"; }
     StringRef getDescription() const final { return "Idenfy the possible use of atomic operation on global variables"; }
+};
+
+struct FPGABufferToStoragePass :
+        public PassWrapper<FPGABufferToStoragePass, OperationPass<ModuleOp>> {
+    void runOnOperation() final;
+    void getDependentDialects(DialectRegistry &registry) const override {
+        registry.insert<EP2Dialect, scf::SCFDialect, cf::ControlFlowDialect>();
+    }
+    StringRef getArgument() const final { return "ep2-fpga-buffer-to-storage"; }
+    StringRef getDescription() const final { return "Change the buffer table to buffer stoarge"; }
 };
 
 } // namespace ep2

@@ -117,7 +117,7 @@ void ContextTypeInferencePass::runOnOperation() {
       if (failed(applyPatternsAndFoldGreedily(module, frozenPatterns,
                                               GreedyRewriteConfig(), &changed)))
         signalPassFailure();
-      if (changed)
+      if (!changed)
         break;
       bufferAnalysis.invalidate();
     }
