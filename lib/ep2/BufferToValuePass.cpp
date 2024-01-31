@@ -39,6 +39,9 @@ namespace {
     funcOp.walk([&](Operation *op) {
       if (op->getNumResults() != 1)
         return;
+      // no double reref
+      if (isa<ReRefOp>(op))
+        return;
       auto ret = op->getResult(0);
       if (!ret.getType().isa<BufferType>())
         return;
