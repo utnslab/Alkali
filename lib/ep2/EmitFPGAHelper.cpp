@@ -51,6 +51,45 @@ void EmitFPGAPass::emitModuleParameter(std::ofstream &file,
       file << tab << reverse_inoutstr << " wire "
            << " " << wire.name << "_tready";
     }
+
+    if(wire.type == TABLE_LOOKUP){
+      file << ",\n";
+      std::string inoutstr, reverse_inoutstr, tab;
+      assert(wire.direction == IN);
+      tab = "\t";
+      std::string datawidthstr =
+        "[" + std::to_string(wire.table_if.data_width) + "-1:0]";
+      std::string indexwidthstr =
+          "[" + std::to_string(wire.table_if.index_width) + "-1:0]";
+    
+      file << tab << "//" << wire.debuginfo << "\n";
+      file << tab << "output" << " wire " << indexwidthstr << " " << wire.name << "_req_index,\n";
+      file << tab << "output" << " wire " << " " << wire.name << "_req_valid,\n";
+      file << tab << "input" << " wire " << " " << wire.name << "_req_ready,\n";
+      file << tab << "input" << " wire " << " " << wire.name << "_value_valid,\n";
+      file << tab << "output" << " wire " << " " << wire.name << "_value_ready,\n";
+      file << tab << "input" << " wire " << datawidthstr << " " << wire.name << "_value_data"; 
+    }
+
+
+  if(wire.type == TABLE_UPDATE){
+    file << ",\n";
+    std::string inoutstr, reverse_inoutstr, tab;
+    assert(wire.direction == IN);
+    tab = "\t";
+    std::string datawidthstr =
+        "[" + std::to_string(wire.table_if.data_width) + "-1:0]";
+    std::string indexwidthstr =
+        "[" + std::to_string(wire.table_if.index_width) + "-1:0]";
+    
+    file << tab << "//" << wire.debuginfo << "\n";
+    file << tab <<  "output" << " wire " << indexwidthstr << " " << wire.name << "_req_index,\n";
+    file << tab <<  "output" << " wire " << " " << wire.name << "_req_index_valid,\n";
+    file << tab << "input" << " wire " << " " << wire.name << "_req_index_ready,\n";
+    file << tab <<  "output" << " wire " << datawidthstr << " " << wire.name << "_req_data,\n";
+    file << tab <<  "output" << " wire " << " " << wire.name << "_req_data_valid,\n";
+    file << tab << "input" << " wire " << " " << wire.name << "_req_data_ready";
+  }
   }
 
   file << "\n);\n";

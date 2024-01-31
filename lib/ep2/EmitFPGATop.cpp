@@ -28,10 +28,29 @@ void EmitFPGAPass::emitTop() {
 
     mlir::DenseMap<std::tuple<int,  mlir::ep2::FuncOp, llvm::StringRef>, struct top_handler_inout_wires> handler_replcate_inwires, handler_replcates_outwires;
 
+    for(auto global_table: global_tables){
+        auto module_name = global_table.second.module_name;
+        auto name = global_table.second.name;
+        auto ports = global_table.second.ports;
+        auto params = global_table.second.params;
+        auto lookup_wires = global_table.second.lookup_wires;
+        auto update_wires = global_table.second.update_wires;
+        emitModuleCall(file, module_name, name, ports, params);
+        for(auto &w : lookup_wires){
+            emitwire(file, w);
+        }
+        for(auto &w : update_wires){
+            emitwire(file, w);
+        }
+    }
+
     module->walk([&](ep2::FuncOp funcOp) {
         auto functype = funcOp->getAttr("type").cast<StringAttr>().getValue().str();
         if (functype == "handler" && !funcOp.isExtern()) {
-            auto replicate_size = funcOp->getAttr("instances").cast<ArrayAttr>().size();
+            int replicate_size = 1;
+            if(funcOp->hasAttr("instances"))
+                replicate_size = funcOp->getAttr("instances").cast<ArrayAttr>().size();
+            
             for(int replicate_index = 0; replicate_index < replicate_size; replicate_index++){
                 std::list<struct module_port_config> ports;
                 for(auto &e : handler_in_edge_map[funcOp]){
@@ -58,6 +77,10 @@ void EmitFPGAPass::emitTop() {
                         wid ++;
                     }
                     handler_replcates_outwires[{replicate_index, funcOp, e.eventname}] = {e.if_extern, false, out_wires};
+                }
+
+                for(auto &e : global_state_ports[funcOp]){
+                    ports.push_back(e);
                 }
 
                 std::list<struct module_param_config> params;
@@ -115,6 +138,8 @@ void EmitFPGAPass::emitTop() {
 
     for(auto &p: handler_replcate_inwires){
         if(!p.second.if_connected){
+            if(!p.second.if_extern)
+                printf("Warning: input event %s not connected\n", std::get<2>(p.first).str().c_str());
             assert(p.second.if_extern);
             auto event_name = std::get<2>(p.first);
             int wid = 0;

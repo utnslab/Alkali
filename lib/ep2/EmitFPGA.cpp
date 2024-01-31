@@ -148,6 +148,52 @@ void EmitFPGAPass::emitFuncHeader(std::ofstream &file, ep2::FuncOp funcOp) {
     handler_out_edge_map[*cur_funcop].push_back({OUT, return_event_name, if_out_extern_event, out_event_wires});
   }
 
+  // Find all global variable in and out
+  funcOp->walk([&](GlobalImportOp importop) {
+    bool if_has_lookup =false, if_has_update=false;
+    mlir::SmallVector<ep2::LookupOp> tmp_lookup_v;
+    mlir::SmallVector<ep2::UpdateAtomicOp> tmp_update_v;
+    for(auto users: importop->getUsers()){
+      if(isa<ep2::LookupOp>(users)){
+        if_has_lookup = true;
+        tmp_lookup_v.push_back(cast<ep2::LookupOp, mlir::Operation *>(users));
+      }
+      else if(isa<ep2::UpdateOp>(users)){
+        printf("TODO fix in emitModuleParameter\n");
+        assert(false);
+      }
+      else if(isa<ep2::UpdateAtomicOp>(users)){
+        if_has_update = true;
+        tmp_update_v.push_back(cast<ep2::UpdateAtomicOp, mlir::Operation *>(users));
+      }
+    }
+
+    auto tabel_name = importop.getName().str();
+    auto lookup_wires = global_tables[tabel_name].lookup_wires;
+    auto update_wires = global_tables[tabel_name].update_wires;
+
+    if(if_has_lookup){
+      int i = 0;
+      for(auto &w : lookup_wires){
+        printf("Info: lookup_wires %s\n", importop.getName().str().c_str());
+        inout_wires.push_back({IN, w.type, w.name, w.debuginfo, w.axis});
+        global_state_ports[*cur_funcop].push_back({w.type, {w.name}, w.debuginfo, w.name, .table_if = w.table_if});
+        tableops_to_portwire[tmp_lookup_v[i]] = w;
+        i++;
+      }
+    }
+    else if (if_has_update){
+      int i = 0;
+      for(auto &w : update_wires){
+        printf("Info: update_wires %s\n", importop.getName().str().c_str());
+        inout_wires.push_back({IN, w.type, w.name, w.debuginfo, w.axis});
+        global_state_ports[*cur_funcop].push_back({w.type, {w.name}, w.debuginfo, w.name, .table_if = w.table_if});
+        tableops_to_portwire[tmp_update_v[i]] = w;
+        i++;
+      }
+    }
+  });
+
   emitModuleParameter(file, inout_wires);
 
   // emit replication for arg input wires
@@ -247,6 +293,70 @@ void EmitFPGAPass::emitTableInit(std::ofstream &file, ep2::InitOp initop) {
   emitModuleCall(file, "cam_arbiter", tabel_name, ports, params);
 }
 
+
+void EmitFPGAPass::emitGlobalTableInit(ep2::GlobalOp globalop) {
+  globalop.getResult().getType().dump();
+  auto table = cast<ep2::TableType, Type>(globalop.getResult().getType());
+  auto tabel_name = assign_name(globalop.getName().str());
+  // TODO: need to write a analysis pass to get all lookup uses
+  auto lookups = 1;
+  auto updates = 1; 
+
+  int key_size, value_size, table_size;
+  auto key_type = table.getKeyType();
+  GetValTypeAndSize(key_type, &key_size);
+  auto value_type = table.getValueType();
+  GetValTypeAndSize(value_type, &value_size);
+  table_size = table.getSize();
+
+
+  struct table_if_config table_if = {key_size, value_size};
+  std::list<struct module_port_config> ports;
+  std::vector<std::string> lookup_port_wire_names;
+  std::vector<std::string> update_port_wire_names;
+  std::list<struct wire_config> lookup_wires, update_wires;
+  for(int i =0; i < lookups; i ++){
+    auto i_str = std::to_string(i);
+    auto port_wire_name = tabel_name + "lookup_p_" +i_str;
+    lookup_port_wire_names.push_back(port_wire_name);
+    // emit wires def for port
+    struct wire_config port_wires = {TABLE_LOOKUP, port_wire_name, "Table lookup port wire def ", false, "", true, .table_if=table_if};
+    lookup_wires.push_back(port_wires);
+    // emitwire(file, port_wires);
+    // tableops_to_portwire[lookups[i]] = port_wires;
+  }
+  
+  for(int i =0; i < updates; i ++){
+    auto i_str = std::to_string(i);
+    auto port_wire_name = tabel_name + "update_p_" +i_str;
+    update_port_wire_names.push_back(port_wire_name);
+    // emit wires def for port
+    struct wire_config port_wires = {TABLE_UPDATE, port_wire_name, "Table update port wire def ", false, "", true, .table_if=table_if};
+    update_wires.push_back(port_wires);
+    // emitwire(file, port_wires);
+    // tableops_to_portwire[updates[i]] = port_wires;
+  }
+
+  struct module_port_config lport = {TABLE_LOOKUP, {lookup_port_wire_names}, "lookup port ", "s_lookup", .table_if = table_if};
+  ports.push_back(lport);
+  struct module_port_config uport = {TABLE_UPDATE, {update_port_wire_names}, "update port ", "s_update", .table_if = table_if};
+  ports.push_back(uport);
+
+  int min_lports = lookups > 0 ? lookups : 1;
+  int min_uports = updates > 0 ? updates : 1;
+
+  std::list<struct module_param_config> params;
+  // params.push_back({"TABLE_SIZE", table_size});
+  // params.push_back({"KEY_SIZE", key_size});
+  // params.push_back({"VALUE_SIZE", value_size});
+  // params.push_back({"LOOKUP_PORTS", min_lports});
+  // params.push_back({"UPDATE_PORTS", min_uports});
+
+  global_tables[globalop.getName().str()] = { "atom_CAM", tabel_name, ports, params, lookup_wires, update_wires};
+  // emitModuleCall(file, "cam_arbiter", tabel_name, ports, params);
+}
+
+
 void EmitFPGAPass::emitLookup(std::ofstream &file, ep2::LookupOp lookupop) {
   auto table_port_wire = tableops_to_portwire[lookupop];
   auto key_val = lookupop.getKey();
@@ -284,6 +394,48 @@ void EmitFPGAPass::emitLookup(std::ofstream &file, ep2::LookupOp lookupop) {
 }
 
 void EmitFPGAPass::emitUpdate(std::ofstream &file, ep2::UpdateOp updateop, bool if_guarded, ep2::GuardOp gop) {
+  auto table_port_wire = tableops_to_portwire[updateop];
+  auto key_val = updateop.getKey();
+  int size;
+  auto key_val_type = GetValTypeAndSize(key_val.getType(), &size);
+  if (!(key_val_type == INT || key_val_type == STRUCT)) {
+    printf("Error: emitUpdate's key can only be int or struct\n");
+    updateop.dump();
+    key_val.dump();
+    assert(false);
+  }
+  auto key_val_name = getValName(key_val);
+  struct axis_config key_axis =  {0, 0, size};
+  struct wire_config key_wire = {AXIS, key_val_name, "", false, "", true, key_axis};
+
+  // udpate value:
+  auto value_val = updateop.getValue();
+  auto value_val_type = GetValTypeAndSize(value_val.getType(), &size);
+  if (!(value_val_type == INT || value_val_type == STRUCT)) {
+    printf("Error: emitUpdate's value can only be int or struct\n");
+    updateop.dump();
+    value_val.dump();
+    assert(false);
+  }
+  auto value_val_name = getValName(value_val);
+  struct axis_config value_axis =  {0, 0, size};
+  struct wire_config value_wire = {AXIS, value_val_name, "", false, "", true, value_axis};
+
+  if(if_guarded){
+    auto pred_wires = emitGuardPredModule(file, gop, 2); // for key and value
+    key_wire = emitGuardModule(file, key_wire, pred_wires[0]);
+    value_wire = emitGuardModule(file, value_wire, pred_wires[1]);
+  }
+
+  struct wire_assign_config key_assign = {-1, -1, -1, -1, key_wire, table_port_wire};
+  emitwireassign(file, key_assign);
+  struct wire_assign_config value_assign = {-1, -1, -1, -1, table_port_wire, value_wire};
+  emitwireassign(file, value_assign);
+}
+
+
+void EmitFPGAPass::emitUpdateAtomic(std::ofstream &file, ep2::UpdateAtomicOp updateop, bool if_guarded, ep2::GuardOp gop) {
+  assert(updateop->getAttr("opValue").cast<IntegerAttr>().getValue() == 1);
   auto table_port_wire = tableops_to_portwire[updateop];
   auto key_val = updateop.getKey();
   int size;
@@ -1171,6 +1323,9 @@ void EmitFPGAPass::emitGuard(std::ofstream &file, ep2::GuardOp guardop){
    } else if (isa<ep2::UpdateOp>(gop)) {
     auto updateop = cast<ep2::UpdateOp, mlir::Operation *>(gop);
     emitUpdate(file, updateop, true, guardop);
+   } else if(isa<ep2::UpdateAtomicOp>(gop)){
+    auto updateatomicop = cast<ep2::UpdateAtomicOp, mlir::Operation *>(gop);
+    emitUpdateAtomic(file, updateatomicop, true, guardop);
    }
 }
 
@@ -1219,7 +1374,11 @@ void EmitFPGAPass::emitOp(std::ofstream &file, mlir::Operation *op){
   } else if (isa<ep2::UpdateOp>(op)){
     auto updateop = cast<ep2::UpdateOp, mlir::Operation *>(op);
     emitUpdate(file, updateop);
-  } else if(isa<ep2::SubOp>(op) || isa<ep2::AddOp>(op) || isa<arith::SubIOp>(op) || isa<arith::AndIOp>(op) || isa<ep2::CmpOp>(op)){
+  } else if (isa<ep2::UpdateAtomicOp>(op)){
+    auto updateop = cast<ep2::UpdateAtomicOp, mlir::Operation *>(op);
+    emitUpdateAtomic(file, updateop);
+  } 
+  else if(isa<ep2::SubOp>(op) || isa<ep2::AddOp>(op) || isa<arith::SubIOp>(op) || isa<arith::AndIOp>(op) || isa<ep2::CmpOp>(op)){
     emitArithmetic(file, op);
   } else if (isa<scf::IfOp>(op)){
     auto ifop = cast<scf::IfOp, mlir::Operation *>(op);
@@ -1400,6 +1559,11 @@ void EmitFPGAPass::runOnOperation() {
   handlerInOutAnalysis = &(getAnalysis<HandlerInOutAnalysis>());
   tableAnalysis = &(getAnalysis<TableAnalysis>());
   handlerDependencyAnalysis = &(getAnalysis<HandlerDependencyAnalysis>());
+
+    module->walk([&](ep2::GlobalOp globalOp) {
+        emitGlobalTableInit( globalOp);
+    });
+
   module->walk([&](ep2::FuncOp funcOp) {
     auto functype = funcOp->getAttr("type").cast<StringAttr>().getValue().str();
     std::cout << functype << "\n";

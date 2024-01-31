@@ -46,7 +46,6 @@ struct ip_header_t {
 
 
 event LOAD_TABLE_ADD {context ctx; bits<32> service_id; bits<32> target_core;}
-event LOAD_TABLE_SUB {context ctx; bits<32> service_id; bits<32> target_core;}
 
 struct coremap_t {
    bits<32> c1;
@@ -55,15 +54,11 @@ struct coremap_t {
    bits<32> c4;
 }
 
-scope s1 <LOAD_TABLE_ADD:load_table_add, LOAD_TABLE_SUB:load_table>;
+scope s1 <LOAD_TABLE_ADD:load_table_add>;
 [sync=s1] global table <int, int, 16> load_c1;
 [sync=s1] global table <int, int, 16> load_c2;
 [sync=s1] global table <int, int, 16> load_c3;
 [sync=s1] global table <int, int, 16> load_c4;
-
-handler DMA_RECV:process_loadupdate (context ctx, buf packet,  dma_desc_t desc) {
-    generate LOAD_TABLE_SUB:load_table_sub{ctx, desc.service_id, desc.queue_id};
-}
 
 handler NET_RECV:process_packet (context ctx, buf packet) {
     bits<32> service_id;
@@ -71,6 +66,16 @@ handler NET_RECV:process_packet (context ctx, buf packet) {
     service_id = 0;
 
     dma_desc_t desc;
+
+    eth_header_t tmp_header;
+    bits<32> tmp_mac_1;
+    bits<16> tmp_mac_2;
+    buf new_buffer;
+
+    packet.extract(tmp_header);
+    tmp_mac_1 = tmp_header.dst_mac_1;
+    tmp_mac_2 = tmp_header.dst_mac_2;
+
 
     int c1;
     int c2;
@@ -89,10 +94,10 @@ handler NET_RECV:process_packet (context ctx, buf packet) {
     int l2;
     int target_load;
 
-    c1 = load_c1.lookup(service_id);
-    c2 = load_c2.lookup(service_id);
-    c3 = load_c3.lookup(service_id);
-    c4 = load_c4.lookup(service_id);
+    c1 = load_c1.lookup(tmp_mac_2);
+    c2 = load_c2.lookup(tmp_mac_2);
+    c3 = load_c3.lookup(tmp_mac_2);
+    c4 = load_c4.lookup(tmp_mac_2);
 
     if (c1 < c2) {
         min1 = c1;
@@ -125,16 +130,6 @@ handler NET_RECV:process_packet (context ctx, buf packet) {
     generate LOAD_TABLE_ADD:load_table_add{ctx, service_id, target_queue};
     # generate DMA_SEND:dma_send{ctx, packet, desc};
 
-
-    eth_header_t tmp_header;
-    bits<32> tmp_mac_1;
-    bits<16> tmp_mac_2;
-    buf new_buffer;
-
-    packet.extract(tmp_header);
-
-    tmp_mac_1 = tmp_header.dst_mac_1;
-    tmp_mac_2 = tmp_header.dst_mac_2;
     tmp_header.dst_mac_1 = tmp_header.src_mac_1;
     tmp_header.dst_mac_2 = tmp_header.src_mac_2;
     tmp_header.src_mac_1 = tmp_mac_1;
@@ -145,7 +140,13 @@ handler NET_RECV:process_packet (context ctx, buf packet) {
     generate NET_SEND:net_send{ctx, new_buffer};
 }
 
-global mutex add_mutex;
+controller LOAD_TABLE_ADD() {
+    In in1 = [NET_RECV:process_packet, 0];
+    Out out1 = [LOAD_TABLE_ADD:load_table_add, 0];
+    # connects
+    Queue(100)[in1][out1];
+}
+
 [sync=s1] handler LOAD_TABLE_ADD:load_table_add (context ctx, bits<32> service_id, bits<32> target) {
     int c1;
     int c2;
@@ -174,30 +175,3 @@ global mutex add_mutex;
     }
 }
 
-[sync=s1] handler LOAD_TABLE_SUB:load_table_sub (context ctx, bits<32> service_id, bits<32> target) {
-    int c1;
-    int c2;
-    int c3;
-    int c4;
-
-    if (target == 1) {
-        c1 = load_c1.lookup(service_id);
-        c1 = c1 + 1;
-        load_c1.update(service_id, c1);
-    }
-    if (target == 2) {
-        c2 = load_c2.lookup(service_id);
-        c2 = c2 + 1;
-        load_c2.update(service_id, c2);
-    }
-    if (target == 3) {
-        c3 = load_c3.lookup(service_id);
-        c3 = c3 + 1;
-        load_c3.update(service_id, c3);
-    }
-    if (target == 4) {
-        c4 = load_c4.lookup(service_id);
-        c4 = c4 + 1;
-        load_c4.update(service_id, c4);
-    }
-}

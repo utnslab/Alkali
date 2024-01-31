@@ -51,8 +51,14 @@ void EmitFPGAPass::emitControllerInOut(std::ofstream &file, ep2::FuncOp funcOp) 
             }
             else if (!portType.getIn() && portType.getOut())
             {    
-                
+                dependency.dump();
                 targetfunc = handler;
+                if(handler == nullptr)
+                {    
+                    printf("ERROR: handler is null\n");
+                    assert(false);
+                }
+                
                 // outs[value] = tmp;
                 auto [it, _] = ctrl_outs.try_emplace(funcOp);
                 it->second[value] = tmp;
@@ -137,6 +143,16 @@ void EmitFPGAPass::emitControllerMux(std::ofstream &file, ep2::ConnectOp conncet
     std::vector<struct wire_config> selector_wires;
     struct axis_config selector_axis = {0, 0, select_data_width};
 
+    if(in_count == 1 && out_count == 1){
+        // in == out, direct connect
+        for(int i = 0; i < event_wire_counts ; i++){
+            auto inwire = ctrl_ins[*cur_funcop][invs[0]].event_wires[i];
+            auto outwire = ctrl_outs[*cur_funcop][outvs[0]].event_wires[i];
+            struct wire_assign_config assign = {-1, -1, -1, -1, inwire, outwire};
+            emitwireassign(file, assign);
+        }
+        return;
+    }
     
     for(int i = 0; i < event_wire_counts ; i++){
         std::list<struct module_port_config> ports;

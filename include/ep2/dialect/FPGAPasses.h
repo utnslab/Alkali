@@ -163,6 +163,7 @@ private:
 
   mlir::DenseMap<mlir::ep2::FuncOp, std::vector<struct handler_edge>> handler_in_edge_map, handler_out_edge_map;
 
+  mlir::DenseMap<mlir::ep2::FuncOp, std::vector<struct module_port_config>> global_state_ports;
   struct inout_info {
     FuncOp funcop;
     int replicate_index;
@@ -229,6 +230,18 @@ private:
       std::vector<struct wire_config> event_wires;
   };
 
+
+  struct global_table_info{
+      std::string module_name;
+      std::string name;
+      std::list<mlir::ep2::EmitFPGAPass::module_port_config> ports;
+      std::list<mlir::ep2::EmitFPGAPass::module_param_config> params;
+      std::list<mlir::ep2::EmitFPGAPass::wire_config> lookup_wires;
+      std::list<mlir::ep2::EmitFPGAPass::wire_config> update_wires;
+  };
+
+  std::map<std::string, struct global_table_info> global_tables;
+
   std::string assignValNameAndUpdate(mlir::Value val, std::string prefix, bool if_add_gindex=true);
   
   std::string getValName(mlir::Value val);
@@ -260,8 +273,10 @@ private:
   void emitFuncHeader(std::ofstream &file, ep2::FuncOp funcop);
   void emitVariableInit(std::ofstream &file, ep2::InitOp initop);
   void emitTableInit(std::ofstream &file, ep2::InitOp initop);
+  void emitGlobalTableInit(ep2::GlobalOp globalop);
   void emitLookup(std::ofstream &file, ep2::LookupOp lookupop);
   void emitUpdate(std::ofstream &file, ep2::UpdateOp updateop, bool if_guarded = false, ep2::GuardOp gop = nullptr);
+  void emitUpdateAtomic(std::ofstream &file, ep2::UpdateAtomicOp updateop, bool if_guarded = false, ep2::GuardOp gop = nullptr);
   void emitExtract(std::ofstream &file, ep2::ExtractValueOp extractop);
   void emitBBInputDemux(std::ofstream &file, ep2::FuncOp funcOp);
   void emitBBCondBranch(std::ofstream &file, cf::CondBranchOp condbranchop);
