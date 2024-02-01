@@ -28,6 +28,8 @@
 
 # Nested build directory
 /build*
+# generated fires
+*.sv
 
 #==============================================================================#
 # Explicit files to ignore (only matches one).
