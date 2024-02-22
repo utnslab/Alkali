@@ -332,10 +332,21 @@ private:
     }
 
     lexer.checkConsume(Token(','));
-    if (lexer.getCurToken() != tok_number)
-      return parseError<ExprAST>("number", "of instance number");
-    int instance = lexer.getValue();
-    lexer.consume(tok_number);
+    int instance = 0;
+
+    if(lexer.getCurToken() == tok_number){
+      instance = lexer.getValue();
+      if(instance < 0)
+        return parseError<ExprAST>("instance should be positive");
+      lexer.consume(tok_number);
+    }
+    else if (lexer.getCurToken() == '*') {
+        instance = -1;
+        lexer.consume(Token('*'));
+    }
+    else
+      return parseError<ExprAST>("number", "of instance");
+
 
     lexer.checkConsume(Token(']'));
     return std::make_unique<PortLiteralExprAST>(lexer.getLastLocation(),

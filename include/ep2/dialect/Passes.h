@@ -576,6 +576,16 @@ struct FPGABufferToStoragePass :
     StringRef getDescription() const final { return "Change the buffer table to buffer stoarge"; }
 };
 
+struct ControllerGenerationPass :
+        public PassWrapper<ControllerGenerationPass, OperationPass<ModuleOp>> {
+    void runOnOperation() final;
+    void getDependentDialects(DialectRegistry &registry) const override {
+        registry.insert<EP2Dialect, scf::SCFDialect, cf::ControlFlowDialect>();
+    }
+    StringRef getArgument() const final { return "ep2-controller-generation"; }
+    StringRef getDescription() const final { return "Generate Controller Based on Mapping Plan"; }
+};
+
 } // namespace ep2
 } // namespace mlir
 
