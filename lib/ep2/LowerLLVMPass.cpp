@@ -250,6 +250,123 @@ struct EmitBufferPattern : public ConversionToCallPattern<ep2::EmitOp> {
   }
 };
 
+struct ExtractOpNativePattern : public OpConversionPattern<ep2::ExtractOp> {
+  using OpConversionPattern<ep2::ExtractOp>::OpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(ep2::ExtractOp extractOp, OpAdaptor adaptor,
+                  ConversionPatternRewriter &rewriter) const final {
+    auto retType = getTypeConverter()->convertType(extractOp.getType());
+
+    auto I32Type = rewriter.getIntegerType(32);
+    auto sizeConst = emitGetSize(rewriter, retType);
+
+    auto selfDataP = rewriter.create<LLVM::LoadOp>(
+        extractOp.getLoc(), getI8PtrType(rewriter),
+        emitGEP(rewriter, getI8PtrType(rewriter), adaptor.getBuffer(), 0));
+    auto selfOffsetP = emitGEP(rewriter, I32Type, adaptor.getBuffer(), 2);
+
+    // extract at current location
+    auto ptr = rewriter.create<LLVM::GEPOp>(
+        extractOp.getLoc(), getI8PtrType(rewriter), selfDataP,
+        ArrayRef<LLVM::GEPArg>{rewriter.create<LLVM::LoadOp>(extractOp.getLoc(), I32Type, selfOffsetP).getResult()});
+
+    // update the size
+    auto newOffset = rewriter.create<LLVM::AddOp>(
+        extractOp.getLoc(),
+        rewriter.create<LLVM::LoadOp>(extractOp.getLoc(), I32Type, selfOffsetP),
+        sizeConst);
+    rewriter.create<LLVM::StoreOp>(extractOp.getLoc(), newOffset, selfOffsetP);
+
+    // return result
+    rewriter.replaceOpWithNewOp<LLVM::BitcastOp>(extractOp, retType, ptr);
+    return success();
+  }
+};
+
+struct EmitOpNativePattern : public OpConversionPattern<ep2::EmitOp> {
+  using OpConversionPattern<ep2::EmitOp>::OpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(ep2::EmitOp emitOp, OpAdaptor adaptor,
+                  ConversionPatternRewriter &rewriter) const final {
+    if (emitOp.getValue().getType().isa<ep2::BufferType>())
+      return rewriter.notifyMatchFailure(emitOp, "emit to a buffer type in non-buffer pattern");
+
+    auto I32Type = rewriter.getIntegerType(32);
+    // TODO(see if its an pointer to struct)
+    auto size = getTypeSize(adaptor.getValue().getType().cast<LLVM::LLVMPointerType>().getElementType());
+    auto sizeConst = emitGetSize(rewriter, adaptor.getValue().getType());
+
+    auto selfDataP = rewriter.create<LLVM::LoadOp>(
+        emitOp.getLoc(), getI8PtrType(rewriter),
+        emitGEP(rewriter, getI8PtrType(rewriter), adaptor.getBuffer(), 0));
+    auto selfOffsetP = emitGEP(rewriter, I32Type, adaptor.getBuffer(), 2);
+
+    // copy the data
+    auto cpDst = rewriter.create<LLVM::GEPOp>(
+        emitOp.getLoc(), getI8PtrType(rewriter), selfDataP,
+        ArrayRef<LLVM::GEPArg>{rewriter.create<LLVM::LoadOp>(emitOp.getLoc(), I32Type, selfOffsetP).getResult()});
+    auto cpSrc = adaptor.getValue();
+    rewriter.create<LLVM::MemcpyInlineOp>(
+        emitOp.getLoc(), cpDst, cpSrc, rewriter.getI32IntegerAttr(size), false);
+    
+    // move offset
+    auto newOffset = rewriter.create<LLVM::AddOp>(
+        emitOp.getLoc(),
+        rewriter.create<LLVM::LoadOp>(emitOp.getLoc(), I32Type, selfOffsetP),
+        sizeConst);
+    rewriter.create<LLVM::StoreOp>(emitOp.getLoc(), newOffset, selfOffsetP);
+    rewriter.eraseOp(emitOp);
+    return success();
+  }
+};
+
+struct EmitBufferNativePattern : public OpConversionPattern<ep2::EmitOp> {
+  using OpConversionPattern<ep2::EmitOp>::OpConversionPattern;
+  LogicalResult
+  matchAndRewrite(ep2::EmitOp emitOp, OpAdaptor adaptor,
+                  ConversionPatternRewriter &rewriter) const final {
+    if (!emitOp.getValue().getType().isa<ep2::BufferType>())
+      return rewriter.notifyMatchFailure(
+          emitOp, "emit to a non-buffer type in buffer pattern");
+    // GEP, calc the size
+    auto I32Type = rewriter.getIntegerType(32);
+    auto valueDataP= rewriter.create<LLVM::LoadOp>(
+        emitOp.getLoc(), getI8PtrType(rewriter),
+        emitGEP(rewriter, getI8PtrType(rewriter), adaptor.getValue(), 0));
+    auto valueSizeP = emitGEP(rewriter, I32Type, adaptor.getValue(), 1);
+    auto valueOffsetP = emitGEP(rewriter, I32Type, adaptor.getValue(), 2);
+    auto size = rewriter.create<LLVM::SubOp>(
+        emitOp.getLoc(),
+        rewriter.create<LLVM::LoadOp>(emitOp.getLoc(), I32Type, valueSizeP),
+        rewriter.create<LLVM::LoadOp>(emitOp.getLoc(), I32Type, valueOffsetP));
+
+    // native memcpy
+    auto selfDataP = rewriter.create<LLVM::LoadOp>(
+        emitOp.getLoc(), getI8PtrType(rewriter),
+        emitGEP(rewriter, getI8PtrType(rewriter), adaptor.getBuffer(), 0));
+    auto selfOffsetP = emitGEP(rewriter, I32Type, adaptor.getBuffer(), 2);
+
+    auto cpDst = rewriter.create<LLVM::GEPOp>(
+        emitOp.getLoc(), getI8PtrType(rewriter), selfDataP,
+        ArrayRef<LLVM::GEPArg>{rewriter.create<LLVM::LoadOp>(emitOp.getLoc(), I32Type, selfOffsetP).getResult()});
+    auto cpSrc = rewriter.create<LLVM::GEPOp>(
+        emitOp.getLoc(), getI8PtrType(rewriter), valueDataP,
+        ArrayRef<LLVM::GEPArg>{rewriter.create<LLVM::LoadOp>(emitOp.getLoc(), I32Type, valueOffsetP).getResult()});
+    rewriter.create<LLVM::MemcpyOp>(emitOp.getLoc(), cpDst, cpSrc, size, false);
+
+    // move offset
+    auto newOffset = rewriter.create<LLVM::AddOp>(
+        emitOp.getLoc(),
+        rewriter.create<LLVM::LoadOp>(emitOp.getLoc(), I32Type, selfOffsetP),
+        size);
+    rewriter.create<LLVM::StoreOp>(emitOp.getLoc(), newOffset, selfOffsetP);
+    rewriter.eraseOp(emitOp);
+    return success();
+  }
+};
+
 struct InitOpToBufPattern : public ConversionToCallPattern<ep2::InitOp> {
   using ConversionToCallPattern<ep2::InitOp>::ConversionToCallPattern;
 
@@ -1077,8 +1194,14 @@ void LowerLLVMPass::runOnOperation() {
   mlir::arith::populateArithToLLVMConversionPatterns(llvmConverter, patterns);
   patterns.add<ControllerPattern, TerminatePattern, StructAccessOpPattern,
                StructUpdateOpPattern, CFCondBranchPattern, CFBranchPattern, ConstantPattern>(typeConverter, &getContext());
-  patterns.add<ExtractOpPattern, EmitOpPattern, EmitBufferPattern,
-               InitOpToBufPattern>(
+  // TODO(zhiyuang): add a option to use runtime
+  patterns.add<ExtractOpNativePattern, EmitOpNativePattern, EmitBufferNativePattern>(typeConverter, &getContext());
+  // patterns.add<EmitBufferPattern>(typeConverter, &getContext(), apiFunctions);
+
+  // patterns.add<ExtractOpNativePattern, EmitOpNativePattern, EmitBufferNativePattern>(typeConverter, &getContext());
+  // patterns.add<ExtractOpPattern, EmitOpPattern, EmitBufferPattern>(typeConverter, &getContext(), apiFunctions);
+
+  patterns.add<InitOpToBufPattern>(
       typeConverter, &getContext(), apiFunctions);
   patterns.add<InitOpToTablePattern, InitOpToStructPattern, LookupPattern,
                UpdatePattern>(typeConverter, &getContext(), apiFunctions);
