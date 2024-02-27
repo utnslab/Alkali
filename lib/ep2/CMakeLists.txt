@@ -47,6 +47,7 @@ add_mlir_dialect_library(MLIREP2
         Passes/AtomicIdentificationPass.cpp
         Passes/FPGABufferToStoragePass.cpp
         Passes/ControllerGenerationPass.cpp
+        Passes/GlobalToPartitionPass.cpp
 
         DEPENDS
         MLIREP2OpsIncGen

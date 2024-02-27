@@ -590,6 +590,16 @@ struct ControllerGenerationPass :
     StringRef getDescription() const final { return "Generate Controller Based on Mapping Plan"; }
 };
 
+struct GlobalToPartitionPass :
+        public PassWrapper<GlobalToPartitionPass, OperationPass<ModuleOp>> {
+    void runOnOperation() final;
+    void getDependentDialects(DialectRegistry &registry) const override {
+        registry.insert<EP2Dialect, scf::SCFDialect, cf::ControlFlowDialect>();
+    }
+    StringRef getArgument() const final { return "ep2-global-to-partition"; }
+    StringRef getDescription() const final { return "Convert fully partitioned global variables to local variable"; }
+};
+
 } // namespace ep2
 } // namespace mlir
 
