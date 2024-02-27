@@ -165,6 +165,7 @@ struct SimpleCostModel : public CostModel {
         count ++;
       }
     }
+    count = 1;
     return count;
   }
 };
