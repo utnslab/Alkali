@@ -71,6 +71,10 @@ struct HandlerDependencyAnalysis {
       auto surffix = atom == "" ? "" : "_" + atom;
       return ("__handler_" + event + surffix).str();
     }
+    std::string join() const {
+      auto surffix = atom == "" ? "" : ":" + atom;
+      return (event + surffix).str();
+    }
 
     HandlerFullName(std::string event, std::string atom = "") : event(event), atom(atom) {}
     HandlerFullName(FuncOp funcOp);

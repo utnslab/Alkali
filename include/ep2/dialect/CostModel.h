@@ -11,7 +11,8 @@ using TickT = int;
 using ResourceT = int;
 
 struct ArchSpec {
-  struct Unit { int id; };
+  // Unit and related json
+  struct Unit { std::string id; };
   struct MemoryUnit : public Unit {
     ResourceT mem;
     MemoryUnit(const llvm::json::Value &value) {
@@ -70,7 +71,6 @@ struct ArchSpec {
     llvm::Expected<llvm::json::Value> result =
         llvm::json::parse(file.get()->getBuffer());
     assert(result && "invalid arch spec json fromat");
-
     
     auto top = result->getAsObject();
     assert(top && "single object");
@@ -100,15 +100,15 @@ struct ArchSpec {
                         }) &&
            "communication matrix size");
 
-    auto matrix2 = top->getArray("communicationMatrix");
+    auto matrix2 = top->getArray("memoryMatrix");
     assert(matrix2 && "matrix2");
     for (const auto &row : *matrix2) {
       auto &rowVec = memoryMatrix.emplace_back();
       llvm::json::Path::Root root("root");
       assert(llvm::json::fromJSON(row, rowVec, root) && "matrix row");
     }
-    assert(communicationMatrix.size() == getNumUnit<ComputeUnit>() &&
-           llvm::all_of(communicationMatrix,
+    assert(memoryMatrix.size() == getNumUnit<ComputeUnit>() &&
+           llvm::all_of(memoryMatrix,
                         [&](const auto &row) {
                           return row.size() == getNumUnit<MemoryUnit>();
                         }) &&
@@ -123,28 +123,41 @@ struct ArchSpec {
 /// All values in the model should be the normalized cost in unit of packets (PPS)
 /// An overall controller further converts this to a bandwidth in the overall constriant system
 struct CostModel {
-  static constexpr TickT unitTick = 1000000;
-
+  static constexpr TickT unitTick = 1000;
   CostModel(ArchSpec &spec) : spec(spec) {};
-  virtual ResourceT computeResource(mlir::ep2::FuncOp funcOp) = 0;
-
-  virtual TickT computationCost(mlir::ep2::FuncOp funcOp, TickT factor = 1) = 0;
-
-  template<typename T>
-  TickT memoryCost(mlir::ep2::FuncOp funcOp, T &&opCost, TickT factor = 1);
-
+  virtual TickT computationCost(mlir::ep2::FuncOp funcOp) = 0;
 protected:
   ArchSpec &spec;
 };
 
-/// For replications, first we find the subgraph that contains a subgraph
-/// For branches, we do not know
+/// We got cost model instances
+/// 1. FPGA Cost Model
 
-struct SimpleCostModel : public CostModel {
-  SimpleCostModel(ArchSpec &spec) : CostModel(spec) {};
+struct FPGACostModel : public CostModel {
+  using CostModel::CostModel;
 
-  ResourceT computeResource(mlir::ep2::FuncOp funcOp) override {
+  TickT computationCost(mlir::ep2::FuncOp funcOp) override {
     // count the instructions
+    int count = 1;
+    for (auto &block : funcOp.getBody()) {
+      for (auto &op : block) {
+        // filter on the op type
+        if (llvm::isa<mlir::ep2::LookupOp, mlir::ep2::UpdateOp>(op))
+          // if any of the lookup op or update op is presented, add this to 3
+          count = 3;
+      }
+    }
+    return count;
+  }
+};
+
+/// 1. Simple Cost Model for both Bluefield and Netronom
+struct SimpleCostModel : public CostModel {
+  using CostModel::CostModel;
+
+  TickT computationCost(mlir::ep2::FuncOp funcOp) override {
+    // TODO: consider branch
+    // count the total number of instructions
     int count = 0;
     for (auto &block : funcOp.getBody()) {
       for (auto &_ : block) {
@@ -154,26 +167,6 @@ struct SimpleCostModel : public CostModel {
     }
     return count;
   }
-
-  TickT computationCost(mlir::ep2::FuncOp funcOp, TickT unitCost = 1) override {
-    // TODO: consider branch
-    // count the instructions
-    int count = 0;
-    for (auto &block : funcOp.getBody()) {
-      for (auto &op : block) {
-        // filter on the op type
-        count ++;
-      }
-    }
-    return count * unitCost;
-  }
-
-  // base function for calculating memory cost
-  template<typename T>
-  TickT memoryCost(mlir::ep2::FuncOp funcOp, T &&opCost, TickT factor = 1) {
-    return 0;
-  }
-
 };
 
 #endif // EP2_DIALECT_COSTMODEL_H

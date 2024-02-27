@@ -22,53 +22,24 @@ namespace ep2 {
 
 namespace {
 
-// Util functiosn
-void mergeFuncs(FuncOp func1, FuncOp func2, RewriterBase &rewriter) {
-  OpBuilder builder(func1);
-
-  // change the mappings (generation and consumption)
-
-}
+using ComputeUnit = ArchSpec::ComputeUnit;
+using MemoryUnit = ArchSpec::MemoryUnit;
 
 class MappingSolver {
+  // Util function
+  template<typename U1, typename U2>
+  z3::expr oneOfMatrix(z3::context &ctx, z3::expr index1, z3::expr index2, std::vector<std::vector<int>> &data) {
+    z3::expr_vector matrix(ctx);
+    for (size_t i = 0; i < spec.getNumUnit<U1>(); i++)
+      for (size_t j = 0; j < spec.getNumUnit<U2>(); j++)
+        matrix.push_back(z3::ite(index1 == i && index2 == j, ctx.int_val(data[i][j]), ctx.int_val(0)));
+    return z3::sum(matrix);
+  }
+
  public:
-  template <typename T>
-  struct CostMatrix {
-    size_t dims[2];
-    T** data;
-
-    CostMatrix(size_t dim1, size_t dim2) : dims{dim1, dim2} {
-      data = new T *[dim1];
-      for (size_t i = 0; i < dim1; i++) {
-        data[i] = new T[dim2];
-      }
-    }
-    ~CostMatrix() {
-      for (size_t i = 0; i < dims[0]; i++) {
-        delete[] data[i];
-      }
-      delete[] data;
-    }
-    void set(size_t i, size_t j, T v) { data[i][j] = v; }
-    z3::expr oneOf(z3::context &ctx, z3::expr index1, z3::expr index2) {
-      z3::expr_vector matrix(ctx);
-      for (size_t i = 0; i < dims[0]; i++)
-        for (size_t j = 0; j < dims[1]; j++)
-          matrix.push_back(z3::ite(index1 == i && index2 == j, ctx.int_val(data[i][j]), ctx.int_val(0)));
-      return z3::sum(matrix);
-    }
-  };
-
   MappingSolver(AnalysisManager &am, ArchSpec &spec, CostModel &costModel)
       : ctx{}, solver{ctx}, spec(spec), costModel(costModel),
-        communicationMatrix{spec.getNumUnit<ArchSpec::ComputeUnit>(),
-                            spec.getNumUnit<ArchSpec::MemoryUnit>()},
-        memoryMatrix{spec.getNumUnit<ArchSpec::ComputeUnit>(),
-                     spec.getNumUnit<ArchSpec::MemoryUnit>()},
-        dependency(am.getAnalysis<HandlerDependencyAnalysis>()) {
-    prepareCommunicationCost(spec, costModel);
-    prepareMemoryCost(spec, costModel);
-  }
+        dependency(am.getAnalysis<HandlerDependencyAnalysis>()) {}
   // Data
   z3::context ctx;
   z3::solver solver;
@@ -76,103 +47,76 @@ class MappingSolver {
   CostModel &costModel;
 
   // Analysis
-
-  CostMatrix<TickT> communicationMatrix, memoryMatrix;
   HandlerDependencyAnalysis &dependency;
 
+  // intermidiate results
   std::map<FuncOp, std::vector<z3::expr>> mapping{};
-  std::vector<z3::expr> totalTicksPerCU;
-
+  std::map<FuncOp, std::vector<z3::expr>> repCost{};
+  std::vector<z3::expr> ticksPerCU;
  
  // Funcs
   ThroughputT getTargetThroughput(FuncOp func) {
-    return 1000;
-  }
-
- // Import functions
-  void prepareCommunicationCost(ArchSpec &spec, CostModel &costModel) {
-    auto numComputeUnits = spec.getNumUnit<ArchSpec::ComputeUnit>();
-    for (size_t i = 0; i < numComputeUnits; i++) {
-      for (size_t j = 0; j < numComputeUnits; j++) {
-        communicationMatrix.set(i, j, spec.communicationCost(i, j));
-      }
-    }
-  }
-
-  void prepareMemoryCost(ArchSpec &spec, CostModel &costModel) {
-    auto numComputeUnits = spec.getNumUnit<ArchSpec::ComputeUnit>();
-    auto numMemoryUnits = spec.getNumUnit<ArchSpec::MemoryUnit>();
-    for (size_t i = 0; i < numComputeUnits; i++) {
-      for (size_t j = 0; j < numMemoryUnits; j++) {
-        memoryMatrix.set(i, j, spec.memoryCost(i, j));
-      }
-    }
+    // TODO(zhiyuang): based on requriements, add more constraints
+    return CostModel::unitTick;
   }
 
   void calculateTicksPerCU() {
-    for (size_t i = 0; i < spec.getNumUnit<ArchSpec::ComputeUnit>(); i++) {
+    // as i == 0 means we do not map, we start from 1
+    // for each cu we calucate all replications
+    for (size_t i = 1; i <= spec.getNumUnit<ArchSpec::ComputeUnit>(); i++) {
       z3::expr_vector ticks(ctx);
       for (auto &[funcOp, reps]: mapping) {
-        for (auto &rep: reps) {
-          auto cpuResource = costModel.computationCost(funcOp);
+        auto &costs = repCost[funcOp];
+        for (auto [cu, cost]: llvm::zip_equal(reps, costs)) {
           auto res =
-              z3::ite(rep == static_cast<int>(i), ctx.int_val(cpuResource), ctx.int_val(0));
+              z3::ite(cu == static_cast<int>(i), cost, ctx.int_val(0));
           ticks.push_back(res);
         }
       }
-      totalTicksPerCU.push_back(z3::sum(ticks));
+      ticksPerCU.push_back(z3::sum(ticks));
     }
   }
 
-  std::vector<z3::expr> getEvenPartition(int partitionNumber,
-                                         std::vector<z3::expr> &prev,
-                                         std::vector<z3::expr> &next) {
+  void calculateCommunicationOverhead() {
+    for (auto &[func, reps]: mapping) {
+      auto successors = dependency.getSuccessors(func);
+      auto [it, _] = repCost.try_emplace(func);
 
-    int totalPrev = prev.size();
-    int totalNext = next.size();
+      for (auto &_: reps) {
+        z3::expr_vector commTicks(ctx);
+        commTicks.push_back(ctx.int_val(0));
+        // only work for all-to-all, others?
+        // for (auto succ : successors) {
+        //   for (auto succ_rep : getEvenPartition(i, mapping[func], mapping[succ])) {
+        //     auto commTick = oneOfMatrix<ComputeUnit, ComputeUnit>(ctx, rep, succ_rep, spec.communicationMatrix);
+        //     commTicks.push_back(commTick);
+        //   }
+        // }
 
-    int nextBegin = totalNext / totalPrev * partitionNumber;
-    int nextEnd = totalNext / totalPrev * (partitionNumber + 1);
-
-    return {next.begin() + nextBegin, next.begin() + nextEnd};
+        auto tick = z3::sum(commTicks);
+        it->second.push_back(tick + costModel.computationCost(func));
+      }
+    }
   }
 
-  void calculateTotalTicks(FuncOp func, HandlerDependencyAnalysis &dependency) {
-    auto successors = dependency.getSuccessors(func);
+  std::map<FuncOp, z3::expr> funcTputs{};
 
-    z3::expr_vector ticks(ctx);
-    for (size_t i = 0; i < mapping[func].size(); i++) {
-      auto &cur = mapping[func][i];
-
-      // same compute unit ticks
-      z3::expr_vector cuTicks(ctx);
-      for (auto &[funcOp, reps]: mapping) {
-        auto cpuResource = costModel.computationCost(funcOp);
-        for (auto &rep: reps) {
-          auto res =
-              z3::ite(cur == rep, ctx.int_val(cpuResource), ctx.int_val(0));
-          cuTicks.push_back(res);
+  void calculateThroughput() {
+    for (auto &[func, reps]: mapping) {
+      z3::expr_vector repTputs(ctx);
+      for (auto &rep : reps) {
+        for (int i = 1; i <= spec.getNumUnit<ArchSpec::ComputeUnit>(); i++) {
+          auto repTput = z3::ite(rep == i, CostModel::unitTick / ticksPerCU[i-1] + ctx.int_val(1), ctx.int_val(0));
+          repTputs.push_back(repTput);
         }
       }
-
-      // we use the replication model first
-      z3::expr_vector commTicks(ctx);
-      for (auto &succ : successors) {
-        for (auto succ_rep : getEvenPartition(i, mapping[func], mapping[succ])) {
-          auto commTick = communicationMatrix.oneOf(ctx, cur, succ_rep);
-          commTicks.push_back(commTick);
-        }
-      }
-
-      auto tick = z3::sum(cuTicks) + z3::sum(commTicks);
-      ticks.push_back(CostModel::unitTick / tick);
+      auto funcTput = z3::sum(repTputs);
+      funcTputs.try_emplace(func, funcTput);
+      solver.add(funcTput >= getTargetThroughput(func));
     }
-
-    solver.add(z3::sum(ticks) <= getTargetThroughput(func));
   }
 
   void calculateCost() {
-
     // create variable for each function
     for (auto &[name, func]: dependency.handlersMap) {
       if (!func.isExtern())
@@ -185,8 +129,12 @@ class MappingSolver {
       auto func = _func;
 
       auto ticks = costModel.computationCost(func);
-      auto numReplications = CostModel::unitTick / ticks * 2;
-      for (auto i = 0; i < numReplications; i++) {
+      // each unit get at least one replication
+      auto maxReplications =
+          std::min((size_t)ticks,
+                   spec.getNumUnit<ComputeUnit>() - mapping.size() + 1);
+      llvm::errs() << "function" << func.getSymName() << " numReplications: " << maxReplications << "\n";
+      for (auto i = 0; i < maxReplications; i++) {
         auto name = func.getName().str() + "_" + "rep" + "_" + std::to_string(i);
         auto var = ctx.int_const(name.c_str());
         vec.push_back(var);
@@ -197,29 +145,43 @@ class MappingSolver {
       }
     }
 
+    // add constraints on resources
+    llvm::errs() << "adding constriaints on resources\n";
     // Limitation on the resoruce per compute unit and memory
-    // TODO(zhiyuang): add memory limitation
-    for (size_t i = 0; i < spec.getNumUnit<ArchSpec::ComputeUnit>(); i++) {
-      z3::expr_vector resource(ctx);
-      for (auto &[funcOp, reps]: mapping) {
-        for (auto &rep: reps) {
-          auto cpuResource = costModel.computeResource(funcOp);
-          auto res =
-              z3::ite(rep == static_cast<int>(i), ctx.int_val(cpuResource), ctx.int_val(0));
-          resource.push_back(res);
-        }
-      }
-      solver.add(z3::sum(resource) <= ctx.int_val(spec.get<ArchSpec::ComputeUnit>(i).cpu));
-    }
+
+    // TODO(zhiyuang): add resource limitation
 
     // Limitation on performance (ticks)
-    for (auto &[func, _]: mapping) {
-      calculateTotalTicks(func, dependency);
-    }
+    llvm::errs() << "calucating communication overhead\n";
+    calculateCommunicationOverhead();
+
+    llvm::errs() << "calculating ticks per CU\n";
+    calculateTicksPerCU();
+
+    llvm::errs() << "calculating throughput\n";
+    calculateThroughput();
+
+    llvm::errs() << "All constraints added\n";
   }
 
   // TODO: another function for annotation onto IR
-  void extractSolution() {
+  auto extractSolution() {
+    llvm::DenseMap<FuncOp,llvm::SmallVector<std::string>> map;
+    if (solver.check() == z3::sat) {
+      auto m = solver.get_model();
+      for (auto &[_func, reps]: mapping) {
+        auto [it, _] = map.try_emplace(_func);
+        for (auto &rep: reps) {
+          int cuIndex = m.eval(rep).get_numeral_int();
+          if (cuIndex != 0)
+            it->second.push_back(spec.get<ComputeUnit>(cuIndex).id);
+        }
+      }
+    }
+    return map;
+  }
+
+  void dumpSolution() {
     std::cout << "solving model: \n" << solver << "\n" << "solving...\n" << solver.check() << "\n";
     z3::model m = solver.get_model();
     for (auto &[_func, reps]: mapping) {
@@ -229,6 +191,15 @@ class MappingSolver {
         int v = m.eval(rep).get_numeral_int();
         std::cout << v << "\n";
       }
+
+      auto &tputExpr = funcTputs.at(func);
+      std::cout << "throughput: " << m.eval(tputExpr).get_numeral_int() << "\n";
+    }
+
+    std::cout << "solving cu costs\n";
+    for (int i = 0; i < spec.getNumUnit<ComputeUnit>(); i++) {
+      int v = m.eval(ticksPerCU[i]).get_numeral_int();
+      std::cout << "cu" << i << ": " << v << "\n";
     }
   }
 };
@@ -236,40 +207,75 @@ class MappingSolver {
 } // local namespace
 
 void ArchMappingPass::runOnOperation() {
-  auto &dependency = getAnalysis<HandlerDependencyAnalysis>();
-  dependency.dump();
+  // TODO:based on mapping, try to build different models. related to partitioning
+  if (!archSpecFile.hasValue()) {
+    getOperation()->emitError("arch spec file not found");
+    return signalPassFailure();
+  }
 
-  ModuleOp moduleOp = getOperation();
-  moduleOp->walk([&](ReturnOp returnOp){
-    auto func = dependency.lookupController(returnOp);
-    llvm::errs() << "for return op:";
-    returnOp->dump();
-
-    if (func != nullptr)
-      llvm::errs() << "Found Controller: " << func.getName() << "\n";
-    else
-      llvm::errs() << "Not found Controller\n";
-  });
-
-  return signalPassFailure();
-
-  // prepare the models
-  AnalysisManager am = getAnalysisManager();
+  // build cost model
   ArchSpec spec(archSpecFile.getValue());
 
   auto name = costModelName.getValue();
   std::unique_ptr<CostModel> costModel;
   if (name == "simple")
     costModel = std::make_unique<SimpleCostModel>(spec);
+  else if (name == "fpga")
+    costModel = std::make_unique<FPGACostModel>(spec);
 
   if (!costModel) {
     getOperation()->emitError("Cost model not found");
     return signalPassFailure();
   }
 
+  // build mapping solver
+  AnalysisManager am = getAnalysisManager();
   MappingSolver solver(am, spec, *costModel);
   solver.calculateCost();
-  solver.extractSolution();
+
+  llvm::errs() << "solving...\n";
+  auto map = solver.extractSolution();
+  if (map.empty()) {
+    getOperation()->emitError("No mapping solution found");
+    return signalPassFailure();
+  }
+
+  // update the mapping to IR
+  OpBuilder builder(getOperation());
+  getOperation()->walk([&](FuncOp func) {
+    auto it = map.find(func);
+    if (it != map.end()) {
+      auto &cus = it->second;
+
+      auto refs = llvm::map_to_vector(cus, [&](auto &cu) {
+        return llvm::StringRef(cu);
+      });
+      builder.getStrArrayAttr(refs);
+      func->setAttr("instances", builder.getStrArrayAttr(refs));
+    }
+  });
+
+  // TODO(zhiyuang): add based on search partition policy: partition or not
+  // partition global state based on the mapping
+  auto moduleOp = getOperation();
+  getOperation()->walk([&](GlobalOp globalOp) {
+    if (!globalOp->hasAttr("scope"))
+      return;
+    auto handlers = globalOp->getAttrOfType<ep2::ScopeAttr>("scope").getHandlers();
+    for (auto funcOp : moduleOp.getOps<FuncOp>()) {
+      HandlerDependencyAnalysis::HandlerFullName name(funcOp);
+      for (auto h : handlers) {
+        if (name.join() != h.getValue())
+          continue;
+        if (auto attr = funcOp->getAttr("instances")) {
+          globalOp->setAttr("instances", attr);
+          std::string attrName = "instances_" + globalOp.getName().str();
+          funcOp->setAttr(attrName, attr);
+        }
+      }
+    }
+  });
+
 }
 
 } // namespace ep2
