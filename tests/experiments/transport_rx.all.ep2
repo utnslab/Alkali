@@ -113,13 +113,17 @@ handler NET_RECV:process_packet (context ctx, buf packet) {
 }
 
 controller ACK_GEN() {
-    # queue_length=100, batch=1, qos_class_num=1
-    Queue(256, 1, 1);
+    In in = [OoO_DETECT:OoO_detection, *];
+    Out out = [ACK_GEN:ack_gen, *];
+    # connects
+    Queue()[in][out];
 }
 
 extern controller DMA_WRITE_REQ() {
-    # queue_length=100, batch=1, qos_class_num=1
-    Queue(256, 1, 1);
+    In in = [OoO_DETECT:OoO_detection, *];
+    Out out = [DMA_WRITE_REQ:dma_write, *];
+    # connects
+    Queue()[in][out];
 }
 scope table_sc <OoO_DETECT:OoO_detection>[flow_id];
 

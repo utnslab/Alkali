@@ -10,6 +10,9 @@ ninja -C build/
 #./build/bin/ep2c-opt -canonicalize -cse --ep2-context-infer --ep2-context-to-argument -ep2-buffer-to-value -canonicalize -cse -canonicalize -ep2-linearize -ep2-emit-fpga  tmp.mlir -o tmpopt.mlir
 #./build/bin/ep2c-opt -canonicalize -cse --ep2-context-infer --ep2-context-to-argument -ep2-buffer-to-value -canonicalize -cse -canonicalize -ep2-linearize  tmp.mlir -o tmpopt.mlir
 #
+
 #./build/bin/ep2c-opt -canonicalize -cse --ep2-context-infer --ep2-context-to-argument -ep2-buffer-to-value -canonicalize -cse -canonicalize -cf-to-pred  -canonicalize -cse -canonicalize -ep2-emit-fpga  tmp.mlir -o tmpopt.mlir
-./build/bin/ep2c-opt  --ep2-context-infer --ep2-context-to-argument -ep2-buffer-to-value -canonicalize -cse -canonicalize -ep2-atomic-id -canonicalize -cse -canonicalize -ep2-linearize  tmp.mlir -o tmpopt.mlir
+#./build/bin/ep2c-opt  --ep2-context-infer --ep2-context-to-argument -ep2-buffer-to-value -canonicalize -cse -canonicalize -ep2-atomic-id -canonicalize -cse -canonicalize -ep2-linearize  tmp.mlir -o tmpopt.mlir
 # ./build/bin/ep2c-opt  --ep2-context-infer --ep2-context-to-argument -ep2-buffer-to-value -canonicalize -cse -canonicalize -cf-to-pred -ep2-emit-fpga tmp.mlir -o tmpopt.mlir
+./build/bin/ep2c-opt  --ep2-context-infer --ep2-context-to-argument -ep2-buffer-to-value -canonicalize -cse -canonicalize -ep2-atomic-id -canonicalize -cse -canonicalize -ep2-linearize  --ep2-mapping="arch-spec-file=tests/specs/fpga.json cost-model=fpga" --ep2-global-to-partition -ep2-controller-generation tmp.mlir -o mapped.mlir
+./build/bin/ep2c-opt  -ep2-emit-fpga mapped.mlir -o tmpopt.mlir

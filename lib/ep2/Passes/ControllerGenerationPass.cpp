@@ -54,7 +54,10 @@ void ControllerGenerationPass::runOnOperation() {
               if_need_generation = true;
 
             if (portType.getIn()) {
-              in_instances = cast<mlir::ArrayAttr>(handler->getAttr("instances")).getValue().size();
+              if(handler->hasAttr("instances") == false && handler.isExtern())
+                  in_instances = 1;
+              else
+                  in_instances = cast<mlir::ArrayAttr>(handler->getAttr("instances")).getValue().size();
               assert(in_instances > 0);
               for (int i = 0; i < in_instances; i++) {
                 auto tmpportAttr = builder.getAttr<PortAttr>(
@@ -67,7 +70,10 @@ void ControllerGenerationPass::runOnOperation() {
 
             if (portType.getOut())
               for (int i = 0; i < out_instances; i++) {
-                out_instances = cast<mlir::ArrayAttr>(handler->getAttr("instances")).getValue().size();
+                if(handler->hasAttr("instances") == false && handler.isExtern())
+                  out_instances = 1;
+                else
+                  out_instances = cast<mlir::ArrayAttr>(handler->getAttr("instances")).getValue().size();
                 assert(out_instances > 0);
                 auto tmpportAttr = builder.getAttr<PortAttr>(
                     portAttr.getHandler(), portAttr.getAtom(), i);

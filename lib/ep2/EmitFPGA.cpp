@@ -151,20 +151,20 @@ void EmitFPGAPass::emitFuncHeader(std::ofstream &file, ep2::FuncOp funcOp) {
   // Find all global variable in and out
   funcOp->walk([&](GlobalImportOp importop) {
     bool if_has_lookup =false, if_has_update=false;
-    mlir::SmallVector<ep2::LookupOp> tmp_lookup_v;
-    mlir::SmallVector<ep2::UpdateAtomicOp> tmp_update_v;
+    mlir::SmallVector<mlir::Operation*> tmp_lookup_v;
+    mlir::SmallVector<mlir::Operation*> tmp_update_v;
     for(auto users: importop->getUsers()){
       if(isa<ep2::LookupOp>(users)){
         if_has_lookup = true;
-        tmp_lookup_v.push_back(cast<ep2::LookupOp, mlir::Operation *>(users));
+        tmp_lookup_v.push_back(users);
       }
       else if(isa<ep2::UpdateOp>(users)){
-        printf("TODO fix in emitModuleParameter\n");
-        assert(false);
+        if_has_update = true;
+        tmp_update_v.push_back(users);
       }
       else if(isa<ep2::UpdateAtomicOp>(users)){
         if_has_update = true;
-        tmp_update_v.push_back(cast<ep2::UpdateAtomicOp, mlir::Operation *>(users));
+        tmp_update_v.push_back(users);
       }
     }
 
@@ -182,7 +182,7 @@ void EmitFPGAPass::emitFuncHeader(std::ofstream &file, ep2::FuncOp funcOp) {
         i++;
       }
     }
-    else if (if_has_update){
+    if (if_has_update){
       int i = 0;
       for(auto &w : update_wires){
         printf("Info: update_wires %s\n", importop.getName().str().c_str());
