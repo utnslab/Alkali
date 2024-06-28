@@ -28,6 +28,7 @@
 # Tablegen generated
 *.inc
 *.cmake
+!sanitizers.cmake
 *.a
 # gdb local history files
 .gdb_history

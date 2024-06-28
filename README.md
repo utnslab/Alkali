@@ -9,7 +9,7 @@ cmake -G Ninja ../llvm \
  -DLLVM_TARGETS_TO_BUILD="AArch64;AMDGPU;ARM;AVR;BPF;Hexagon;Lanai;LoongArch;Mips;MSP430;NVPTX;PowerPC;RISCV;Sparc;SystemZ;VE;WebAssembly;X86;XCore" \
  -DLLVM_ENABLE_ASSERTIONS=ON \
  -DCMAKE_BUILD_TYPE=Release 
-
+cd .. &&  ninja -C build/
 ```
 
 ## Install the external dependencies
@@ -29,6 +29,7 @@ mkdir build && cd build
     -DMLIR_DIR=$PWD/../llvm-project/build/lib/cmake/mlir \
     -DCLANG_DIR=$PWD/../llvm-project/build/lib/cmake/clang \
     -DCMAKE_BUILD_TYPE=DEBUG
+cd .. &&  ninja -C build/
 ```
 To build the documentation from the TableGen description of the dialect operations, run
 ```sh
