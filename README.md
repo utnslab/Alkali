@@ -24,7 +24,11 @@ sudo apt install libz3-dev
 This setup assumes that you have built LLVM and MLIR in `$BUILD_DIR` and installed them to `$PREFIX`. To build and launch the tests, run
 ```sh
 mkdir build && cd build
- cmake -G Ninja .. -DLLVM_EXTERNAL_LIT=llvm-project/build/bin/llvm-lit -DMLIR_DIR=llvm-project/build/lib/cmake/mlir
+ cmake -G Ninja .. \
+    -DLLVM_EXTERNAL_LIT=$PWD/../llvm-project/build/bin/llvm-lit \
+    -DMLIR_DIR=$PWD/../llvm-project/build/lib/cmake/mlir \
+    -DCLANG_DIR=$PWD/../llvm-project/build/lib/cmake/clang \
+    -DCMAKE_BUILD_TYPE=DEBUG
 ```
 To build the documentation from the TableGen description of the dialect operations, run
 ```sh

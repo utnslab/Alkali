@@ -1,0 +1,21 @@
+name: run-clang-format
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v2
+      with:
+          fetch-depth: 1
+    - uses: DoozyX/clang-format-lint-action@v0.11
+      with:
+        exclude: './tools/cgeist/Test ./test ./tools/polymer/example'
+        clangFormatVersion: 11
+        style: llvm
