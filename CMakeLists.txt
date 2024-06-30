@@ -38,8 +38,6 @@ endif()
 find_package(Z3 REQUIRED)
 message(STATUS "Found Z3 ${Z3_VERSION_STRING}")
 
-add_subdirectory(Polygeist)
-
 set(STANDALONE_SOURCE_DIR ${PROJECT_SOURCE_DIR})
 set(STANDALONE_BINARY_DIR ${PROJECT_BINARY_DIR})
 include_directories(${LLVM_INCLUDE_DIRS})
@@ -48,6 +46,11 @@ include_directories(${STANDALONE_SOURCE_DIR}/include)
 include_directories(${STANDALONE_BINARY_DIR}/include)
 link_directories(${LLVM_BUILD_LIBRARY_DIR})
 add_definitions(${LLVM_DEFINITIONS})
+
+add_subdirectory(Polygeist)
+include_directories(${PROJECT_SOURCE_DIR}/Polygeist/include)
+include_directories(${PROJECT_BINARY_DIR}/Polygeist/include)
+
 
 add_subdirectory(include)
 add_subdirectory(lib)

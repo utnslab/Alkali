@@ -59,6 +59,8 @@ add_mlir_dialect_library(MLIREP2
         MLIREmitCDialect
         MLIRTargetCpp
         MLIRFuncDialect
+
+        MLIRPolygeist
         )
 
 # link to z3 libs

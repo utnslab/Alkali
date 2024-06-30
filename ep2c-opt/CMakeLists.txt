@@ -27,7 +27,6 @@ set(MLIR_LINK_COMPONENTS
   MLIRTargetLLVMIRExport
   MLIRTransforms
   MLIROptLib
-
 )
 
 add_llvm_executable(ep2c-opt
@@ -35,9 +34,8 @@ add_llvm_executable(ep2c-opt
 
   DEPENDS
   MLIREP2
-
-  # External polygeist dialect
   MLIRPolygeist
   )
 llvm_update_compile_flags(ep2c-opt)
 target_link_libraries(ep2c-opt PRIVATE ${MLIR_LINK_COMPONENTS})
+target_link_libraries(ep2c-opt PRIVATE MLIRPolygeist)

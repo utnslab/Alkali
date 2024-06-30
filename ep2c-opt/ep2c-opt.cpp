@@ -5,6 +5,7 @@
 #include "ep2/dialect/Passes.h"
 
 #include "ep2/dialect/FPGAPasses.h"
+#include "polygeist/Dialect.h"
 
 #include "mlir/Dialect/Affine/Passes.h"
 #include "mlir/Dialect/LLVMIR/Transforms/Passes.h"
