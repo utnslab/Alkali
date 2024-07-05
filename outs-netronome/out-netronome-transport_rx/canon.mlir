@@ -5,7 +5,7 @@ module {
   ep2.func private @__handler_DMA_WRITE_REQ_dma_write(%arg0: !ep2.context, %arg1: !ep2.buf, %arg2: !ep2.struct<"dma_write_cmd_t" : isEvent = false, elementTypes = i32, i32>) attributes {atom = "dma_write", event = "DMA_WRITE_REQ", extern = true, type = "handler"} {
     "ep2.terminate"() : () -> ()
   }
-  ep2.func private @__handler_NET_RECV_process_packet(%arg0: !ep2.context, %arg1: !ep2.buf) attributes {atom = "process_packet", event = "NET_RECV", instances = ["i1cu2", "i1cu3", "i2cu2", "i2cu3"], type = "handler"} {
+  ep2.func private @__handler_NET_RECV_process_packet(%arg0: !ep2.context, %arg1: !ep2.buf) attributes {atom = "process_packet", event = "NET_RECV", instances = ["cu2"], type = "handler"} {
     %0 = "ep2.constant"() <{value = "OoO_detection"}> : () -> !ep2.atom
     %1 = "ep2.constant"() <{value = 14 : i16}> : () -> i16
     %2 = "ep2.init"() : () -> !ep2.struct<"pkt_info_t" : isEvent = false, elementTypes = i32, i32, i32>
@@ -52,7 +52,7 @@ module {
     "ep2.connect"(%0, %1, %2, %3, %5) <{method = "PartitionByScope", operandSegmentSizes = array<i32: 4, 1>, parameters = ["flow_id", 1]}> : (!ep2.port<true, false>, !ep2.port<true, false>, !ep2.port<true, false>, !ep2.port<true, false>, !ep2.port<false, true>) -> ()
     "ep2.terminate"() : () -> ()
   }
-  ep2.func private @__handler_OoO_DETECT_OoO_detection(%arg0: !ep2.context, %arg1: !ep2.struct<"pkt_info_t" : isEvent = false, elementTypes = i32, i32, i32>) attributes {atom = "OoO_detection", event = "OoO_DETECT", instances = ["i1cu4", "i2cu4"], scope = #ep2<scope<"OoO_DETECT:OoO_detection"> ["flow_id"]>, type = "handler"} {
+  ep2.func private @__handler_OoO_DETECT_OoO_detection(%arg0: !ep2.context, %arg1: !ep2.struct<"pkt_info_t" : isEvent = false, elementTypes = i32, i32, i32>) attributes {atom = "OoO_detection", event = "OoO_DETECT", instances = ["cu3", "cu4", "cu5"], scope = #ep2<scope<"OoO_DETECT:OoO_detection"> ["flow_id"]>, type = "handler"} {
     %0 = "ep2.constant"() <{value = 0 : i32}> : () -> i32
     %1 = "ep2.constant"() <{value = "ack_gen"}> : () -> !ep2.atom
     %2 = "ep2.constant"() <{value = "dma_write"}> : () -> !ep2.atom
@@ -121,7 +121,7 @@ module {
     "ep2.connect"(%1, %3) <{method = "Queue", operandSegmentSizes = array<i32: 1, 1>, parameters = [100]}> : (!ep2.port<true, false>, !ep2.port<false, true>) -> ()
     "ep2.terminate"() : () -> ()
   }
-  ep2.func private @__handler_ACK_GEN_ack_gen(%arg0: !ep2.context, %arg1: !ep2.struct<"ack_info_t" : isEvent = false, elementTypes = i32, i32, i32>) attributes {atom = "ack_gen", event = "ACK_GEN", instances = ["i1cu5", "i2cu5"], type = "handler"} {
+  ep2.func private @__handler_ACK_GEN_ack_gen(%arg0: !ep2.context, %arg1: !ep2.struct<"ack_info_t" : isEvent = false, elementTypes = i32, i32, i32>) attributes {atom = "ack_gen", event = "ACK_GEN", instances = ["cu6"], type = "handler"} {
     %0 = "ep2.constant"() <{value = 64 : i16}> : () -> i16
     %1 = "ep2.constant"() <{value = "net_send"}> : () -> !ep2.atom
     %2 = "ep2.context_ref"(%arg0) <{name = "ip_header_sub_1"}> : (!ep2.context) -> !ep2.conref<!ep2.struct<"ip_header_t_sub_1" : isEvent = false, elementTypes = i32, i32>>

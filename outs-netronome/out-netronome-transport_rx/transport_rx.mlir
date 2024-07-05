@@ -5,12 +5,6 @@ module {
   ep2.func private @__handler_DMA_WRITE_REQ_dma_write(%arg0: !ep2.context, %arg1: !ep2.buf, %arg2: !ep2.struct<"dma_write_cmd_t" : isEvent = false, elementTypes = i32, i32>) attributes {atom = "dma_write", event = "DMA_WRITE_REQ", extern = true, type = "handler"} {
     "ep2.terminate"() : () -> ()
   }
-  {
-    %5 = "ep2.extract_offset"(%arg1) : (!ep2.buf) -> !ep2.struct<"ip_header_t" : isEvent = false, elementTypes = i16, i16, i16, i16, i16, i16, i32, i32, i32>
-  }
-
-
-  controller
   ep2.func private @__handler_NET_RECV_process_packet(%arg0: !ep2.context, %arg1: !ep2.buf) attributes {atom = "process_packet", event = "NET_RECV", instances = ["i1cu2", "i1cu3", "i2cu2", "i2cu3"], type = "handler"} {
     %0 = "ep2.init"() : () -> !ep2.struct<"eth_header_t" : isEvent = false, elementTypes = i48, i48, i16>
     %1 = "ep2.init"() : () -> !ep2.struct<"ip_header_t" : isEvent = false, elementTypes = i16, i16, i16, i16, i16, i16, i32, i32, i32>
@@ -218,8 +212,8 @@ module {
     "ep2.emit"(%6, %40) : (!ep2.buf, !ep2.struct<"tcp_header_t" : isEvent = false, elementTypes = i16, i16, i32, i32, i8, i8, i16, i16, i16>) -> ()
     %43 = "ep2.nop"() : () -> none
     %44 = "ep2.context_ref"(%arg0) <{name = "packet"}> : (!ep2.context) -> !ep2.conref<!ep2.any>
-    %45 = "ep2.load"(%44) : (!ep2.conref<!ep2.any>) -> !ep2.buf
-    "ep2.emit"(%6, %45) : (!ep2.buf, !ep2.buf) -> ()
+    %45 = "ep2.load"(%44) : (!ep2.conref<!ep2.any>) -> !ep2.any
+    "ep2.emit"(%6, %45) : (!ep2.buf, !ep2.any) -> ()
     %46 = "ep2.nop"() : () -> none
     %47 = "ep2.constant"() <{value = "net_send"}> : () -> !ep2.atom
     %48 = "ep2.init"(%47, %arg0, %6) : (!ep2.atom, !ep2.context, !ep2.buf) -> !ep2.struct<"NET_SEND" : isEvent = true, elementTypes = !ep2.context, !ep2.buf>

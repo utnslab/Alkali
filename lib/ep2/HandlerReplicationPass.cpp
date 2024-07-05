@@ -108,20 +108,21 @@ void HandlerReplicationPass::runOnOperation() {
     if (funcOp->getAttr("type").cast<StringAttr>().getValue() == "controller" && !funcOp.isExtern()) {
       funcOp->walk([&](ep2::ConnectOp op) {
         assert(op.getMethod() == "Queue" || op.getMethod() == "PartitionByScope");
-        assert(op.getOuts().size() == 1);
 
-        mlir::Value outArg = op.getOuts()[0];
-        auto portOut = cast<ep2::ConstantOp>(outArg.getDefiningOp()).getValue().cast<ep2::PortAttr>();
-        for (mlir::Value arg : op.getIns()) {
-          auto portIn = cast<ep2::ConstantOp>(arg.getDefiningOp()).getValue().cast<ep2::PortAttr>();
-          auto k = std::pair<std::string, std::string>{portToHandlerName(portIn), portOut.getHandler().str()};
-          if (op.getMethod() == "Queue") {
-            qMap[k].first = SprayInfo(SprayType::ROUND_ROBIN, "");
-          } else if (op.getMethod() == "PartitionByScope") {
-            qMap[k].first = SprayInfo(SprayType::PARTITION, op.getParameter<mlir::StringAttr>(0).getValue().str());
+        for (size_t i = 0; i<op.getOuts().size(); ++i) {
+          mlir::Value outArg = op.getOuts()[i];
+          auto portOut = cast<ep2::ConstantOp>(outArg.getDefiningOp()).getValue().cast<ep2::PortAttr>();
+          for (mlir::Value arg : op.getIns()) {
+            auto portIn = cast<ep2::ConstantOp>(arg.getDefiningOp()).getValue().cast<ep2::PortAttr>();
+            auto k = std::pair<std::string, std::string>{portToHandlerName(portIn), portOut.getHandler().str()};
+            if (op.getMethod() == "Queue") {
+              qMap[k].first = SprayInfo(SprayType::ROUND_ROBIN, "");
+            } else if (op.getMethod() == "PartitionByScope") {
+              qMap[k].first = SprayInfo(SprayType::PARTITION, op.getParameter<mlir::StringAttr>(0).getValue().str());
+            }
+            qMap[k].second.push_back(1 + portOut.getInstance());
           }
-          qMap[k].second.push_back(1 + portOut.getInstance());
-        }
+         }
       });
     }
   });

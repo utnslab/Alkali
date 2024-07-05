@@ -182,10 +182,10 @@ CollectInfoAnalysis::CollectInfoAnalysis(Operation* module, AnalysisManager& am)
         std::string eventName = funcOp->getAttr("event").cast<mlir::StringAttr>().getValue().str();
         auto& qInfo = this->eventQueues[eventName];
         
-        if (op.getMethod() == "Queue" && op.getParameters()) {
+        if (op.getMethod() == "Queue" && op.getParameters() && op.getParameters()->getValue().size() > 0) {
           qInfo.size = op.getParameters()->getValue()[0].cast<mlir::IntegerAttr>().getValue().getSExtValue();
         } else {
-          qInfo.size = 256;
+          qInfo.size = 128;
         }
 
         qInfo.memType = MemType::CLS;

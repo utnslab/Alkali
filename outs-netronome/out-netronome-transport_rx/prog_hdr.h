@@ -73,10 +73,10 @@ __packed struct repack_type_1 {
 
 __packed struct context_chain_1_t {
 	struct __buf_t f0;
-	struct ip_header_t_sub_1 f1;
-	struct eth_header_t_sub_0 f2;
-	struct tcp_header_t_sub_0 f3;
-	uint16_t f4;
+	uint16_t f1;
+	struct ip_header_t_sub_1 f2;
+	struct eth_header_t_sub_0 f3;
+	struct tcp_header_t_sub_0 f4;
 };
 
 __packed struct event_param_NET_RECV {
@@ -126,8 +126,9 @@ CLS_WORKQ_DECLARE(workq_OoO_DETECT_2, WORKQ_SIZE_OoO_DETECT);
 __packed struct table_i16_flow_state_t_16_t {
 	struct flow_state_t table[16];
 };
-__shared __lmem struct table_i16_flow_state_t_16_t table_34;
-__shared __lmem struct table_i16_flow_state_t_16_t table_35;
+__shared __lmem struct table_i16_flow_state_t_16_t table_18;
+__shared __lmem struct table_i16_flow_state_t_16_t table_19;
+__shared __lmem struct table_i16_flow_state_t_16_t table_20;
 
 CLS_CONTEXTQ_DECLARE(context_chain_1_t, context_chain_pool, 128);
 #ifdef DO_CTXQ_INIT
