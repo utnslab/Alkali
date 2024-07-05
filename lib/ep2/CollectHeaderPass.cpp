@@ -10,7 +10,9 @@
 #include "llvm/ADT/StringMap.h"
 #include "mlir/Conversion/LLVMCommon/TypeConverter.h"
 
+#include <bitset>
 #include <cassert>
+#include <unordered_map>
 
 #include "Utils.h"
 
@@ -168,6 +170,16 @@ CollectInfoAnalysis::CollectInfoAnalysis(Operation* module, AnalysisManager& am)
     }
   });
 
+  // find out where instances of each event's handlers reside
+  std::unordered_map<std::string, std::bitset<84>> eventToMEMap;
+  module->walk([&](ep2::FuncOp funcOp) {
+    if (!funcOp.isExtern() && funcOp->getAttr("type").cast<StringAttr>().getValue() == "handler") {
+      std::string eventName = funcOp->getAttr("event").cast<mlir::StringAttr>().getValue().str();
+      std::string cu = cast<mlir::StringAttr>(funcOp->getAttr("location")).getValue().str();
+      eventToMEMap[eventName].set(std::stoi(cu.substr(2)));
+    }
+  });
+
   // Generate event queues
   auto getOpd = [&](mlir::Value opd){
     return cast<ep2::ConstantOp>(opd.getDefiningOp()).getValue().cast<IntegerAttr>().getValue().getSExtValue();
@@ -180,7 +192,23 @@ CollectInfoAnalysis::CollectInfoAnalysis(Operation* module, AnalysisManager& am)
       funcOp->walk([&](ep2::ConnectOp op) {
         assert(op.getMethod() == "Queue" || op.getMethod() == "PartitionByScope");
         std::string eventName = funcOp->getAttr("event").cast<mlir::StringAttr>().getValue().str();
+        std::string prevEventName = funcOp->getAttr("prevEvent").cast<mlir::StringAttr>().getValue().str();
+
         auto& qInfo = this->eventQueues[eventName];
+
+        // 7 addressable islands
+        std::bitset<84> userMEs = eventToMEMap[eventName] | eventToMEMap[prevEventName];
+        std::bitset<84> itUserMEs = userMEs;  
+        std::bitset<84> islandMask;
+        for (size_t i = 0; i<12; ++i) islandMask.set(i);
+        qInfo.memType = MemType::EMEM;
+        for (int i = 0; i<7; ++i) {
+          if ((itUserMEs & islandMask) == userMEs) {
+            qInfo.memType = MemType::CLS;
+            break;
+          }
+          itUserMEs = itUserMEs >> 12;
+        }
         
         if (op.getMethod() == "Queue" && op.getParameters() && op.getParameters()->getValue().size() > 0) {
           qInfo.size = op.getParameters()->getValue()[0].cast<mlir::IntegerAttr>().getValue().getSExtValue();
@@ -188,9 +216,10 @@ CollectInfoAnalysis::CollectInfoAnalysis(Operation* module, AnalysisManager& am)
           qInfo.size = 128;
         }
 
-        qInfo.memType = MemType::CLS;
-        qInfo.replicas.push_back(cast<ep2::ConstantOp>(
-          op.getOuts()[0].getDefiningOp()).getValue().cast<ep2::PortAttr>().getInstance());
+        for (size_t i = 0; i<op.getOuts().size(); ++i) {
+          qInfo.replicas.push_back(cast<ep2::ConstantOp>(
+            op.getOuts()[i].getDefiningOp()).getValue().cast<ep2::PortAttr>().getInstance());
+        }
       });
     } else {
       std::string eventName = funcOp->getAttr("event").cast<StringAttr>().getValue().str();

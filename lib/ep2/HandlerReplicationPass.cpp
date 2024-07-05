@@ -114,6 +114,9 @@ void HandlerReplicationPass::runOnOperation() {
           auto portOut = cast<ep2::ConstantOp>(outArg.getDefiningOp()).getValue().cast<ep2::PortAttr>();
           for (mlir::Value arg : op.getIns()) {
             auto portIn = cast<ep2::ConstantOp>(arg.getDefiningOp()).getValue().cast<ep2::PortAttr>();
+            if (!funcOp->hasAttr("prevEvent")) {
+              funcOp->setAttr("prevEvent", builder.getStringAttr(portIn.getHandler()));
+            }
             auto k = std::pair<std::string, std::string>{portToHandlerName(portIn), portOut.getHandler().str()};
             if (op.getMethod() == "Queue") {
               qMap[k].first = SprayInfo(SprayType::ROUND_ROBIN, "");

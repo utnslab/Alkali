@@ -121,35 +121,35 @@ module {
     %3 = "ep2.context_ref"(%arg0) <{name = "eth_header_sub_0"}> : (!ep2.context) -> !ep2.conref<!ep2.struct<"eth_header_t_sub_0" : isEvent = false, elementTypes = i32, i16, i32, i16>>
     %4 = "ep2.context_ref"(%arg0) <{name = "packet"}> : (!ep2.context) -> !ep2.conref<!ep2.buf>
     %5 = "ep2.context_ref"(%arg0) <{name = "tcp_header_sub_0"}> : (!ep2.context) -> !ep2.conref<!ep2.struct<"tcp_header_t_sub_0" : isEvent = false, elementTypes = i16, i16, i32, i32>>
-    %6 = "ep2.load"(%2) : (!ep2.conref<!ep2.struct<"ip_header_t_sub_1" : isEvent = false, elementTypes = i32, i32>>) -> !ep2.struct<"ip_header_t_sub_1" : isEvent = false, elementTypes = i32, i32>
-    %7 = "ep2.load"(%4) : (!ep2.conref<!ep2.buf>) -> !ep2.buf
-    %8 = "ep2.load"(%5) : (!ep2.conref<!ep2.struct<"tcp_header_t_sub_0" : isEvent = false, elementTypes = i16, i16, i32, i32>>) -> !ep2.struct<"tcp_header_t_sub_0" : isEvent = false, elementTypes = i16, i16, i32, i32>
-    %9 = "ep2.load"(%3) : (!ep2.conref<!ep2.struct<"eth_header_t_sub_0" : isEvent = false, elementTypes = i32, i16, i32, i16>>) -> !ep2.struct<"eth_header_t_sub_0" : isEvent = false, elementTypes = i32, i16, i32, i16>
-    %10 = ep2.struct_access %9[0] : <"eth_header_t_sub_0" : isEvent = false, elementTypes = i32, i16, i32, i16> -> i32
-    %11 = ep2.struct_access %9[1] : <"eth_header_t_sub_0" : isEvent = false, elementTypes = i32, i16, i32, i16> -> i16
-    %12 = ep2.struct_access %9[2] : <"eth_header_t_sub_0" : isEvent = false, elementTypes = i32, i16, i32, i16> -> i32
-    %13 = "ep2.struct_update"(%9, %12) <{index = 0 : i64}> : (!ep2.struct<"eth_header_t_sub_0" : isEvent = false, elementTypes = i32, i16, i32, i16>, i32) -> !ep2.struct<"eth_header_t_sub_0" : isEvent = false, elementTypes = i32, i16, i32, i16>
+    %6 = "ep2.load"(%3) : (!ep2.conref<!ep2.struct<"eth_header_t_sub_0" : isEvent = false, elementTypes = i32, i16, i32, i16>>) -> !ep2.struct<"eth_header_t_sub_0" : isEvent = false, elementTypes = i32, i16, i32, i16>
+    %7 = "ep2.load"(%5) : (!ep2.conref<!ep2.struct<"tcp_header_t_sub_0" : isEvent = false, elementTypes = i16, i16, i32, i32>>) -> !ep2.struct<"tcp_header_t_sub_0" : isEvent = false, elementTypes = i16, i16, i32, i32>
+    %8 = "ep2.load"(%4) : (!ep2.conref<!ep2.buf>) -> !ep2.buf
+    %9 = "ep2.load"(%2) : (!ep2.conref<!ep2.struct<"ip_header_t_sub_1" : isEvent = false, elementTypes = i32, i32>>) -> !ep2.struct<"ip_header_t_sub_1" : isEvent = false, elementTypes = i32, i32>
+    %10 = ep2.struct_access %6[0] : <"eth_header_t_sub_0" : isEvent = false, elementTypes = i32, i16, i32, i16> -> i32
+    %11 = ep2.struct_access %6[1] : <"eth_header_t_sub_0" : isEvent = false, elementTypes = i32, i16, i32, i16> -> i16
+    %12 = ep2.struct_access %6[2] : <"eth_header_t_sub_0" : isEvent = false, elementTypes = i32, i16, i32, i16> -> i32
+    %13 = "ep2.struct_update"(%6, %12) <{index = 0 : i64}> : (!ep2.struct<"eth_header_t_sub_0" : isEvent = false, elementTypes = i32, i16, i32, i16>, i32) -> !ep2.struct<"eth_header_t_sub_0" : isEvent = false, elementTypes = i32, i16, i32, i16>
     %14 = ep2.struct_access %13[3] : <"eth_header_t_sub_0" : isEvent = false, elementTypes = i32, i16, i32, i16> -> i16
     %15 = "ep2.struct_update"(%13, %14) <{index = 1 : i64}> : (!ep2.struct<"eth_header_t_sub_0" : isEvent = false, elementTypes = i32, i16, i32, i16>, i16) -> !ep2.struct<"eth_header_t_sub_0" : isEvent = false, elementTypes = i32, i16, i32, i16>
     %16 = "ep2.struct_update"(%15, %10) <{index = 2 : i64}> : (!ep2.struct<"eth_header_t_sub_0" : isEvent = false, elementTypes = i32, i16, i32, i16>, i32) -> !ep2.struct<"eth_header_t_sub_0" : isEvent = false, elementTypes = i32, i16, i32, i16>
     %17 = "ep2.struct_update"(%16, %11) <{index = 3 : i64}> : (!ep2.struct<"eth_header_t_sub_0" : isEvent = false, elementTypes = i32, i16, i32, i16>, i16) -> !ep2.struct<"eth_header_t_sub_0" : isEvent = false, elementTypes = i32, i16, i32, i16>
-    %18 = ep2.struct_access %6[0] : <"ip_header_t_sub_1" : isEvent = false, elementTypes = i32, i32> -> i32
-    %19 = ep2.struct_access %6[1] : <"ip_header_t_sub_1" : isEvent = false, elementTypes = i32, i32> -> i32
-    %20 = "ep2.struct_update"(%6, %19) <{index = 0 : i64}> : (!ep2.struct<"ip_header_t_sub_1" : isEvent = false, elementTypes = i32, i32>, i32) -> !ep2.struct<"ip_header_t_sub_1" : isEvent = false, elementTypes = i32, i32>
+    %18 = ep2.struct_access %9[0] : <"ip_header_t_sub_1" : isEvent = false, elementTypes = i32, i32> -> i32
+    %19 = ep2.struct_access %9[1] : <"ip_header_t_sub_1" : isEvent = false, elementTypes = i32, i32> -> i32
+    %20 = "ep2.struct_update"(%9, %19) <{index = 0 : i64}> : (!ep2.struct<"ip_header_t_sub_1" : isEvent = false, elementTypes = i32, i32>, i32) -> !ep2.struct<"ip_header_t_sub_1" : isEvent = false, elementTypes = i32, i32>
     %21 = "ep2.struct_update"(%20, %18) <{index = 1 : i64}> : (!ep2.struct<"ip_header_t_sub_1" : isEvent = false, elementTypes = i32, i32>, i32) -> !ep2.struct<"ip_header_t_sub_1" : isEvent = false, elementTypes = i32, i32>
-    %22 = ep2.struct_access %8[0] : <"tcp_header_t_sub_0" : isEvent = false, elementTypes = i16, i16, i32, i32> -> i16
-    %23 = ep2.struct_access %8[1] : <"tcp_header_t_sub_0" : isEvent = false, elementTypes = i16, i16, i32, i32> -> i16
-    %24 = "ep2.struct_update"(%8, %23) <{index = 0 : i64}> : (!ep2.struct<"tcp_header_t_sub_0" : isEvent = false, elementTypes = i16, i16, i32, i32>, i16) -> !ep2.struct<"tcp_header_t_sub_0" : isEvent = false, elementTypes = i16, i16, i32, i32>
+    %22 = ep2.struct_access %7[0] : <"tcp_header_t_sub_0" : isEvent = false, elementTypes = i16, i16, i32, i32> -> i16
+    %23 = ep2.struct_access %7[1] : <"tcp_header_t_sub_0" : isEvent = false, elementTypes = i16, i16, i32, i32> -> i16
+    %24 = "ep2.struct_update"(%7, %23) <{index = 0 : i64}> : (!ep2.struct<"tcp_header_t_sub_0" : isEvent = false, elementTypes = i16, i16, i32, i32>, i16) -> !ep2.struct<"tcp_header_t_sub_0" : isEvent = false, elementTypes = i16, i16, i32, i32>
     %25 = "ep2.struct_update"(%24, %22) <{index = 1 : i64}> : (!ep2.struct<"tcp_header_t_sub_0" : isEvent = false, elementTypes = i16, i16, i32, i32>, i16) -> !ep2.struct<"tcp_header_t_sub_0" : isEvent = false, elementTypes = i16, i16, i32, i32>
     %26 = ep2.struct_access %arg1[0] : <"ack_info_t" : isEvent = false, elementTypes = i32, i32, i32> -> i32
     %27 = "ep2.struct_update"(%25, %26) <{index = 2 : i64}> : (!ep2.struct<"tcp_header_t_sub_0" : isEvent = false, elementTypes = i16, i16, i32, i32>, i32) -> !ep2.struct<"tcp_header_t_sub_0" : isEvent = false, elementTypes = i16, i16, i32, i32>
     %28 = ep2.struct_access %arg1[1] : <"ack_info_t" : isEvent = false, elementTypes = i32, i32, i32> -> i32
     %29 = "ep2.struct_update"(%27, %28) <{index = 3 : i64}> : (!ep2.struct<"tcp_header_t_sub_0" : isEvent = false, elementTypes = i16, i16, i32, i32>, i32) -> !ep2.struct<"tcp_header_t_sub_0" : isEvent = false, elementTypes = i16, i16, i32, i32>
-    "ep2.emit_offset"(%7, %17) <{offset = 0 : i64}> : (!ep2.buf, !ep2.struct<"eth_header_t_sub_0" : isEvent = false, elementTypes = i32, i16, i32, i16>) -> ()
-    "ep2.emit_offset"(%7, %0) <{offset = 128 : i64}> : (!ep2.buf, i16) -> ()
-    "ep2.emit_offset"(%7, %21) <{offset = 208 : i64}> : (!ep2.buf, !ep2.struct<"ip_header_t_sub_1" : isEvent = false, elementTypes = i32, i32>) -> ()
-    "ep2.emit_offset"(%7, %29) <{offset = 304 : i64}> : (!ep2.buf, !ep2.struct<"tcp_header_t_sub_0" : isEvent = false, elementTypes = i16, i16, i32, i32>) -> ()
-    %30 = "ep2.init"(%1, %arg0, %7) : (!ep2.atom, !ep2.context, !ep2.buf) -> !ep2.struct<"NET_SEND" : isEvent = true, elementTypes = !ep2.atom, !ep2.context, !ep2.buf>
+    "ep2.emit_offset"(%8, %17) <{offset = 0 : i64}> : (!ep2.buf, !ep2.struct<"eth_header_t_sub_0" : isEvent = false, elementTypes = i32, i16, i32, i16>) -> ()
+    "ep2.emit_offset"(%8, %0) <{offset = 128 : i64}> : (!ep2.buf, i16) -> ()
+    "ep2.emit_offset"(%8, %21) <{offset = 208 : i64}> : (!ep2.buf, !ep2.struct<"ip_header_t_sub_1" : isEvent = false, elementTypes = i32, i32>) -> ()
+    "ep2.emit_offset"(%8, %29) <{offset = 304 : i64}> : (!ep2.buf, !ep2.struct<"tcp_header_t_sub_0" : isEvent = false, elementTypes = i16, i16, i32, i32>) -> ()
+    %30 = "ep2.init"(%1, %arg0, %8) : (!ep2.atom, !ep2.context, !ep2.buf) -> !ep2.struct<"NET_SEND" : isEvent = true, elementTypes = !ep2.atom, !ep2.context, !ep2.buf>
     ep2.return %30 : !ep2.struct<"NET_SEND" : isEvent = true, elementTypes = !ep2.atom, !ep2.context, !ep2.buf>
     "ep2.terminate"() : () -> ()
   }

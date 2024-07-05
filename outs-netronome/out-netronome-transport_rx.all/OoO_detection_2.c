@@ -3,12 +3,12 @@
 #include "extern/extern_dma.h"
 #include "extern/extern_net.h"
 
+static struct flow_state_t _loc_buf_8;
+__xrw static struct flow_state_t _loc_buf_8_xfer;
 static struct dma_write_cmd_t _loc_buf_9;
 __xrw static struct dma_write_cmd_t _loc_buf_9_xfer;
 static struct ack_info_t _loc_buf_10;
 __xrw static struct ack_info_t _loc_buf_10_xfer;
-static struct flow_state_t _loc_buf_8;
-__xrw static struct flow_state_t _loc_buf_8_xfer;
 static int rr_ctr = 0;
 __declspec(aligned(4)) struct event_param_OoO_DETECT work;
 __xrw struct event_param_OoO_DETECT work_ref;

@@ -7,14 +7,14 @@
 
 static struct pkt_info_t _loc_buf_0;
 __xrw static struct pkt_info_t _loc_buf_0_xfer;
-static struct repack_type_0 _loc_buf_2;
-__xrw static struct repack_type_0 _loc_buf_2_xfer;
 static struct eth_header_t_sub_0 _loc_buf_1;
 __xrw static struct eth_header_t_sub_0 _loc_buf_1_xfer;
 static struct ip_header_t_sub_1 _loc_buf_3;
 __xrw static struct ip_header_t_sub_1 _loc_buf_3_xfer;
 static struct tcp_header_t_sub_0 _loc_buf_4;
 __xrw static struct tcp_header_t_sub_0 _loc_buf_4_xfer;
+static struct repack_type_0 _loc_buf_2;
+__xrw static struct repack_type_0 _loc_buf_2_xfer;
 static int rr_ctr = 0;
 __declspec(aligned(4)) struct event_param_NET_RECV work;
 __xrw struct event_param_NET_RECV work_ref;
