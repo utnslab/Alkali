@@ -173,6 +173,7 @@ core.fw: $(global_LIST_FILES)
 	-u mei0.me4 -l $(S2_LIST) \
 	-u mei0.me5 -l $(S4_LIST) \
 	-u mei0.me6 -l $(S1_LIST) \
+	-u mei0.me0 -l $(DMA_LIST) \
 	-u ila0.me0 -l $(ME_BLM_LIST) \
 	-i i8 -e $(PICO_CODE)
 

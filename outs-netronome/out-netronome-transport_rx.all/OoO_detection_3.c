@@ -5,10 +5,10 @@
 
 static struct ack_info_t _loc_buf_13;
 __xrw static struct ack_info_t _loc_buf_13_xfer;
-static struct dma_write_cmd_t _loc_buf_12;
-__xrw static struct dma_write_cmd_t _loc_buf_12_xfer;
 static struct flow_state_t _loc_buf_11;
 __xrw static struct flow_state_t _loc_buf_11_xfer;
+static struct dma_write_cmd_t _loc_buf_12;
+__xrw static struct dma_write_cmd_t _loc_buf_12_xfer;
 static int rr_ctr = 0;
 __declspec(aligned(4)) struct event_param_OoO_DETECT work;
 __xrw struct event_param_OoO_DETECT work_ref;

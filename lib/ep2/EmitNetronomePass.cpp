@@ -302,6 +302,7 @@ void EmitNetronomePass::runOnOperation() {
       auto getIslandMEStr = [&](std::string instance) {
         int instance_id = std::stoi(instance.substr(2));
         int island_id = instance_id / 12;
+        usedIslands.insert(island_id);
         int microengine_id = instance_id % 12;
         return "mei" + std::to_string(island_id) + ".me" + std::to_string(microengine_id);
       };
