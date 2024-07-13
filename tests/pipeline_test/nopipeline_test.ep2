@@ -1,0 +1,143 @@
+struct dma_write_cmd_t {
+    bits<32> addr; 
+    bits<32> size; 
+}
+
+extern event NET_RECV {context ctx; buf packet;}
+extern event NET_SEND{context ctx; buf packet;}
+
+extern event DMA_WRITE_REQ{context ctx; buf data; dma_write_cmd_t desc;}
+
+extern handler NET_SEND:net_send (context ctx, buf packet) {
+}
+
+extern handler DMA_WRITE_REQ:dma_write (context ctx, buf data, dma_write_cmd_t desc) {
+}
+
+############## main program ###########
+
+struct eth_header_t {
+    bits<48> dst_mac;
+    bits<48> src_mac;
+    bits<16> ether_type;
+}
+
+# Totoal 24 bytes
+struct ip_header_t {
+    # Version (4),  IHL (4), DSCP (6), ECN(2)
+    bits<16> misc; 
+    bits<16> length;
+    bits<16> identification;
+    # Flags (3), Fragment Offset (13)
+    bits<16> fragment_offset;
+    
+    # TTL (8), Transport Protocol (8)
+    bits<16> TTL_transport;
+    bits<16> checksum;
+    bits<32> source_ip;
+    bits<32> dst_ip;
+    bits<32> options;
+}
+
+struct tcp_header_t {
+    bits<16> sport;                   # /** Source port */
+    bits<16> dport;                   # /** Destination port */
+
+    bits<32> seq;                     # /** Sequence number */
+
+    bits<32> ack;                     # /** Acknowledgement number */
+
+    bits<8>  off;                   # /** Data offset */
+    bits<8>  flags;                   # /** Flags */
+    bits<16> win;                     # /** Window */
+
+    bits<16> sum;                     # /** Checksum */
+    bits<16> urp;                     # /** Urgent pointer */
+}
+
+struct flow_state_t
+{
+    bits<32> tx_next_seq;             # /*> Sequence number of next byte to be sent */
+    bits<16> flags;                   # /*> RX/TX Flags */
+    bits<16> dupack_cnt;              # /*> Duplicate ACK count */
+    bits<32> rx_len;                  # /*> Length of receive buffer */
+    bits<32> rx_avail;                # /*> Available RX buffer space */
+    bits<32> rx_next_seq;             # /*> Next sequence number expected */
+    bits<32> rx_next_pos;             # /*> Offset of next byte in RX buffer */
+    bits<32> rx_ooo_len;              # /*> Length of Out-of-Order bytes */
+    bits<32> rx_ooo_start;            # /*> Start position of Out-of-Order bytes */
+
+    bits<16> sport;                   # /** Source port */
+    bits<16> dport;                   # /** Destination port */
+
+    bits<32> seq;                     # /** Sequence number */
+
+    bits<32> ack;                     # /** Acknowledgement number */
+
+    bits<8>  off;                   # /** Data offset */
+    bits<8>  flags;                   # /** Flags */
+    bits<16> win;                     # /** Window */
+
+    bits<16> sum;                     # /** Checksum */
+    bits<16> urp;                     # /** Urgent pointer */
+    bits<16> TTL_transport;
+    bits<16> checksum;
+    bits<32> source_ip;
+    bits<32> dst_ip;
+    bits<32> options;
+}
+
+struct pkt_info_t
+{
+    bits<64> flow_id;
+    bits<64> pk_len;                  # /*> Length of receive buffer */
+    bits<64> pk_seq;
+    bits<64> pka;
+}
+
+struct ack_info_t
+{
+    bits<32> seq;
+    bits<32> ack;
+    bits<32> win;
+}
+
+event OoO_DETECT {context ctx; pkt_info_t pkt_info;}
+event ACK_GEN {context ctx; ack_info_t ack;}
+
+[instances=(i1cu2, i1cu3, i1cu4, i1cu5)] handler NET_RECV:process_packet (context ctx, buf packet) {
+
+    pkt_info_t pkt_info3;
+    pkt_info_t pkt_info4;
+    pkt_info_t pkt_info5;
+    pkt_info_t pkt_info6;
+    pkt_info_t pkt_info7;
+    pkt_info_t pkt_info8;
+    pkt_info_t pkt_info9;
+    pkt_info_t pkt_info10;
+    pkt_info_t pkt_info11;
+
+
+    buf packet_out;
+
+    packet.extract(pkt_info3);
+    packet.extract(pkt_info4);
+    packet.extract(pkt_info5);
+    packet.extract(pkt_info6);
+    packet.extract(pkt_info7);
+    packet.extract(pkt_info8);
+    packet.extract(pkt_info9);
+    packet.extract(pkt_info10);
+    packet.extract(pkt_info11);
+
+
+    pkt_info11.pk_len =  pkt_info10.flow_id + pkt_info9.flow_id + pkt_info8.flow_id + pkt_info7.flow_id + pkt_info6.flow_id + pkt_info5.flow_id + pkt_info4.flow_id + pkt_info3.flow_id;
+    pkt_info11.pk_seq =  pkt_info10.pk_len + pkt_info9.pk_len + pkt_info8.pk_len + pkt_info7.pk_len + pkt_info6.pk_len + pkt_info5.pk_len + pkt_info4.pk_len + pkt_info3.pk_len;
+    pkt_info11.flow_id = pkt_info10.pk_seq + pkt_info9.pk_seq + pkt_info8.pk_seq + pkt_info7.pk_seq + pkt_info6.pk_seq + pkt_info5.pk_seq + pkt_info4.pk_seq + pkt_info3.pk_seq;
+    pkt_info11.pka =  pkt_info10.pka + pkt_info9.pka + pkt_info8.pka + pkt_info7.pka + pkt_info6.pka + pkt_info5.pka + pkt_info4.pka + pkt_info3.pka;
+   
+    packet.emit(pkt_info11);
+
+    generate NET_SEND:net_send{ctx, packet};
+    
+}
