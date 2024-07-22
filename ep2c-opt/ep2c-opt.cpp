@@ -80,6 +80,9 @@ int main(int argc, char **argv) {
   mlir::PassRegistration<mlir::ep2::ControllerGenerationPass>();
   mlir::PassRegistration<mlir::ep2::GlobalToPartitionPass>();
 
+  // frontend lift passes
+  mlir::PassRegistration<mlir::ep2::LiftLLVMPasses>();
+
   mlir::registerAllPasses();
 
   // Polygeist to MLIR extensions

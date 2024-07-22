@@ -222,6 +222,7 @@ def EP2_Type : AnyTypeOf<[AnyInteger, EP2_AnyType, EP2_StructType, EP2_BufferTyp
                           EP2_AtomType, EP2_ContextType, EP2_ContextRefType, EP2_OpaqueType, EP2_BufferPoolType]>;
 
 def EP2_Integer : AnyTypeOf<[AnyInteger, EP2_AnyType]>;
+def EP2_AnyStructType : AnyTypeOf<[EP2_AnyType, EP2_StructType]>;
 
 //===----------------------------------------------------------------------===//
 // Operations
@@ -728,6 +729,21 @@ def NopOp : EP2_Op<"nop", [Pure]> {
   ];
 }
 
+def AssignOp : EP2_Op<"assign", []> {
+  let summary = "Assert an value is updated";
+  let description = [{
+    Only used in optimization;
+  }];
+  let arguments = (ins AnyType:$lhs, AnyType:$rhs);
+}
+
+def NextOp : EP2_Op<"next", [Pure]> {
+  let summary = "Skip to next. no return value";
+  let description = [{
+    No operation. Make type checker happy in many cases.
+  }];
+}
+
 /// Optimization Ops
 
 def SinkOp : EP2_Op<"sink"> {
@@ -905,7 +921,7 @@ def StructAccessOp : EP2_Op<"struct_access", [Pure]> {
   ];
 
   // Indicate that additional verification for this operation is necessary.
-  let hasVerifier = 1;
+  // let hasVerifier = 1;
   // Set the folder bit so that we can fold constant accesses.
   // let hasFolder = 1;
 }

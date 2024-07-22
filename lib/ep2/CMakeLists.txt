@@ -49,6 +49,8 @@ add_mlir_dialect_library(MLIREP2
         Passes/ControllerGenerationPass.cpp
         Passes/GlobalToPartitionPass.cpp
 
+        Passes/Conversion/LiftLLVMPass.cpp
+
         DEPENDS
         MLIREP2OpsIncGen
         EP2OpsAttrDefsIncGen

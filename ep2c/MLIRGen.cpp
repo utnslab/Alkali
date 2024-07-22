@@ -452,7 +452,7 @@ private:
       if (auto refOp = dyn_cast<mlir::ep2::ContextRefOp>(lhs.getDefiningOp())) {
         builder.create<StoreOp>(location, lhs, rhs);
 
-        return builder.create<NopOp>(location, builder.getNoneType());
+        return builder.create<NopOp>(location, mlir::TypeRange{builder.getNoneType()});
       } else if (auto accessOp = dyn_cast<StructAccessOp>(lhs.getDefiningOp())) {
         auto structType = accessOp.getInput().getType();
         auto value = builder.create<StructUpdateOp>(location,

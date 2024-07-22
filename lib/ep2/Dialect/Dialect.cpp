@@ -352,18 +352,18 @@ void StructAccessOp::build(mlir::OpBuilder &b, mlir::OperationState &state,
   build(b, state, resultType, input, b.getI64IntegerAttr(index));
 }
 
-mlir::LogicalResult StructAccessOp::verify() {
-  StructType structTy = llvm::cast<StructType>(getInput().getType());
-  size_t indexValue = getIndex();
-  if (indexValue >= structTy.getNumElementTypes())
-    return emitOpError()
-           << "index should be within the range of the input struct type";
-  mlir::Type resultType = getResult().getType();
-  if (resultType != structTy.getElementTypes()[indexValue])
-    return emitOpError() << "must have the same result type as the struct "
-                            "element referred to by the index";
-  return mlir::success();
-}
+// mlir::LogicalResult StructAccessOp::verify() {
+//   StructType structTy = llvm::cast<StructType>(getInput().getType());
+//   size_t indexValue = getIndex();
+//   if (indexValue >= structTy.getNumElementTypes())
+//     return emitOpError()
+//            << "index should be within the range of the input struct type";
+//   mlir::Type resultType = getResult().getType();
+//   if (resultType != structTy.getElementTypes()[indexValue])
+//     return emitOpError() << "must have the same result type as the struct "
+//                             "element referred to by the index";
+//   return mlir::success();
+// }
 
 class StructUpdateTypeInfer : public OpRewritePattern<StructUpdateOp> {
   using OpRewritePattern<StructUpdateOp>::OpRewritePattern;

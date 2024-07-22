@@ -32,9 +32,11 @@
 #include "mlir/Dialect/SCF/IR/SCF.h"
 #include "mlir/Dialect/ControlFlow/IR/ControlFlow.h"
 #include "mlir/Dialect/Arith/IR/Arith.h"
+#include "mlir/Dialect/MemRef/IR/MemRef.h"
 #include "mlir/Interfaces/FunctionInterfaces.h"
 
 #include "ep2/dialect/Dialect.h"
+#include "polygeist/Dialect.h"
 
 namespace mlir {
 namespace ep2 {
@@ -598,6 +600,16 @@ struct GlobalToPartitionPass :
     }
     StringRef getArgument() const final { return "ep2-global-to-partition"; }
     StringRef getDescription() const final { return "Convert fully partitioned global variables to local variable"; }
+};
+
+// FrontEnd Conversion Passes
+struct LiftLLVMPasses : public PassWrapper<LiftLLVMPasses, OperationPass<ModuleOp>> {
+  void runOnOperation() final;
+  void getDependentDialects(DialectRegistry &registry) const override {
+    registry.insert<LLVM::LLVMDialect, EP2Dialect, polygeist::PolygeistDialect, memref::MemRefDialect>();
+  }
+  StringRef getArgument() const final { return "ep2-lift-llvm"; }
+  StringRef getDescription() const final { return "Lift LLVM dialect to EP2 dialect"; }
 };
 
 } // namespace ep2

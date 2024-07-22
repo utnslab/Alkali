@@ -611,6 +611,7 @@ struct HandlerPattern : public OpConversionPattern<ep2::FuncOp> {
                                     {remapper.getConvertedType()}));
 
     auto entryBlock = newFuncOp.addEntryBlock();
+    newFuncOp.getRegion().getBlocks().front().erase();
     rewriter.setInsertionPointToStart(entryBlock);
 
     // create instructions convert from context to event
