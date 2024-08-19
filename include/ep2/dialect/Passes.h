@@ -618,14 +618,17 @@ struct results_t {
 };
 bool pipelineHandler(ep2::FuncOp funcOp, policy_t* policy, results_t* results);
 
-struct PipelineHandlerPass :
-        public PassWrapper<PipelineHandlerPass, OperationPass<ModuleOp>> {
-    void runOnOperation() final;
-    void getDependentDialects(DialectRegistry &registry) const override {
-        registry.insert<EP2Dialect, scf::SCFDialect, cf::ControlFlowDialect>();
-    }
-    StringRef getArgument() const final { return "ep2-pipeline-handler"; }
-    StringRef getDescription() const final { return "Partition a handler into to a pipeline of handlers"; }
+struct PipelineHandlerPass
+    : public PassWrapper<PipelineHandlerPass, OperationPass<ModuleOp>> {
+  void runOnOperation() final;
+  void getDependentDialects(DialectRegistry &registry) const override {
+    registry.insert<EP2Dialect, scf::SCFDialect, cf::ControlFlowDialect>();
+  }
+  StringRef getArgument() const final { return "ep2-pipeline-handler"; }
+  StringRef getDescription() const final {
+    return "Partition a handler into to a pipeline of handlers";
+  }
+};
 
 // FrontEnd Conversion Passes
 struct LiftLLVMPasses : public PassWrapper<LiftLLVMPasses, OperationPass<ModuleOp>> {

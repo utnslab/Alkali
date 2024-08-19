@@ -649,6 +649,7 @@ bool pipelineHandler(ep2::FuncOp funcOp, policy_t* policy, results_t* results) {
 }
 
 struct netronomePolicy_t : public policy_t {
+  std::optional<std::string> dumpPath = std::nullopt;
   int typeTransmitCost(mlir::Type ty) override {
     if (isa<ep2::StructType>(ty)) {
       int sz = 0;
@@ -691,7 +692,7 @@ struct netronomePolicy_t : public policy_t {
   }
 
   bool dumpCuts() override {
-    return false;
+    return true;
   }
 };
 
