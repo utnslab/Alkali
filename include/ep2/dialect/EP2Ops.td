@@ -243,6 +243,7 @@ def BitCastOp : EP2_Op<"bitcast", [Pure, DeclareOpInterfaceMethods<CastOpInterfa
   let results = (outs EP2_Type:$output);
 
   let hasFolder = 1;
+  let hasCanonicalizer = 1;
 }
 
 //===----------------------------------------------------------------------===//

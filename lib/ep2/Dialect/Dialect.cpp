@@ -145,19 +145,58 @@ static void printBinaryOp(mlir::OpAsmPrinter &printer, mlir::Operation *op) {
 bool BitCastOp::areCastCompatible(TypeRange inputs, TypeRange outputs) {
   if (inputs.size() != 1 || outputs.size() != 1)
     return false;
+  if (isa<ep2::AnyType>(inputs[0]) || isa<ep2::AnyType>(outputs[0]))
+    return true;
   if (isa<IntegerType>(inputs[0]) && isa<IntegerType>(outputs[0]))
     return true;
-  if (isa<ep2::AnyType>(inputs[0]))
+  if (inputs[0] == outputs[0])
     return true;
   return false;
 }
 
 OpFoldResult BitCastOp::fold(BitCastOp::FoldAdaptor adaptor) {
-  auto width = getType().dyn_cast<IntegerType>().getWidth();
-  return constFoldCastOp<IntegerAttr, IntegerAttr, APInt, APInt, void>(
-      adaptor.getOperands(), getType(),
-      [&](const APInt &value, bool status) { return APInt(width, value.getLimitedValue()); });
+  // cast on identical
+  if (getInput().getType() == getType())
+    return getInput();
+  if (getType().isa<ep2::AnyType>())
+    return getInput();
+  if (isa<IntegerType>(getInput().getType()) && isa<IntegerType>(getType())) {
+    auto width = getType().dyn_cast<IntegerType>().getWidth();
+    return constFoldCastOp<IntegerAttr, IntegerAttr, APInt, APInt, void>(
+        adaptor.getOperands(), getType(), [&](const APInt &value, bool status) {
+          return APInt(width, value.getLimitedValue());
+        });
+  }
 }
+
+// BitCast based type inference
+class BitCastTypeInfer : public OpRewritePattern<BitCastOp> {
+  using OpRewritePattern<BitCastOp>::OpRewritePattern;
+  LogicalResult matchAndRewrite(BitCastOp op,
+                                PatternRewriter &rewriter) const override {
+    // fold input
+    if (op.getType().isa<ep2::AnyType>()) {
+      rewriter.replaceOp(op, ValueRange{op.getInput()});
+      return success();
+    }
+
+    // fold output
+    auto inType = op.getInput().getType();
+    if (!inType.isa<ep2::AnyType>())
+      return rewriter.notifyMatchFailure(op, "input type must be AnyType");
+    
+    op.getInput().setType(op.getType());
+    op.replaceAllUsesWith(op.getInput());
+    rewriter.eraseOp(op);
+    return success();
+  }
+};
+
+void BitCastOp::getCanonicalizationPatterns(RewritePatternSet &results,
+                                         MLIRContext *context) {
+  results.add<BitCastTypeInfer>(context);
+}
+
 
 //===----------------------------------------------------------------------===//
 // ConstantOp
@@ -336,6 +375,11 @@ mlir::LogicalResult ReturnOp::verify() {
 
   return mlir::success();
 }
+
+//===----------------------------------------------------------------------===//
+// Emit Op and Extract Op Type Inference - through cast op infer
+//===----------------------------------------------------------------------===//
+
 
 //===----------------------------------------------------------------------===//
 // StructAccessOp && StructUpdateOp

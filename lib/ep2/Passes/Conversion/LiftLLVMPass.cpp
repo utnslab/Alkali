@@ -6,6 +6,7 @@
 #include "mlir/IR/Visitors.h"
 #include "llvm/ADT/StringMap.h"
 #include "llvm/ADT/EquivalenceClasses.h"
+#include "llvm/Support/Debug.h"
 
 #include "mlir/Analysis/DataFlow/DenseAnalysis.h"
 #include "mlir/Analysis/DataFlow/DeadCodeAnalysis.h"
@@ -21,7 +22,12 @@
 #include "mlir/Transforms/GreedyPatternRewriteDriver.h"
 
 #include "mlir/Transforms/Passes.h"
+#include "ep2/passes/LiftUtils.h"
 
+#include <algorithm>
+#include <functional>
+
+#define DEBUG_TYPE "ep2-lift-llvm"
 
 namespace mlir {
 namespace ep2 {
@@ -123,8 +129,9 @@ class StackVariableAnalysis : public DenseForwardDataFlowAnalysis<StackSlotValue
 
     auto opChanged =
         TypeSwitch<Operation *, ChangeResult>(op)
-            .Case([&](memref::AllocaOp op) {
-              after->init(op.getResult());
+            // Table and global vars
+            .Case<memref::AllocaOp, memref::GetGlobalOp>([&](Operation *op) {
+              after->init(op->getResult(0));
               return ChangeResult::Change;
             })
             .Case<polygeist::Memref2PointerOp, polygeist::Pointer2MemrefOp,
@@ -211,6 +218,7 @@ struct CallBufferPattern : public OpConversionPattern<func::CallOp> {
   }
 };
 
+// helper functions
 Value castEP2Value(OpBuilder &builder, Value source, Type target) {
   auto castOp = builder.create<mlir::UnrealizedConversionCastOp>(
       source.getLoc(), TypeRange{target}, ValueRange{source});
@@ -225,6 +233,16 @@ Value castEP2Value(OpBuilder &builder, Value source, TypeConverter &converter) {
   return castEP2Value(builder, source, newType);
 }
 
+// used when we want to get type of the value before the cast
+Value castEP2ValueIgnoreCast(OpBuilder &builder, Value source, TypeConverter &converter) {
+  auto op = source.getDefiningOp();
+  auto isCast = llvm::isa_and_nonnull<polygeist::Memref2PointerOp, polygeist::Pointer2MemrefOp>(op);
+  if (isCast)
+    return castEP2ValueIgnoreCast(builder, op->getOperand(0), converter);
+  else
+    return castEP2Value(builder, source, converter);
+};
+
 std::optional<int64_t> affineToIndex(AffineMap map) {
   if (!(map.isConstant() && map.getConstantResults().size() == 2))
     return std::nullopt;
@@ -232,7 +250,8 @@ std::optional<int64_t> affineToIndex(AffineMap map) {
 }
 
 struct CallRewrite : public OpRewritePattern<func::CallOp> {
-  using OpRewritePattern::OpRewritePattern;
+  TypeConverter &converter;
+  CallRewrite(MLIRContext *context, TypeConverter &converter) : OpRewritePattern(context), converter(converter) {};
 
   LogicalResult matchAndRewrite(func::CallOp op,
                                 PatternRewriter &rewriter) const final {
@@ -257,12 +276,40 @@ struct CallRewrite : public OpRewritePattern<func::CallOp> {
 
       rewriter.replaceOpWithNewOp<ep2::EmitOp>(op, buf, header);
       return success();
+    } else if (funcName == "table_lookup") {
+      auto table = castEP2ValueIgnoreCast(rewriter, args[0], converter);
+      auto key = castEP2ValueIgnoreCast(rewriter, args[1], converter);
+      auto value = castEP2ValueIgnoreCast(rewriter, args[2], converter);
+
+      auto lookupOp = rewriter.create<ep2::LookupOp>(loc, value.getType(), table, key);
+      rewriter.replaceOpWithNewOp<ep2::AssignOp>(op, value, lookupOp);
+      return success();
+    } else if (funcName == "table_update") {
+      auto table = castEP2ValueIgnoreCast(rewriter, args[0], converter);
+      auto key = castEP2ValueIgnoreCast(rewriter, args[1], converter);
+      auto value = castEP2ValueIgnoreCast(rewriter, args[2], converter);
+
+      rewriter.replaceOpWithNewOp<ep2::UpdateOp>(op, table, key, value);
+      return success();
     } else {
       // TODO: normal event calls. delete them for now.
       rewriter.eraseOp(op);
       return success();
     }
 
+  }
+};
+
+struct UndefEliminate : public OpRewritePattern<LLVM::UndefOp> {
+  using OpRewritePattern::OpRewritePattern;
+
+  LogicalResult matchAndRewrite(LLVM::UndefOp op,
+                                PatternRewriter &rewriter) const final {
+    for (auto &use : op->getUses()) {
+      rewriter.eraseOp(use.getOwner());
+    }
+    rewriter.eraseOp(op);
+    return success();
   }
 };
 
@@ -273,18 +320,37 @@ struct StoreRewrite : public OpRewritePattern<affine::AffineStoreOp> {
 
   LogicalResult matchAndRewrite(affine::AffineStoreOp op,
                                 PatternRewriter &rewriter) const final {
-    auto map = op.getMap();
-    if (!(map.isConstant() && map.getConstantResults().size() == 2))
-      return rewriter.notifyMatchFailure(op, "Not a 2d affine index for struct");
+    auto ep2Type = converter.convertType(op.getMemRefType());
+    if (ep2Type == nullptr)
+      return rewriter.notifyMatchFailure(op, "Not a buffer type");
 
-    auto memory = castEP2Value(rewriter, op.getMemRef(), converter);
-    auto res = map.getConstantResults();
+    return TypeSwitch<Type, mlir::LogicalResult>(ep2Type)
+        .Case([&](ep2::StructType type) {
+          auto memory = castEP2Value(rewriter, op.getMemRef(), type);
+          // TODO: change this to a support function
+          auto res = op.getMap().getConstantResults();
 
-    auto updateOp = rewriter.create<ep2::StructUpdateOp>(op.getLoc(), memory.getType(), memory, res[1], op.getValueToStore());
-    // avoid crush, use Operation * methods. see https://github.com/llvm/llvm-project/issues/39319
-    rewriter.create<ep2::AssignOp>(op.getLoc(), memory, updateOp->getOpResults().front());
-    rewriter.eraseOp(op);
-    return success();
+          auto updateOp = rewriter.create<ep2::StructUpdateOp>(
+              op.getLoc(), memory.getType(), memory, res[1],
+              op.getValueToStore());
+          // avoid crush, use Operation * methods. see
+          // https://github.com/llvm/llvm-project/issues/39319
+          rewriter.create<ep2::AssignOp>(op.getLoc(), memory,
+                                         updateOp->getOpResults().front());
+          rewriter.eraseOp(op);
+          return success();
+        })
+        .Case([&](IntegerType type) {
+          auto memory = castEP2Value(rewriter, op.getMemRef(), type);
+          // Assign for scalar
+          rewriter.create<ep2::AssignOp>(
+              op.getLoc(), memory, op.getValueToStore());
+          rewriter.eraseOp(op);
+          return success();
+        })
+        .Default([&](Type type) {
+          return rewriter.notifyMatchFailure(op, "Unsupported store target");
+        });
   }
 };
 
@@ -317,26 +383,21 @@ struct FoldPolygeistCast : public OpRewritePattern<UnrealizedConversionCastOp> {
 void populateTypeConversion(TypeConverter &typeConverter, OpBuilder &builder) {
   // for struct
   auto bufType = LLVM::LLVMStructType::getLiteral(builder.getContext(), {
-    MemRefType::get(ArrayRef<int64_t>{0,1}, builder.getI8Type()),
+    MemRefType::get(ArrayRef<int64_t>{mlir::ShapedType::kDynamic}, builder.getI8Type()),
     builder.getI16Type()
   });
 
-  // conversion of type
-  typeConverter.addConversion([&](Type type)  -> std::optional<Type> {
-    if (type == bufType)
+  // ep2 specialized types. conversion of type
+  typeConverter.addConversion([&,bufType](Type type)  -> std::optional<Type> {
+    if (type == bufType) {
       return builder.getType<ep2::BufferType>();
+    }
     return type;
   });
-  // memref to code
-  typeConverter.addConversion([&](MemRefType memref) -> std::optional<Type> {
-    auto dims = memref.getShape();
-    // handle 1d array
-    if (dims.size() != 2 || dims[0] != 1)
-      return std::nullopt;
 
-    llvm::SmallVector<Type> flatArr{dims[1], memref.getElementType()};
-    auto structType = builder.getType<ep2::StructType>(false, flatArr, "_anno_struct_");
-    return structType;
+  // general memref handling
+  typeConverter.addConversion([&](MemRefType memref) -> std::optional<Type> {
+    return stripMemRefType(builder, memref);
   });
 
   // wildcard conversion to make system work. remove this later!
@@ -380,8 +441,8 @@ LogicalResult runCallEliminate(Operation * op) {
   // apply rules
   mlir::RewritePatternSet patterns(builder.getContext());
   patterns
-      .add<CallRewrite, FoldPolygeistCast>(builder.getContext());
-  patterns.add<StoreRewrite>(builder.getContext(), converter);
+      .add<FoldPolygeistCast, UndefEliminate>(builder.getContext());
+  patterns.add<StoreRewrite, CallRewrite>(builder.getContext(), converter);
 
   FrozenRewritePatternSet patternSet(std::move(patterns));
   return applyPatternsAndFoldGreedily(op, patternSet);
@@ -400,7 +461,7 @@ struct AssignEliminate : OpConversionPattern<ep2::AssignOp> {
   }
 };
 
-struct MemRefAllocConversion : OpConversionPattern<memref::AllocaOp> {
+struct MemRefAllocaConversion : OpConversionPattern<memref::AllocaOp> {
   using OpConversionPattern::OpConversionPattern;
 
   LogicalResult matchAndRewrite(memref::AllocaOp op, OpAdaptor adaptor,
@@ -418,12 +479,29 @@ struct AffineLoadConversion : OpConversionPattern<affine::AffineLoadOp> {
                   ConversionPatternRewriter &rewriter) const final {
     // TODO: check this is an 1D index
     // auto index = adaptor.getIndices().back();
-    auto index = affineToIndex(op.getMap());
-    if (!index)
-      return rewriter.notifyMatchFailure(op, "Not a 2d constant affine");
+    auto type = getTypeConverter()->convertType(op.getMemRefType());
+    if (type == nullptr)
+      return rewriter.notifyMatchFailure(op, "Memref Conversion Failure");
 
-    rewriter.replaceOpWithNewOp<ep2::StructAccessOp>(op, adaptor.getMemref(), *index);
-    return success();
+    llvm::errs() << "AffineLoadConversion" << type << "\n";
+
+    return TypeSwitch<Type, LogicalResult>(type)
+        .Case([&](ep2::StructType type) {
+          auto index = affineToIndex(op.getMap());
+          if (!index)
+            return rewriter.notifyMatchFailure(op, "Not a 2d constant affine");
+
+          rewriter.replaceOpWithNewOp<ep2::StructAccessOp>(
+              op, adaptor.getMemref(), *index);
+          return success();
+        })
+        .Case([&](IntegerType type) {
+          rewriter.replaceOp(op, {adaptor.getMemref()});
+          return success();
+        })
+        .Default([&](Type type) {
+          return rewriter.notifyMatchFailure(op, "Unsupported load target");
+        });
   }
 };
 
@@ -434,28 +512,122 @@ struct CastConversion : OpConversionPattern<UnrealizedConversionCastOp> {
                   ConversionPatternRewriter &rewriter) const final {
 
     SmallVector<Type> newTypes;
-    auto retType = getTypeConverter()->convertTypes(op.getResultTypes(), newTypes);
-    rewriter.replaceOpWithNewOp<UnrealizedConversionCastOp>(op, newTypes, adaptor.getInputs());
+    if (failed(getTypeConverter()->convertTypes(op.getResultTypes(), newTypes)))
+      return failure();
+    // we convert this to our cast op
+    if (newTypes.size() == 1) {
+      rewriter.replaceOpWithNewOp<ep2::BitCastOp>(op, newTypes[0], adaptor.getInputs()[0]);
+      return success();
+    }
+
+    // we do not support n to n cast
+    return failure();
+  }
+};
+
+struct ReturnConversion : OpConversionPattern<func::ReturnOp> {
+  using OpConversionPattern::OpConversionPattern;
+
+  LogicalResult matchAndRewrite(func::ReturnOp op, OpAdaptor adaptor,
+                  ConversionPatternRewriter &rewriter) const final {
+    rewriter.replaceOpWithNewOp<ep2::TerminateOp>(op);
     return success();
   }
 };
 
-LogicalResult runAssignEliminate(Operation * op) {
+struct HandlerConversion : OpConversionPattern<func::FuncOp> {
+  using OpConversionPattern::OpConversionPattern;
+
+  LogicalResult matchAndRewrite(func::FuncOp funcOp, OpAdaptor adaptor,
+                  ConversionPatternRewriter &rewriter) const final {
+    auto loc = funcOp->getLoc();
+
+    if (funcOp.isExternal() || funcOp.getName() == "main") {
+      // TODO: check if its API func
+      rewriter.eraseOp(funcOp);
+      return success();
+    }
+
+    // empty
+    TypeConverter::SignatureConversion signatureConversion(
+        funcOp.getNumArguments());
+
+    llvm::SmallVector<Type> newTypes;
+    if (getTypeConverter()->convertTypes(funcOp.getArgumentTypes(), newTypes).failed())
+      return rewriter.notifyMatchFailure(funcOp, "Failed in Converting Function Arguments Failure");
+
+    auto newFuncOp = rewriter.create<ep2::FuncOp>(
+        loc, funcOp.getName(),
+        rewriter.getFunctionType(newTypes, {}), 
+        NamedAttrList{ rewriter.getNamedAttr("type", rewriter.getStringAttr("handler")) }
+    );
+    // remove the auto-created block
+    newFuncOp.getBody().begin()->erase();
+
+    // change the function body. As we do not require original block, ok to direct rewrite
+    rewriter.inlineRegionBefore(funcOp.getBody(), newFuncOp.getBody(), newFuncOp.end());
+    if (failed(rewriter.convertRegionTypes(&newFuncOp.getBody(), *getTypeConverter())))
+      return failure();
+
+    // remove original func
+    rewriter.replaceOp(funcOp, newFuncOp);
+
+    return success();
+  }
+};
+
+struct MemRefGlobalConversion : OpConversionPattern<memref::GlobalOp> {
+  using OpConversionPattern::OpConversionPattern;
+
+  LogicalResult matchAndRewrite(memref::GlobalOp op, OpAdaptor adaptor,
+                  ConversionPatternRewriter &rewriter) const final {
+    auto retType = getTypeConverter()->convertType(op.getType());
+    rewriter.create<ep2::GlobalOp>(op.getLoc(), retType, op.getSymName());
+    rewriter.eraseOp(op);
+    return success();
+  }
+};
+
+struct MemRefGetGlobalConversion : OpConversionPattern<memref::GetGlobalOp> {
+  using OpConversionPattern::OpConversionPattern;
+
+  LogicalResult matchAndRewrite(memref::GetGlobalOp op, OpAdaptor adaptor,
+                  ConversionPatternRewriter &rewriter) const final {
+    auto retType = getTypeConverter()->convertType(op.getType());
+    auto importOp = rewriter.create<ep2::GlobalImportOp>(op.getLoc(), retType, op.getName());
+    // remove the extra "deref" comes with op
+    for (auto &use : op->getUses()) {
+      rewriter.replaceOp(use.getOwner(), importOp.getResult());
+    }
+    rewriter.eraseOp(op);
+    return success();
+  }
+};
+
+LogicalResult runFinalLift(Operation * op) {
   auto builder = OpBuilder(op);
 
   TypeConverter converter;
   populateTypeConversion(converter, builder);
 
   ConversionTarget target(*op->getContext());
-  target.addIllegalOp<ep2::AssignOp>();
+  target.addIllegalOp<ep2::AssignOp, func::FuncOp, func::ReturnOp, memref::GlobalOp, memref::GetGlobalOp>();
+  target.addDynamicallyLegalOp<UnrealizedConversionCastOp>([&](UnrealizedConversionCastOp op) {
+    for (auto val : op.getInputs())
+      if (!isa<ep2::EP2Dialect>(val.getType().getDialect()))
+        return true;
+    return false;
+  });
   target.markUnknownOpDynamicallyLegal([&](Operation *op) {
     return converter.isLegal(op);
   });
 
   // apply rules
   mlir::RewritePatternSet patterns(builder.getContext());
+  patterns.add<MemRefGlobalConversion, MemRefGetGlobalConversion>(converter, builder.getContext());
   patterns.add<AssignEliminate>(converter, builder.getContext());
-  patterns.add<MemRefAllocConversion,AffineLoadConversion,CastConversion>(converter, builder.getContext());
+  patterns.add<MemRefAllocaConversion,AffineLoadConversion,CastConversion>(converter, builder.getContext());
+  patterns.add<HandlerConversion, ReturnConversion>(converter, builder.getContext());
 
   FrozenRewritePatternSet patternSet(std::move(patterns));
 
@@ -473,6 +645,7 @@ void LiftLLVMPasses::runOnOperation() {
 
   // transform function call first
   if (failed(runCallEliminate(getOperation()))) {
+    getOperation()->dump();
     llvm::errs() << "Eliminate Failure\n";
     return signalPassFailure();
   }
@@ -484,7 +657,7 @@ void LiftLLVMPasses::runOnOperation() {
   if (failed(runPipeline(pm, getOperation())))
     return signalPassFailure();
 
-  getOperation()->dump();
+  LLVM_DEBUG(llvm::dbgs() << "<Lift[1]> Elimination Finish\n");
 
   DataFlowSolver solver;
   // must have this two lines, to help with liveness
@@ -518,11 +691,22 @@ void LiftLLVMPasses::runOnOperation() {
     }
   });
 
+  LLVM_DEBUG(llvm::dbgs() << "<Lift[2]> Finish Analysis and Replace\n");
+  LLVM_DEBUG(getOperation()->print(llvm::dbgs()));
+
   // eliminate the assign op.
-  if (runAssignEliminate(getOperation()).failed())
+  if (runFinalLift(getOperation()).failed())
+    signalPassFailure();
+
+  LLVM_DEBUG(llvm::dbgs() << "<Lift[2]> Finish Assign Elimination and Conversion\n");
+
+  // CSE until no change
+  if (runPipeline(pm, getOperation()).failed())
     signalPassFailure();
 }
 
 
 } // namespace ep2
 } // namespace mlir
+
+#undef DEBUG_TYPE
