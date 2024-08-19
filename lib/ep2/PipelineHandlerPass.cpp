@@ -33,6 +33,8 @@
 #include <boost/graph/reverse_graph.hpp>
 #include <boost/graph/filtered_graph.hpp>
 
+#include "ep2/passes/LiftUtils.h"
+
 #define BOOST_NO_EXCEPTIONS
 #include <boost/throw_exception.hpp>
 void boost::throw_exception(std::exception const& e){
@@ -704,6 +706,7 @@ void PipelineHandlerPass::runOnOperation() {
     
     if (pipelineHandler(funcOp, &policy, &results)) {
       llvm::errs() << "Min-cut suceeded for " << funcOp.getSymName() << '\n';
+      functionSplitter(funcOp, results.sinkOps, results.sinkValues);
     } else {
       llvm::errs() << "Min-cut failed for " << funcOp.getSymName() << '\n';
     }

@@ -182,42 +182,6 @@ struct Pointer2MemrefEliminate : public OpConversionPattern<polygeist::Pointer2M
   }
 };
 
-struct CallBufferPattern : public OpConversionPattern<func::CallOp> {
-  using OpConversionPattern::OpConversionPattern;
-
-  LogicalResult matchAndRewrite(func::CallOp op, OpAdaptor adaptor,
-                  ConversionPatternRewriter &rewriter) const override {
-    auto funcName = op.getCallee();
-    auto func = op->getParentOfType<ModuleOp>()
-      .lookupSymbol<func::FuncOp>(funcName);
-    if (func && !func.isDeclaration())
-      return rewriter.notifyMatchFailure(op, "Not an external function on decl");
-
-    auto loc = op.getLoc();
-    if (funcName == "bufextract") {
-      auto args = adaptor.getOperands();
-      auto buf = args[0];
-      auto header = args[1];
-
-      rewriter.create<ep2::ExtractOp>(loc, header.getType(), buf);
-      rewriter.replaceOpWithNewOp<ep2::NextOp>(op);
-      return success();
-    } else if (funcName == "bufemit") {
-      auto args = adaptor.getOperands();
-      auto buf = args[0];
-      auto header = args[1];
-
-      rewriter.replaceOpWithNewOp<ep2::EmitOp>(op, buf, header);
-      return success();
-    } else {
-      // TODO: normal event calls. delete them for now.
-      rewriter.eraseOp(op);
-      return success();
-    }
-
-  }
-};
-
 // helper functions
 Value castEP2Value(OpBuilder &builder, Value source, Type target) {
   auto castOp = builder.create<mlir::UnrealizedConversionCastOp>(
@@ -292,8 +256,14 @@ struct CallRewrite : public OpRewritePattern<func::CallOp> {
       rewriter.replaceOpWithNewOp<ep2::UpdateOp>(op, table, key, value);
       return success();
     } else {
-      // TODO: normal event calls. delete them for now.
-      rewriter.eraseOp(op);
+      // TODO(zhiyuang): normal event calls. delete them for now.
+      auto callee = op.getCallee();
+      auto values = llvm::map_to_vector(args, [&](Value arg) {
+        return castEP2ValueIgnoreCast(rewriter, arg, converter);
+      });
+      auto [_, callOp] = createGenerate(rewriter, loc, callee, values);
+
+      rewriter.replaceOp(op, callOp);
       return success();
     }
 
@@ -482,8 +452,6 @@ struct AffineLoadConversion : OpConversionPattern<affine::AffineLoadOp> {
     auto type = getTypeConverter()->convertType(op.getMemRefType());
     if (type == nullptr)
       return rewriter.notifyMatchFailure(op, "Memref Conversion Failure");
-
-    llvm::errs() << "AffineLoadConversion" << type << "\n";
 
     return TypeSwitch<Type, LogicalResult>(type)
         .Case([&](ep2::StructType type) {
