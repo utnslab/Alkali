@@ -606,7 +606,7 @@ struct policy_t {
   virtual int typeTransmitCost(mlir::Type t) = 0;
   virtual int operationWeight(mlir::Operation* op) = 0;
   virtual int valueWeight(mlir::Value v) = 0;
-  virtual int numStages() = 0;
+  virtual float tgtSourceWeight() = 0;
   virtual float partitionTolerance() = 0;
   virtual bool dumpCuts() = 0;
 };
