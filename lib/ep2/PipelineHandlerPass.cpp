@@ -23,6 +23,7 @@
 #include <random>
 
 #include "llvm/ADT/DenseSet.h"
+#include "llvm/Support/raw_ostream.h"
 #include "llvm/Support/Format.h"
 
 #include <boost/config.hpp>
@@ -52,7 +53,7 @@ typedef size_t weight_t;
 static constexpr long long INF_WT = 1e18;
 static constexpr long long INF_MIN = 1e17;
 static constexpr long long SMALL_WT = 1;
-static constexpr size_t N_RAND_ITERS = 100;
+static constexpr size_t N_RAND_ITERS = 1;
 static constexpr int MIN_CUT_SUCCESS = 0;
 static constexpr int MIN_CUT_FAILURE_INF_FLOW = 1;
 static constexpr int MIN_CUT_FAILURE_SRC_INF_CAP_PATH = 2;
@@ -186,13 +187,19 @@ static std::string opToId(mlir::Operation* op) {
     return "sup";
   } else if (isa<ep2::StructConstantOp>(op)) {
     return "sk";
+  } else if (isa<arith::ConstantOp>(op)) {
+    return "sk";
+  } else if (isa<arith::AddIOp>(op)) {
+    return "addi";
+  } else if (isa<arith::CmpIOp>(op)) {
+    return "cmpi";
   } else {
     return "";
   }
 }
 
 // accept myAdjList by value, so we can freely manipulate it here.
-static int runBalancedMinCut(std::unordered_map<vertex_t, std::unordered_map<vertex_t, long long>> myAdjList, vertex_t source, vertex_t sink, float tol, float tgtSourceWeight, std::unordered_set<vertex_t>& sourceSet, std::vector<std::pair<std::pair<vertex_t, vertex_t>, long long>>& falseEdges, std::unordered_map<vertex_t, int>& v_weights, std::vector<std::pair<vertex_t, vertex_t>>& pipelineConstraints) {
+static int runBalancedMinCut(std::unordered_map<vertex_t, std::unordered_map<vertex_t, long long>> myAdjList, vertex_t source, vertex_t sink, float tol, float tgtSourceWeight, std::unordered_set<vertex_t>& sourceSet, std::vector<std::pair<std::pair<vertex_t, vertex_t>, long long>>& falseEdges, std::unordered_map<vertex_t, int>& v_weights, std::vector<std::pair<vertex_t, vertex_t>>& pipelineConstraints, std::unordered_map<vertex_t, std::string>& vtxNames) {
   typedef boost::adjacency_list_traits<boost::vecS, boost::vecS, boost::bidirectionalS> Traits;
   typedef boost::adjacency_list<boost::vecS, boost::vecS, boost::bidirectionalS,
     boost::property<boost::vertex_index_t, size_t>,
@@ -259,6 +266,7 @@ static int runBalancedMinCut(std::unordered_map<vertex_t, std::unordered_map<ver
       for (const auto& pr2 : pr.second) {
         vertex_t dst = pr2.first;
         long long wt = pr2.second;
+        assert(wt > 0);
         addEdge(src, dst, wt, true);
       }
     }
@@ -357,7 +365,12 @@ static int runBalancedMinCut(std::unordered_map<vertex_t, std::unordered_map<ver
     {
       for (const auto& e : pipelineConstraints) {
         if (wmap[vtxToVecIdx[e.first]] == 0 && wmap[vtxToVecIdx[e.second]] > 0) {
+          llvm::errs() << "NOT PIPELINE_ABLE\n";
           llvm::errs() << verts[vtxToVecIdx[e.first]] << " " << verts[vtxToVecIdx[e.second]] << '\n';
+          auto orig_vertices = boost::vertices(g_base);
+          for (auto vit = orig_vertices.first; vit != orig_vertices.second; ++vit) {
+            llvm::errs() << "NAME " << (*vit) << " " << vtxNames[boostToMyVtx[*vit]] << '\n';
+          }
           dumpGraphViz();
           dumpGraphBaseViz();
           return MIN_CUT_FAILURE_NOT_PIPELINE;
@@ -499,15 +512,21 @@ bool pipelineHandler(ep2::FuncOp funcOp, policy_t* policy, results_t* results) {
   vertex_t globalSource = (void*) sourceSinkCtr++;
   vertex_t globalSink = (void*) sourceSinkCtr++; 
 
+  auto isSourceOrSink = [&](vertex_t v) { return ((uintptr_t) v) < sourceSinkCtr; };
+
+  myAdjList[globalSource] = {};
+  myAdjList[globalSink] = {};
+
   assert(funcOp->getNumRegions() == 1);
   mlir::Region& region = funcOp->getRegion(0);
 
   for (mlir::Block& blk : region.getBlocks()) {
     sourceMap[&blk] = (void*) sourceSinkCtr++;
     sinkMap[&blk] = (void*) sourceSinkCtr++;
+    myAdjList[sourceMap[&blk]] = {};
+    myAdjList[sinkMap[&blk]] = {};
   }
 
-  myAdjList[globalSink] = {};
   std::vector<std::pair<std::pair<vertex_t, vertex_t>, long long>> falseEdges;
   std::vector<std::pair<vertex_t, vertex_t>> pipelineConstraints;
 
@@ -558,6 +577,7 @@ bool pipelineHandler(ep2::FuncOp funcOp, policy_t* policy, results_t* results) {
         }
       } else {
         pipelineConstraints.emplace_back(opToVertex(op), sinkMap[&blk]);
+        vertexToOp[opToVertex(op)] = op;
         myAdjList[opToVertex(op)][sinkMap[&blk]] = INF_WT;
       }
 
@@ -584,10 +604,39 @@ bool pipelineHandler(ep2::FuncOp funcOp, policy_t* policy, results_t* results) {
 
   std::unordered_map<vertex_t, int> vtxWeights;
   for (const auto& pr : myAdjList) {
-    if (vertexToOp.find(pr.first) == vertexToOp.end()) {
+    if (isSourceOrSink(pr.first)) {
+      vtxWeights[pr.first] = 1;
+    } else if (vertexToValue.find(pr.first) != vertexToValue.end()) {
       vtxWeights[pr.first] = policy->valueWeight(vertexToValue[pr.first]);
-    } else {
+    } else if (vertexToOp.find(pr.first) != vertexToOp.end()) {
       vtxWeights[pr.first] = policy->operationWeight(vertexToOp[pr.first]);
+    } else {
+      llvm::errs() << pr.first << '\n';
+      assert(false);
+    }
+  }
+
+  std::unordered_map<vertex_t, std::string> vtxNames;
+  for (const auto& pr : myAdjList) {
+    if (vertexToOp.find(pr.first) != vertexToOp.end()) {
+      std::string s;
+      llvm::raw_string_ostream ss(s);
+      vertexToOp[pr.first]->print(ss);
+      vtxNames[pr.first] = "OP " + ss.str();
+    } else if (vertexToValue.find(pr.first) != vertexToValue.end()) {
+      std::string s;
+      llvm::raw_string_ostream ss(s);
+      vertexToValue[pr.first].print(ss);
+      vtxNames[pr.first] = "VAL " + ss.str();
+    } else if (isSourceOrSink(pr.first)) {
+      uintptr_t p = (uintptr_t) pr.first;
+      if (p % 2 == 0) {
+        vtxNames[pr.first] = "SRC " + std::to_string(p / 2);
+      } else {
+        vtxNames[pr.first] = "SINK " + std::to_string(p / 2);
+      }
+    } else {
+      assert(false);
     }
   }
 
@@ -596,7 +645,7 @@ bool pipelineHandler(ep2::FuncOp funcOp, policy_t* policy, results_t* results) {
   std::unordered_set<vertex_t> sourceSet;
   for (size_t i = 0; i<N_RAND_ITERS; ++i) {
     sourceSet.clear();
-    rc = runBalancedMinCut(myAdjList, globalSource, globalSink, policy->partitionTolerance(), policy->tgtSourceWeight(), sourceSet, falseEdges, vtxWeights, pipelineConstraints);
+    rc = runBalancedMinCut(myAdjList, globalSource, globalSink, policy->partitionTolerance(), policy->tgtSourceWeight(), sourceSet, falseEdges, vtxWeights, pipelineConstraints, vtxNames);
     if (rc == MIN_CUT_SUCCESS) {
       break;
     }
@@ -679,25 +728,28 @@ bool pipelineHandler(ep2::FuncOp funcOp, policy_t* policy, results_t* results) {
 struct netronomePolicy_t : public policy_t {
   std::optional<std::string> dumpPath = std::nullopt;
   int typeTransmitCost(mlir::Type ty) override {
+    return 1 + typeTransmitCostRec(ty);
+  }
+  int typeTransmitCostRec(mlir::Type ty) {
     if (isa<ep2::StructType>(ty)) {
       int sz = 0;
       for (const auto& eTy : cast<ep2::StructType>(ty).getElementTypes()) {
-        sz += typeTransmitCost(eTy);
+        sz += typeTransmitCostRec(eTy);
       }
       return sz;
     } else if (isa<ep2::BufferType>(ty)) {
       // check definition in EmitNetronomePass.cpp (1 pointer, 2 ints)
-      return 16;
+      return 128;
     } else if (isa<ep2::TableType>(ty)) {
-      return 8;
+      return 64;
     } else if (isa<ep2::ContextType>(ty)) {
-      return 8;
+      return 64;
     } else if (isa<ep2::ContextRefType>(ty)) {
-      return 8;
+      return 64;
     } else if (isa<mlir::IntegerType>(ty)) {
-      return cast<mlir::IntegerType>(ty).getWidth() / 8;
+      return cast<mlir::IntegerType>(ty).getWidth();
     } else if (isa<ep2::AtomType>(ty)) {
-      return 4;
+      return 32;
     } else {
       assert(false && "Support other types");
     }
