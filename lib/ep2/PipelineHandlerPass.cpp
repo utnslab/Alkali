@@ -242,6 +242,7 @@ static int runBalancedMinCut(std::unordered_map<vertex_t, std::unordered_map<ver
     auto addEdge = [&](vertex_t src, vertex_t dst, long long wt, bool addToBase) {
       edge_descriptor e1, e2;
       bool in1, in2;
+
       boost::tie(e1, in1) = boost::add_edge(verts[vtxToVecIdx[src]], verts[vtxToVecIdx[dst]], g);
       boost::tie(e2, in2) = boost::add_edge(verts[vtxToVecIdx[dst]], verts[vtxToVecIdx[src]], g);
       assert(in1 && in2);
@@ -512,7 +513,8 @@ bool pipelineHandler(ep2::FuncOp funcOp, policy_t* policy, results_t* results) {
   vertex_t globalSource = (void*) sourceSinkCtr++;
   vertex_t globalSink = (void*) sourceSinkCtr++; 
 
-  auto isSourceOrSink = [&](vertex_t v) { return ((uintptr_t) v) < sourceSinkCtr; };
+  auto isSource = [&](vertex_t v) { return ((uintptr_t) v) < sourceSinkCtr && ((uintptr_t) v) % 2 == 0; };
+  auto isSink = [&](vertex_t v) { return ((uintptr_t) v) < sourceSinkCtr && ((uintptr_t) v) % 2 == 1; };
 
   myAdjList[globalSource] = {};
   myAdjList[globalSink] = {};
@@ -520,44 +522,43 @@ bool pipelineHandler(ep2::FuncOp funcOp, policy_t* policy, results_t* results) {
   assert(funcOp->getNumRegions() == 1);
   mlir::Region& region = funcOp->getRegion(0);
 
+  std::vector<std::pair<std::pair<vertex_t, vertex_t>, long long>> falseEdges;
+  std::vector<std::pair<vertex_t, vertex_t>> pipelineConstraints;
+
   for (mlir::Block& blk : region.getBlocks()) {
     sourceMap[&blk] = (void*) sourceSinkCtr++;
     sinkMap[&blk] = (void*) sourceSinkCtr++;
     myAdjList[sourceMap[&blk]] = {};
     myAdjList[sinkMap[&blk]] = {};
+
+    if (blk.hasNoPredecessors()) {
+      falseEdges.emplace_back(std::pair<vertex_t, vertex_t>{sourceMap[&blk], globalSource}, INF_WT);
+    }
+    if (blk.hasNoSuccessors()) {
+      falseEdges.emplace_back(std::pair<vertex_t, vertex_t>{globalSink, sinkMap[&blk]}, INF_WT);
+    }
   }
 
-  std::vector<std::pair<std::pair<vertex_t, vertex_t>, long long>> falseEdges;
-  std::vector<std::pair<vertex_t, vertex_t>> pipelineConstraints;
+  for (size_t i = 0; i<funcOp.getNumArguments(); ++i) {
+    mlir::Value v = funcOp.getArgument(i);
+    mlir::Type ty = v.getType();
+    size_t weight = policy->typeTransmitCost(ty);
+
+    vertexToValue[valueToVertex(v)] = v;
+    myAdjList[globalSource][valueToVertex(v)] = (long long) weight;
+  }
 
   for (mlir::Block& blk : region.getBlocks()) {
-    if (blk.hasNoPredecessors()) {
-      // connect arguments to globalSource.
+    for (mlir::Block* pred : blk.getPredecessors()) {
+      mlir::Operation* term = pred->getTerminator();
+      assert(isa<cf::CondBranchOp>(term) || isa<cf::BranchOp>(term));
       for (size_t i = 0; i<blk.getNumArguments(); ++i) {
         mlir::Value v = blk.getArgument(i);
-        mlir::Type ty = v.getType();
-        size_t weight = policy->typeTransmitCost(ty);
-
+        vertexToOp[opToVertex(term)] = term;
         vertexToValue[valueToVertex(v)] = v;
-        myAdjList[sourceMap[&blk]][valueToVertex(v)] = (long long) weight;
+        myAdjList[opToVertex(term)][valueToVertex(v)] = INF_WT;
       }
-      myAdjList[globalSource][sourceMap[&blk]] = INF_WT;
-    } else {
-      for (mlir::Block* pred : blk.getPredecessors()) {
-        mlir::Operation* term = pred->getTerminator();
-        assert(isa<cf::CondBranchOp>(term) || isa<cf::BranchOp>(term));
-        for (size_t i = 0; i<blk.getNumArguments(); ++i) {
-          mlir::Value v = blk.getArgument(i);
-          vertexToOp[opToVertex(term)] = term;
-          vertexToValue[valueToVertex(v)] = v;
-          myAdjList[opToVertex(term)][valueToVertex(v)] = INF_WT;
-        }
-        falseEdges.emplace_back(std::pair<vertex_t, vertex_t>{sourceMap[&blk], sinkMap[pred]}, INF_WT);
-      }
-    }
-
-    if (blk.hasNoSuccessors()) {
-      myAdjList[sinkMap[&blk]][globalSink] = INF_WT;
+      falseEdges.emplace_back(std::pair<vertex_t, vertex_t>{sourceMap[&blk], sinkMap[pred]}, INF_WT);
     }
 
     for (mlir::Operation& opr : blk.getOperations()) {
@@ -576,9 +577,14 @@ bool pipelineHandler(ep2::FuncOp funcOp, policy_t* policy, results_t* results) {
           myAdjList[opToVertex(op)][valueToVertex(v)] = (long long) weight;
         }
       } else {
-        pipelineConstraints.emplace_back(opToVertex(op), sinkMap[&blk]);
         vertexToOp[opToVertex(op)] = op;
-        myAdjList[opToVertex(op)][sinkMap[&blk]] = INF_WT;
+        falseEdges.emplace_back(std::pair<vertex_t, vertex_t>{sinkMap[&blk], opToVertex(op)}, INF_WT);
+        if (op != blk.getTerminator() || isa<ep2::ReturnOp>(op)) {
+          pipelineConstraints.emplace_back(opToVertex(op), globalSink);
+          myAdjList[opToVertex(op)][globalSink] = INF_WT;
+        } else if (myAdjList.count(opToVertex(op)) == 0) {
+          myAdjList[opToVertex(op)] = {};
+        }
       }
 
       if (op->getNumOperands() > 0) {
@@ -597,14 +603,14 @@ bool pipelineHandler(ep2::FuncOp funcOp, policy_t* policy, results_t* results) {
           }
         }
       } else {
-        myAdjList[sourceMap[&blk]][opToVertex(op)] = SMALL_WT;
+        myAdjList[globalSource][opToVertex(op)] = SMALL_WT;
       }
     }
   }
 
   std::unordered_map<vertex_t, int> vtxWeights;
   for (const auto& pr : myAdjList) {
-    if (isSourceOrSink(pr.first)) {
+    if (isSource(pr.first) || isSink(pr.first)) {
       vtxWeights[pr.first] = 1;
     } else if (vertexToValue.find(pr.first) != vertexToValue.end()) {
       vtxWeights[pr.first] = policy->valueWeight(vertexToValue[pr.first]);
@@ -628,15 +634,27 @@ bool pipelineHandler(ep2::FuncOp funcOp, policy_t* policy, results_t* results) {
       llvm::raw_string_ostream ss(s);
       vertexToValue[pr.first].print(ss);
       vtxNames[pr.first] = "VAL " + ss.str();
-    } else if (isSourceOrSink(pr.first)) {
-      uintptr_t p = (uintptr_t) pr.first;
-      if (p % 2 == 0) {
-        vtxNames[pr.first] = "SRC " + std::to_string(p / 2);
-      } else {
-        vtxNames[pr.first] = "SINK " + std::to_string(p / 2);
-      }
+    } else if (isSource(pr.first)) {
+      vtxNames[pr.first] = "SRC " + std::to_string(((uintptr_t) pr.first) / 2);
+    } else if (isSink(pr.first)) {
+      vtxNames[pr.first] = "SINK " + std::to_string(((uintptr_t) pr.first) / 2);
     } else {
       assert(false);
+    }
+  }
+
+  for (const auto& pr : myAdjList) {
+    for (const auto& pr2 : pr.second) {
+      if (myAdjList.count(pr2.first) == 0) {
+        llvm::errs() << vtxNames[pr.first] << '\n';
+        llvm::errs() << pr.first << " " << pr2.first << '\n';
+        if (vertexToOp.find(pr2.first) != vertexToOp.end()) {
+          vertexToOp[pr2.first]->dump();
+        } else if (vertexToValue.find(pr2.first) != vertexToValue.end()) {
+          vertexToValue[pr2.first].dump();
+        }
+        assert(false);
+      }
     }
   }
 
@@ -666,6 +684,10 @@ bool pipelineHandler(ep2::FuncOp funcOp, policy_t* policy, results_t* results) {
           ids.emplace(pr.first, "globalSource");
         } else if (pr.first == globalSink) {
           ids.emplace(pr.first, "globalSink");
+        } else if (isSource(pr.first)) {
+          ids.emplace(pr.first, "src" + std::to_string(idUniq["src"]++));
+        } else if (isSink(pr.first)) {
+          ids.emplace(pr.first, "sink" + std::to_string(idUniq["sink"]++));
         } else if (vertexToOp.count(pr.first)) {
           ids.emplace(pr.first, opToId(vertexToOp[pr.first]) + 
             std::to_string(idUniq[opToId(vertexToOp[pr.first])]++));
@@ -676,7 +698,7 @@ bool pipelineHandler(ep2::FuncOp funcOp, policy_t* policy, results_t* results) {
         }
       }
       assert(vertexToOp.count(pr.first) || vertexToValue.count(pr.first) ||
-        pr.first == globalSource || pr.first == globalSink);
+        isSource(pr.first) || isSink(pr.first));
       fout << ids[pr.first];
       fout << " [ color = " << (sourceSet.count(pr.first) ? "red" : "blue") << " ];\n";
     }
@@ -686,15 +708,15 @@ bool pipelineHandler(ep2::FuncOp funcOp, policy_t* policy, results_t* results) {
       for (const auto& pr2 : pr.second) {
         vertex_t e = pr2.first;
         long long wt = pr2.second;
-        if (s == globalSource) {
-          fout << "globalSource";
-        } else {
-          fout << ids[s];
-        }
+        assert(ids.find(s) != ids.end());
+        fout << ids[s];
         fout << " -> ";
-        if (e == globalSink) {
-          fout << "globalSink";
+        if (s == globalSink) {
+          fout << "gSink";
         } else {
+          if (ids.find(e) == ids.end()) {
+            llvm::errs() << "BOOM " << vtxNames[e] << '\n';
+          }
           fout << ids[e];
         }
         fout << " [ label = " << (wt >= INF_MIN ? "INF" : std::to_string(wt)) << " ];\n";
