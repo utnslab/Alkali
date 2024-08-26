@@ -53,7 +53,7 @@ typedef size_t weight_t;
 static constexpr long long INF_WT = 1e18;
 static constexpr long long INF_MIN = 1e17;
 static constexpr long long SMALL_WT = 1;
-static constexpr size_t N_RAND_ITERS = 1;
+static constexpr size_t N_RAND_ITERS = 100;
 static constexpr int MIN_CUT_SUCCESS = 0;
 static constexpr int MIN_CUT_FAILURE_INF_FLOW = 1;
 static constexpr int MIN_CUT_FAILURE_SRC_INF_CAP_PATH = 2;
@@ -542,7 +542,7 @@ bool pipelineHandler(ep2::FuncOp funcOp, policy_t* policy, results_t* results) {
   for (size_t i = 0; i<funcOp.getNumArguments(); ++i) {
     mlir::Value v = funcOp.getArgument(i);
     mlir::Type ty = v.getType();
-    size_t weight = policy->typeTransmitCost(ty);
+    long long weight = policy->typeTransmitCost(ty);
 
     vertexToValue[valueToVertex(v)] = v;
     myAdjList[globalSource][valueToVertex(v)] = (long long) weight;
@@ -563,11 +563,22 @@ bool pipelineHandler(ep2::FuncOp funcOp, policy_t* policy, results_t* results) {
 
     for (mlir::Operation& opr : blk.getOperations()) {
       mlir::Operation* op = &opr;
+      // handle stateful operations
+      if (isa<ep2::LookupOp>(op) || isa<ep2::UpdateOp>(op)) {
+        mlir::Value table = isa<ep2::LookupOp>(op) ? cast<ep2::LookupOp>(op).getTable() : cast<ep2::UpdateOp>(op).getTable();
+        mlir::Operation* tableDef = table.getDefiningOp();
+        assert(tableDef != nullptr && "Table def must be in same block. TODO fix this");
+
+        falseEdges.emplace_back(std::pair<vertex_t, vertex_t>{op, tableDef}, INF_WT);
+      }
 
       if (op->getNumResults() > 0) {
         for (size_t i = 0; i<op->getNumResults(); ++i) {
           mlir::Type ty = op->getResult(i).getType();
-          size_t weight = policy->typeTransmitCost(ty);
+          long long weight = policy->typeTransmitCost(ty);
+          if (isa<ep2::GlobalImportOp>(op)) {
+            weight = INF_WT;
+          }
           mlir::Value v = op->getResult(i);
 
           vertexToOp[opToVertex(op)] = op;
