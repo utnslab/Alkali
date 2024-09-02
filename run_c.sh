@@ -36,9 +36,9 @@ BIN_DIR=build/bin
 $BIN_DIR/cgeist $C_INPUT_FILE -S > $C_MLIR_FILE
 $BIN_DIR/ep2c-opt $C_MLIR_FILE --convert-scf-to-cf -cse -o $C_MLIR_FILE
 
-$BIN_DIR/ep2c-opt cinput.mlir --ep2-lift-llvm $OPTIONS -cse -cse -canonicalize -o $OUT_FILE 2> debug.mlir
+$BIN_DIR/ep2c-opt cinput.mlir --ep2-lift-llvm $OPTIONS -cse -cse -canonicalize -o $OUT_FILE
 
 if [ "$IS_SPLIT" = true ]; then
     echo "Split $OUT_FILE"
-    $BIN_DIR/ep2c-opt $OUT_FILE -ep2-buffer-to-value --ep2-pipeline-handler --mlir-print-ir-after-failure -o split.mlir
+    $BIN_DIR/ep2c-opt $OUT_FILE -ep2-buffer-to-value --ep2-pipeline-handler --mlir-print-ir-after-failure -o split.mlir  2> debug.mlir
 fi

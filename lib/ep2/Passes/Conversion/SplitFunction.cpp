@@ -37,20 +37,6 @@ void splitBlock(Block *srcBlock, Block *dstBlock, llvm::DenseSet<Operation*> &so
   }
 }
 
-static bool blockUsed(Block *block, llvm::DenseSet<Operation *> &sourceOps, llvm::DenseSet<Value> &sourceArguments) {
-  for (auto ba : block->getArguments()) {
-    if (sourceArguments.contains(ba)) {
-      return true;
-    }
-  }
-  for (auto &op : *block) {
-    if (sourceOps.contains(&op)) {
-      return true;
-    }
-  }
-  return false;
-}
-
 static bool inSink(Operation * op) {
   return op->hasAttr("sink");
 }
@@ -104,6 +90,24 @@ static void removeSinkAttr(ep2::FuncOp funcOp) {
   for (auto &op : funcOp.getOps()) {
     if (op.hasAttr("sink"))
       op.removeAttr("sink");
+  }
+}
+
+static void removeEmptyBlocks(ep2::FuncOp funcOp) {
+  auto blocks = llvm::map_to_vector(funcOp.getBlocks(), [](Block &block) { return &block; });
+
+  // try to collapse the blocks
+  for (int i = blocks.size() - 1; i > 0; i--) {
+    auto block = blocks[i], prevBlock = blocks[i - 1];
+    if (block->hasNoPredecessors()) {
+      auto ops = llvm::map_to_vector(block->getOperations(), [](Operation &op) { return &op; });
+
+      for (auto op : ops)
+        op->moveBefore(prevBlock, prevBlock->end());
+    }
+
+    if (block->empty())
+      block->erase();
   }
 }
 
@@ -182,8 +186,12 @@ std::pair<ep2::FuncOp, ep2::FuncOp> functionSplitter(ep2::FuncOp funcOp, llvm::D
     tryAddTerminator(builder, sourceFunc);
   }
 
-  for (auto func : {funcOp, sinkFunc, sourceFunc})
+  for (auto func : {funcOp, sinkFunc, sourceFunc}) {
+    removeEmptyBlocks(func);
     removeSinkAttr(func);
+  }
+
+  
 
   return std::make_pair(sourceFunc, sinkFunc);
 }

@@ -93,14 +93,14 @@ void _packet_event_handler(buf_t packet) {
   int base_port_src = 50;
   int base_port_dst = 60;
 
-  // if (lb_DIP_entry.if_alloc == 1) {
-  //   pkt_header.mac_src = lb_DIP_entry.mac_src;
-  //   pkt_header.mac_dst = lb_DIP_entry.mac_dst;
-  //   pkt_header.ip_src = lb_DIP_entry.ip_src;
-  //   pkt_header.ip_dst = lb_DIP_entry.ip_dst;
-  //   pkt_header.port_src = lb_DIP_entry.port_src;
-  //   pkt_header.port_dst = lb_DIP_entry.port_dst;
-  // } else {
+  if (lb_DIP_entry.if_alloc == 1) {
+    pkt_header.mac_src = lb_DIP_entry.mac_src;
+    pkt_header.mac_dst = lb_DIP_entry.mac_dst;
+    pkt_header.ip_src = lb_DIP_entry.ip_src;
+    pkt_header.ip_dst = lb_DIP_entry.ip_dst;
+    pkt_header.port_src = lb_DIP_entry.port_src;
+    pkt_header.port_dst = lb_DIP_entry.port_dst;
+  } else {
     // allocate entry for DIP
     lb_DIP_entry.if_alloc = 1;
     lb_DIP_entry.mac_src = base_mac_src + flow_hash_id;
@@ -110,7 +110,7 @@ void _packet_event_handler(buf_t packet) {
     lb_DIP_entry.port_src = base_port_src + flow_hash_id;
     lb_DIP_entry.port_dst = base_port_dst + flow_hash_id;
     table_update((void *)lb_DIP_table, (void *)&flow_hash_id, (void *)&lb_DIP_entry);
-  // }
+  }
   bufemit(packet, (void *)&pkt_header);
   send_packet(packet);
 }
