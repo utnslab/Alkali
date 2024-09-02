@@ -40,5 +40,5 @@ $BIN_DIR/ep2c-opt cinput.mlir --ep2-lift-llvm $OPTIONS -cse -cse -canonicalize -
 
 if [ "$IS_SPLIT" = true ]; then
     echo "Split $OUT_FILE"
-    $BIN_DIR/ep2c-opt $OUT_FILE --ep2-pipeline-handler -ep2-buffer-to-value --mlir-print-ir-after-failure -o split.mlir
+    $BIN_DIR/ep2c-opt $OUT_FILE -ep2-buffer-to-value --ep2-pipeline-handler --mlir-print-ir-after-failure -o split.mlir
 fi

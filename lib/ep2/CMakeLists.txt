@@ -55,6 +55,8 @@ add_mlir_dialect_library(MLIREP2
         Passes/Conversion/SplitFunction.cpp
         Passes/Conversion/LiftUtils.cpp
 
+        Passes/Mapping/PerformanceModel.cpp
+
         DEPENDS
         MLIREP2OpsIncGen
         EP2OpsAttrDefsIncGen

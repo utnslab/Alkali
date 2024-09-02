@@ -21,6 +21,7 @@
 #include <bitset>
 #include <string>
 #include <random>
+#include <queue>
 
 #include "llvm/ADT/DenseSet.h"
 #include "llvm/Support/raw_ostream.h"
@@ -35,6 +36,7 @@
 #include <boost/graph/filtered_graph.hpp>
 
 #include "ep2/passes/LiftUtils.h"
+#include "ep2/passes/Mapping.h"
 
 #define BOOST_NO_EXCEPTIONS
 #include <boost/throw_exception.hpp>
@@ -199,7 +201,21 @@ static std::string opToId(mlir::Operation* op) {
 }
 
 // accept myAdjList by value, so we can freely manipulate it here.
-static int runBalancedMinCut(std::unordered_map<vertex_t, std::unordered_map<vertex_t, long long>> myAdjList, vertex_t source, vertex_t sink, float tol, float tgtSourceWeight, std::unordered_set<vertex_t>& sourceSet, std::vector<std::pair<std::pair<vertex_t, vertex_t>, long long>>& falseEdges, std::unordered_map<vertex_t, int>& v_weights, std::vector<std::pair<vertex_t, vertex_t>>& pipelineConstraints, std::unordered_map<vertex_t, std::string>& vtxNames) {
+static int runBalancedMinCut(
+  // Graph information
+  std::unordered_map<vertex_t, std::unordered_map<vertex_t, long long>>
+      myAdjList,
+  vertex_t source, vertex_t sink,
+
+  float tol, double sourceWeight, double &resultSourceWeight,
+  std::unordered_set<vertex_t> &sourceSet,
+  std::vector<std::pair<std::pair<vertex_t, vertex_t>, long long>>
+      &falseEdges,
+  std::unordered_map<vertex_t, int> &v_weights,
+  std::vector<std::pair<vertex_t, vertex_t>> &pipelineConstraints,
+  std::unordered_map<vertex_t, std::string>& vtxNames
+  ) {
+
   typedef boost::adjacency_list_traits<boost::vecS, boost::vecS, boost::bidirectionalS> Traits;
   typedef boost::adjacency_list<boost::vecS, boost::vecS, boost::bidirectionalS,
     boost::property<boost::vertex_index_t, size_t>,
@@ -410,13 +426,14 @@ static int runBalancedMinCut(std::unordered_map<vertex_t, std::unordered_map<ver
 
     float frac_src_cut = ((float) wmap_sum) / verts.size();
     llvm::errs() << "FRAC: " << llvm::format("%.2f\n", frac_src_cut);
+    resultSourceWeight = frac_src_cut;
 
     /*
     Iterate over all edges in g_base, where wmap[src] != 0 and wmap[dst] == 0.
     These are the cut edges. Now we want to add the topologically first such dst into our set.
     */
     auto orig_edges = boost::edges(g_base);
-    if (frac_src_cut < tgtSourceWeight-tol) {
+    if (frac_src_cut < sourceWeight - tol) {
       //llvm::errs() << "collapse source\n";
       ssize_t earliest = topo_sort_pos.size();
       vertex_descriptor chosen;
@@ -448,7 +465,7 @@ static int runBalancedMinCut(std::unordered_map<vertex_t, std::unordered_map<ver
         }
       }
       myAdjList[source][boostToMyVtx[chosen]] = INF_WT;
-    } else if (frac_src_cut > tgtSourceWeight+tol) {
+    } else if (frac_src_cut > sourceWeight + tol) {
       //llvm::errs() << "collapse sink\n";
 
       ssize_t latest = -1;
@@ -495,7 +512,7 @@ static int runBalancedMinCut(std::unordered_map<vertex_t, std::unordered_map<ver
   return MIN_CUT_SUCCESS;
 }
 
-bool pipelineHandler(ep2::FuncOp funcOp, policy_t* policy, results_t* results) {
+bool pipelineHandler(ep2::FuncOp funcOp, PipelinePolicy* policy, PipelineResult* results) {
   if (funcOp.isExtern() || funcOp->getAttr("type").cast<StringAttr>().getValue() != "handler") {
     return false;
   }
@@ -674,7 +691,8 @@ bool pipelineHandler(ep2::FuncOp funcOp, policy_t* policy, results_t* results) {
   std::unordered_set<vertex_t> sourceSet;
   for (size_t i = 0; i<N_RAND_ITERS; ++i) {
     sourceSet.clear();
-    rc = runBalancedMinCut(myAdjList, globalSource, globalSink, policy->partitionTolerance(), policy->tgtSourceWeight(), sourceSet, falseEdges, vtxWeights, pipelineConstraints, vtxNames);
+    rc = runBalancedMinCut(myAdjList, globalSource, globalSink, policy->tolerance, policy->sourceWeight, results->sourceWeight,
+     sourceSet, falseEdges, vtxWeights, pipelineConstraints);
     if (rc == MIN_CUT_SUCCESS) {
       break;
     }
@@ -684,7 +702,7 @@ bool pipelineHandler(ep2::FuncOp funcOp, policy_t* policy, results_t* results) {
     return false;
   }
 
-  if (policy->dumpCuts()) {
+  if (policy->dumpCuts) {
     std::unordered_map<vertex_t, std::string> ids;
     std::unordered_map<std::string, size_t> idUniq;
     std::ofstream fout("cut.dot");
@@ -758,8 +776,11 @@ bool pipelineHandler(ep2::FuncOp funcOp, policy_t* policy, results_t* results) {
   return true;
 }
 
-struct netronomePolicy_t : public policy_t {
-  std::optional<std::string> dumpPath = std::nullopt;
+struct NetronomeKCutPolicy : public PipelinePolicy {
+  int numCuts;
+  NetronomeKCutPolicy(int k, double tolerance = 0.1) : PipelinePolicy(1.0f / k, tolerance), numCuts(k) {}
+
+
   int typeTransmitCost(mlir::Type ty) override {
     return 1 + typeTransmitCostRec(ty);
   }
@@ -788,40 +809,120 @@ struct netronomePolicy_t : public policy_t {
     }
   }
 
-  int operationWeight(mlir::Operation* op) override {
-    return 1;
+  std::pair<std::shared_ptr<PipelinePolicy>, std::shared_ptr<PipelinePolicy>> splitPolicy(PipelineResult &result) override {
+    int newCuts = numCuts - 1;
+    // TODO: also adjust tolerance
+    auto source = std::make_shared<NetronomeKCutPolicy>(newCuts, tolerance);
+    auto sink = std::make_shared<NetronomeKCutPolicy>(newCuts, tolerance);
+
+    bool noCutSource = result.sourceWeight < 1.0f / numCuts + tolerance;
+    source->done = newCuts == 1 || noCutSource;
+    sink->done = newCuts == 1 || !noCutSource;
+    return std::make_pair(source, sink);
   }
 
-  int valueWeight(mlir::Value v) override {
-    return 1;
-  }
-
-  float tgtSourceWeight() override {
-    return 0.5f;
-  }
-
-  float partitionTolerance() override {
-    return 0.1f;
-  }
-
-  bool dumpCuts() override {
-    return true;
+  std::pair<std::string, std::string> splitName() override {
+    auto base = std::to_string(numCuts) + "Cut_";
+    return std::make_pair(base + "source", base + "sink");
   }
 };
 
-// Assumes all dead code is eliminated.
-void PipelineHandlerPass::runOnOperation() {
-  getOperation()->walk([&](ep2::FuncOp funcOp) {
-    netronomePolicy_t policy;
-    results_t results;
-    
-    if (pipelineHandler(funcOp, &policy, &results)) {
-      llvm::errs() << "Min-cut suceeded for " << funcOp.getSymName() << '\n';
-      functionSplitter(funcOp, results.sinkOps, results.sinkValues);
+using PolicyP = std::shared_ptr<PipelinePolicy>;
+using SearchPair = std::pair<ep2::FuncOp, PolicyP>;
+using SearchDirection = llvm::DenseMap<ep2::FuncOp, PolicyP>;
+
+llvm::SmallVector<SearchDirection, 4> stepSearch(SearchDirection& sd) {
+  SmallVector<SmallVector<SearchPair>> functionResult;
+
+  PipelineResult results;
+  for (auto &[func, policy] : sd) {
+    bool allDone = true;
+    SmallVector<SearchPair> choices;
+    if (policy->done) {
+      // llvm::errs() << "Done with " << func.getSymName() << '\n';
+      // we are done with this funciton. continue;
+      choices.push_back(std::make_pair(func, policy));
+      continue;
     } else {
-      llvm::errs() << "Min-cut failed for " << funcOp.getSymName() << '\n';
+      allDone = false;
+      // auto funcName = func.getSymName();
+      // llvm::errs() << "Not done with " << func.getSymName() << '\n';
+      if (pipelineHandler(func, policy.get(), &results)) {
+        // llvm::errs() << "Min-cut suceeded for " << funcName << '\n';
+        auto [sourceOp, sinkOp] = functionSplitter(func, results.sinkOps, results.sinkValues);
+        auto [sourcePolicy, sinkPolicy] = policy->splitPolicy(results);
+        // TODO: rename functions?
+        auto [sourceName, sinkName] = policy->splitName();
+        sourceOp.setSymName(func.getSymName().str() + "_" + sourceName);
+        sinkOp.setSymName(func.getSymName().str() + "_" + sinkName);
+
+        choices.push_back({sourceOp, sourcePolicy});
+        choices.push_back({sinkOp, sinkPolicy});
+      }
+    }
+    if (!allDone)
+      functionResult.push_back(std::move(choices));
+  }
+
+  // construct return from generated functions.
+  llvm::SmallVector<SearchDirection, 4> ret{};
+  for (auto &funcChoices : functionResult) {
+    auto &sd = ret.emplace_back();
+    for (auto &[func, policy] : funcChoices) {
+      sd[func] = policy;
+    }
+  }
+
+  // llvm::errs() << "Returning " << ret.size() << '\n';
+
+  return ret;
+}
+
+void bfsSearchPolicy(Operation * moduleOp) {
+  std::queue<SearchDirection> cuts;
+
+  // TODO: make a function for init cut
+  // init cut: we try to cut the program into 1-3 pieces
+  moduleOp->walk([&](ep2::FuncOp funcOp) {
+    {
+      llvm::DenseMap<ep2::FuncOp, PolicyP> sd;
+      sd[funcOp] = std::make_shared<NetronomeKCutPolicy>(2);
+      cuts.push(std::move(sd));
+    }
+    {
+      llvm::DenseMap<ep2::FuncOp, PolicyP> sd;
+      sd[funcOp] = std::make_shared<NetronomeKCutPolicy>(3);
+      cuts.push(std::move(sd));
     }
   });
+
+  // loop over cuts
+  while (!cuts.empty()) {
+    auto next = cuts.front();
+    cuts.pop();
+    auto nexts = stepSearch(next);
+    for (auto& n : nexts) {
+      // exit if we think its good enough...
+      cuts.push(n);
+    }
+  }
+
+}
+
+// Assumes all dead code is eliminated.
+void PipelineHandlerPass::runOnOperation() {
+  bfsSearchPolicy(getOperation());
+
+  // getOperation()->walk([&](ep2::FuncOp funcOp) {
+  //   NetronomeKCutPolicy policy{3};
+  //   PipelineResult results;
+  //   if (pipelineHandler(funcOp, &policy, &results)) {
+  //     llvm::errs() << "Min-cut suceeded for " << funcOp.getSymName() << '\n';
+  //     functionSplitter(funcOp, results.sinkOps, results.sinkValues);
+  //   } else {
+  //     llvm::errs() << "Min-cut failed for " << funcOp.getSymName() << '\n';
+  //   }
+  // });
 }
 
 } // namespace ep2

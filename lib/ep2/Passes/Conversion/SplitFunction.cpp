@@ -100,7 +100,14 @@ void tryAddTerminator(OpBuilder &builder, ep2::FuncOp funcOp) {
   }
 }
 
-void functionSplitter(ep2::FuncOp funcOp, llvm::DenseSet<Operation *> &sinkOps, llvm::DenseSet<Value> &sinkArgs) {
+static void removeSinkAttr(ep2::FuncOp funcOp) {
+  for (auto &op : funcOp.getOps()) {
+    if (op.hasAttr("sink"))
+      op.removeAttr("sink");
+  }
+}
+
+std::pair<ep2::FuncOp, ep2::FuncOp> functionSplitter(ep2::FuncOp funcOp, llvm::DenseSet<Operation *> &sinkOps, llvm::DenseSet<Value> &sinkArgs) {
   OpBuilder builder(funcOp);
 
   // mark the function
@@ -120,41 +127,46 @@ void functionSplitter(ep2::FuncOp funcOp, llvm::DenseSet<Operation *> &sinkOps, 
     }
   }
 
-  auto sinkFuncName = builder.getStringAttr(funcOp.getName() + "_sink");
-  auto sourceFuncName = builder.getStringAttr(funcOp.getName() + "_source");
+  builder.setInsertionPoint(funcOp);
+  auto copyFunc = funcOp.clone();
+
+  auto sinkFuncName = builder.getStringAttr(copyFunc.getName() + "_sink");
+  auto sourceFuncName = builder.getStringAttr(copyFunc.getName() + "_source");
 
   // get oplists
   llvm::DenseSet<Value> values;
-  getValuesToTransfer(funcOp, values);
+  getValuesToTransfer(copyFunc, values);
   // create a generate for now, before terminate
-  auto &lastBlock = funcOp.getBlocks().back();
+  auto &lastBlock = copyFunc.getBlocks().back();
   builder.setInsertionPoint(lastBlock.getTerminator());
   // add generate. TODO(value)
   auto valuesVector = llvm::to_vector(values);
-  createGenerate(builder, funcOp.getLoc(), sinkFuncName, valuesVector);
+  createGenerate(builder, copyFunc.getLoc(), sinkFuncName, valuesVector);
 
   // clone the function
   builder.setInsertionPoint(funcOp);
-  auto sourceFunc = funcOp.clone();
+  auto sourceFunc = copyFunc.clone();
   sourceFunc.setName(sourceFuncName);
   builder.insert(sourceFunc);
 
+  // keep the original function by clone
   auto argTypes = llvm::map_to_vector(
       valuesVector, [](Value value) { return value.getType(); });
-  auto sinkFunc = builder.create<ep2::FuncOp>(funcOp.getLoc(), sinkFuncName, builder.getFunctionType(argTypes, {}));
+  auto sinkFunc = builder.create<ep2::FuncOp>(copyFunc.getLoc(), sinkFuncName, builder.getFunctionType(argTypes, {}));
   sinkFunc->setAttr("type", builder.getStringAttr("handler"));
-  sinkFunc.getBody().takeBody(funcOp.getBody());
-
-  funcOp.erase();
+  sinkFunc.getBody().takeBody(copyFunc.getBody());
+  // makesure we erase the copyfunc
+  copyFunc.erase();
 
   // process sink func.
   {
-    auto locs = llvm::map_to_vector(valuesVector,
+    SmallVector<Value> &argValues = valuesVector;
+    auto locs = llvm::map_to_vector(argValues,
                                     [](Value value) { return value.getLoc(); });
     auto &entryBlock = sinkFunc.getBody().front();
     auto numOldArgs = entryBlock.getNumArguments();
     auto newArgs = entryBlock.addArguments(argTypes, locs);
-    for (auto [arg, value] : llvm::zip(newArgs, valuesVector))
+    for (auto [arg, value] : llvm::zip(newArgs, argValues))
       value.replaceAllUsesWith(arg);
     // remove source Ops
     eraseOpsIf(sinkFunc, [](Operation *op) { return !inSink(op); });
@@ -169,6 +181,11 @@ void functionSplitter(ep2::FuncOp funcOp, llvm::DenseSet<Operation *> &sinkOps, 
     eraseOpsIf(sourceFunc, [](Operation *op) { return inSink(op); });
     tryAddTerminator(builder, sourceFunc);
   }
+
+  for (auto func : {funcOp, sinkFunc, sourceFunc})
+    removeSinkAttr(func);
+
+  return std::make_pair(sourceFunc, sinkFunc);
 }
 
 } // namespace mlir

@@ -602,22 +602,6 @@ struct GlobalToPartitionPass :
     StringRef getDescription() const final { return "Convert fully partitioned global variables to local variable"; }
 };
 
-struct policy_t {
-  virtual int typeTransmitCost(mlir::Type t) = 0;
-  virtual int operationWeight(mlir::Operation* op) = 0;
-  virtual int valueWeight(mlir::Value v) = 0;
-  virtual float tgtSourceWeight() = 0;
-  virtual float partitionTolerance() = 0;
-  virtual bool dumpCuts() = 0;
-};
-struct results_t {
-  llvm::DenseSet<mlir::Operation*> sinkOps;
-  llvm::DenseSet<mlir::Value> sinkValues;
-  std::string err;
-  bool dumpFile;
-};
-bool pipelineHandler(ep2::FuncOp funcOp, policy_t* policy, results_t* results);
-
 struct PipelineHandlerPass
     : public PassWrapper<PipelineHandlerPass, OperationPass<ModuleOp>> {
   void runOnOperation() final;
