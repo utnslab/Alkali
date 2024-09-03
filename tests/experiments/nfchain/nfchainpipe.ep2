@@ -172,15 +172,16 @@ struct lb_fwd_tcp_hdr_t
 }
 
 
-global table <bits<32>, firewall_ip_entries_t, 64> firewall_ip_table;
-global table <bits<16>, firewall_tcpport_entries_t, 64> firewall_tcpport_table;
-global table <bits<32>, priority_entries_t, 64> priority_table;
-global table <bits<32>, flow_tracker_t, 64> flow_tracker_table;
-global table <bits<32>, err_tracker_t, 64> err_tracker_table;
-global table <bits<32>, ip_tracker_t, 64> ip_tracker_table;
-global table <bits<32>, tcp_tracker_t, 64> tcp_tracker_table;
-global table <bits<32>, lb_DIP_entries_t, 64> lb_table;
-global table <bits<32>, lb_fwd_tcp_hdr_t, 64> lb_fwd_table;
+# We assume cu1-12 on island1 and cu13-24 on island2
+[instances=(lmem_cu1, lmem_cu4, lmem_cu13, lmem_cu17)] global table <bits<32>, firewall_ip_entries_t, 64> firewall_ip_table;
+[instances=(cls_island1, cls_island1, cls_island2, cls_island2)] global table <bits<16>, firewall_tcpport_entries_t, 64> firewall_tcpport_table;
+[instances=(cls_island1, cls_island1, cls_island2, cls_island2)] global table <bits<32>, priority_entries_t, 64> priority_table;
+[instances=(lmem_cu2, lmem_cu5, lmem_cu14, lmem_cu18)] global table <bits<32>, flow_tracker_t, 64> flow_tracker_table;
+[instances=(lmem_cu2, lmem_cu5, lmem_cu15, lmem_cu18)] global table <bits<32>, tcp_tracker_t, 64> tcp_tracker_table;
+[instances=(cls_island1, cls_island1, cls_island2, cls_island2)] global table <bits<32>, err_tracker_t, 64> err_tracker_table;
+[instances=(cls_island1, cls_island1, cls_island2, cls_island2)] global table <bits<32>, ip_tracker_t, 64> ip_tracker_table;
+[instances=(lmem_cu3, lmem_cu6, lmem_cu16, lmem_cu19)] global table <bits<32>, lb_DIP_entries_t, 64> lb_table;
+[instances=(cls_island1, cls_island1, cls_island2, cls_island2)] global table <bits<32>, lb_fwd_tcp_hdr_t, 64> lb_fwd_table;
 
 controller OoO_DETECT1() {
     In in1 = [NET_RECV:process_packet, 1];
@@ -199,7 +200,7 @@ controller OoO_DETECT2() {
 event OoO_DETECT1 {context ctx; buf packet; int fid; bits<32> src_ip; bits<16> src_port;}
 event OoO_DETECT2 {context ctx; buf packet; int fid;}
 
-[instances=(cu1), location=cu2] handler NET_RECV:process_packet (context ctx, buf packet) {
+[instances=(cu1, cu4, cu13, cu17)] handler NET_RECV:process_packet (context ctx, buf packet) {
     eth_header_t eth_header;
     ip_header_t ip_header;
     tcp_header_t tcp_header;
@@ -235,7 +236,7 @@ event OoO_DETECT2 {context ctx; buf packet; int fid;}
 
 }
 
-[instances=(cu3)] handler OoO_DETECT1:OoO_detection1 (context ctx, buf packet, bits<32> fid, bits<32> src_ip, bits<16> src_port) {
+[instances=(cu2, cu5, cu15, cu18)] handler OoO_DETECT1:OoO_detection1 (context ctx, buf packet, bits<32> fid, bits<32> src_ip, bits<16> src_port) {
 
     # flow tracker logic
     flow_tracker_t flow_tracker_entry;
@@ -261,7 +262,7 @@ event OoO_DETECT2 {context ctx; buf packet; int fid;}
     generate OoO_DETECT2:OoO_detection2{ctx, packet, fid};
 }
 
-[instances=(cu4)] handler OoO_DETECT2:OoO_detection2 (context ctx, buf packet, bits<32> fid) {
+[instances=(cu3, cu6, cu16, cu19)] handler OoO_DETECT2:OoO_detection2 (context ctx, buf packet, bits<32> fid) {
 
     #L4 load balancer
     bits<32> base_ip_src;

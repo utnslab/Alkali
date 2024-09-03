@@ -692,7 +692,7 @@ bool pipelineHandler(ep2::FuncOp funcOp, PipelinePolicy* policy, PipelineResult*
   for (size_t i = 0; i<N_RAND_ITERS; ++i) {
     sourceSet.clear();
     rc = runBalancedMinCut(myAdjList, globalSource, globalSink, policy->tolerance, policy->sourceWeight, results->sourceWeight,
-     sourceSet, falseEdges, vtxWeights, pipelineConstraints);
+     sourceSet, falseEdges, vtxWeights, pipelineConstraints, vtxNames);
     if (rc == MIN_CUT_SUCCESS) {
       break;
     }
@@ -898,6 +898,11 @@ void bfsSearchPolicy(Operation * moduleOp) {
 
   // loop over cuts
   while (!cuts.empty()) {
+    llvm::errs() << "Cuts size: " << cuts.size() << '\n';
+    moduleOp->dump();
+    llvm::errs() << "\n\n";
+
+
     auto next = cuts.front();
     cuts.pop();
     auto nexts = stepSearch(next);
