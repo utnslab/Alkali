@@ -23,8 +23,8 @@ struct PipelinePolicy {
   PipelinePolicy(double sourceWeight, double tolerance) : sourceWeight(sourceWeight), tolerance(tolerance) {}
 
   virtual int typeTransmitCost(mlir::Type t) = 0;
-  virtual int operationWeight(mlir::Operation* op) { return 1; };
-  virtual int valueWeight(mlir::Value v) { return 1; };
+  virtual int operationWeight(mlir::Operation* op) = 0;
+  virtual int valueWeight(mlir::Value v) = 0;
 
   virtual std::pair<std::shared_ptr<PipelinePolicy>, std::shared_ptr<PipelinePolicy>> splitPolicy(PipelineResult &result) = 0;
   virtual std::pair<std::string, std::string> splitName() = 0;

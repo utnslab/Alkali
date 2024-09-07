@@ -781,6 +781,19 @@ struct NetronomeKCutPolicy : public PipelinePolicy {
   NetronomeKCutPolicy(int k, double tolerance = 0.1) : PipelinePolicy(1.0f / k, tolerance), numCuts(k) {}
 
 
+  int valueWeight(mlir::Value v) override {
+    return 1;
+  }
+  int operationWeight(mlir::Operation* op) override {
+    return llvm::TypeSwitch<Operation *, int>(op)
+        .Case([&](ep2::LookupOp) { return 10; })
+        .Case([&](ep2::UpdateOp) { return 10; })
+        // non weight ops
+        .Case<ep2::StructAccessOp, ep2::ConstantOp, ep2::GlobalImportOp,
+              ep2::BitCastOp>([&](Operation *) { return 1; })
+        .Default([&](Operation *) { return 10; });
+  }
+
   int typeTransmitCost(mlir::Type ty) override {
     return 1 + typeTransmitCostRec(ty);
   }
