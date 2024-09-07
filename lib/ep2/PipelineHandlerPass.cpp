@@ -311,7 +311,6 @@ static int runBalancedMinCut(
           llvm::errs() << v << ',';
         }
         llvm::errs() << '\n';
-        assert(false && "After adding false edges");
       }
     }
 
@@ -433,7 +432,7 @@ static int runBalancedMinCut(
     These are the cut edges. Now we want to add the topologically first such dst into our set.
     */
     auto orig_edges = boost::edges(g_base);
-    if (frac_src_cut < sourceWeight - tol) {
+    if (frac_src_cut < sourceWeight * (1-tol)) {
       //llvm::errs() << "collapse source\n";
       ssize_t earliest = topo_sort_pos.size();
       vertex_descriptor chosen;
@@ -465,7 +464,7 @@ static int runBalancedMinCut(
         }
       }
       myAdjList[source][boostToMyVtx[chosen]] = INF_WT;
-    } else if (frac_src_cut > sourceWeight + tol) {
+    } else if (frac_src_cut > sourceWeight * (1+tol)) {
       //llvm::errs() << "collapse sink\n";
 
       ssize_t latest = -1;
@@ -786,12 +785,12 @@ struct NetronomeKCutPolicy : public PipelinePolicy {
   }
   int operationWeight(mlir::Operation* op) override {
     return llvm::TypeSwitch<Operation *, int>(op)
-        .Case([&](ep2::LookupOp) { return 10; })
-        .Case([&](ep2::UpdateOp) { return 10; })
+        .Case([&](ep2::LookupOp) { return 1; })
+        .Case([&](ep2::UpdateOp) { return 1; })
         // non weight ops
         .Case<ep2::StructAccessOp, ep2::ConstantOp, ep2::GlobalImportOp,
               ep2::BitCastOp>([&](Operation *) { return 1; })
-        .Default([&](Operation *) { return 10; });
+        .Default([&](Operation *) { return 1; });
   }
 
   int typeTransmitCost(mlir::Type ty) override {
@@ -902,7 +901,7 @@ void kcutPolicy(Operation * moduleOp, int k) {
     if (funcOp.isExtern() || !funcOp.isHandler())
       return;
 
-    sd[funcOp] = std::make_shared<NetronomeKCutPolicy>(k, 0.3);
+    sd[funcOp] = std::make_shared<NetronomeKCutPolicy>(k, 0.2);
   });
 
   while (true) {
