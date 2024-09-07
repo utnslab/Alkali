@@ -455,6 +455,8 @@ def FuncOp : EP2_Op<"func", [
   }];
   let hasCustomAssemblyFormat = 1;
   let skipDefaultBuilders = 1;
+
+  let hasCanonicalizer = 1;
 }
 
 //===----------------------------------------------------------------------===//

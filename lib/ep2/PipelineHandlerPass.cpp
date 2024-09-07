@@ -858,6 +858,10 @@ llvm::SmallVector<SearchDirection, 4> stepSearch(SearchDirection& sd) {
 
         choices.push_back({sourceOp, sourcePolicy});
         choices.push_back({sinkOp, sinkPolicy});
+      } else {
+        llvm::errs() << "Min-cut failed for " << func.getSymName() << '\n';
+        policy->done = true;
+        choices.push_back(std::make_pair(func, policy));
       }
     }
   }
@@ -885,7 +889,7 @@ void kcutPolicy(Operation * moduleOp, int k) {
     if (funcOp.isExtern() || !funcOp.isHandler())
       return;
 
-    sd[funcOp] = std::make_shared<NetronomeKCutPolicy>(k);
+    sd[funcOp] = std::make_shared<NetronomeKCutPolicy>(k, 0.3);
   });
 
   while (true) {
@@ -895,11 +899,11 @@ void kcutPolicy(Operation * moduleOp, int k) {
     sd = cuts[0];
   }
 
-  // llvm::errs() << "Finish kcut\n";
-  // for (auto &[func, policy] : sd) {
-  //   llvm::errs() << "Function: " << func.getSymName() << '\n';
-  //   llvm::errs() << "Policy: " << policy->sourceWeight << '\n';
-  // }
+  llvm::errs() << "Finish kcut\n";
+  for (auto &[func, policy] : sd) {
+    llvm::errs() << "Function: " << func.getSymName() << '\n';
+    llvm::errs() << "Policy: " << policy->sourceWeight << '\n';
+  }
 
   moduleOp->walk([&](ep2::FuncOp funcOp){
     if (funcOp.isExtern() || !funcOp.isHandler())

@@ -309,6 +309,45 @@ void FuncOp::print(mlir::OpAsmPrinter &p) {
       getArgAttrsAttrName(), getResAttrsAttrName());
 }
 
+struct GloablImportDedupPattern : public OpRewritePattern<FuncOp> {
+  using OpRewritePattern<FuncOp>::OpRewritePattern;
+  LogicalResult matchAndRewrite(FuncOp op,
+                                PatternRewriter &rewriter) const override {
+    bool changed = false;
+    llvm::DenseMap<llvm::StringRef, GlobalImportOp> imports;
+    llvm::SmallVector<GlobalImportOp> toErase;
+
+    rewriter.startRootUpdate(op);
+    for (auto &op : op.getOps()) {
+      if (auto importOp = dyn_cast<GlobalImportOp>(op)) {
+        auto [it, isInsert] = imports.try_emplace(importOp.getName(), importOp);
+        if (!isInsert) {
+          rewriter.replaceAllUsesWith(importOp, it->second);
+          toErase.push_back(importOp);
+          changed = true;
+        }
+      }
+    }
+
+    for (auto op : toErase)
+      rewriter.eraseOp(op);
+
+    if (changed) {
+      rewriter.finalizeRootUpdate(op);
+      return success();
+    } else {
+      rewriter.cancelRootUpdate(op);
+      return failure();
+    }
+  }
+};
+
+
+void FuncOp::getCanonicalizationPatterns(RewritePatternSet &results,
+                                         MLIRContext *context) {
+  results.add<GloablImportDedupPattern>(context);
+}
+
 //===----------------------------------------------------------------------===//
 // CallOp
 //===----------------------------------------------------------------------===//
