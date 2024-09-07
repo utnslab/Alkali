@@ -604,6 +604,9 @@ struct GlobalToPartitionPass :
 
 struct PipelineHandlerPass
     : public PassWrapper<PipelineHandlerPass, OperationPass<ModuleOp>> {
+
+  PipelineHandlerPass() = default;
+  PipelineHandlerPass(const PipelineHandlerPass &pass) {}
   void runOnOperation() final;
   void getDependentDialects(DialectRegistry &registry) const override {
     registry.insert<EP2Dialect, scf::SCFDialect, cf::ControlFlowDialect>();
@@ -612,6 +615,15 @@ struct PipelineHandlerPass
   StringRef getDescription() const final {
     return "Partition a handler into to a pipeline of handlers";
   }
+
+  Option<std::string> mode{
+      *this, "mode",
+      llvm::cl::desc("Modes for splits: search, kcut"),
+      llvm::cl::init("search")};
+  Option<int> kNum {
+      *this, "knum",
+      llvm::cl::desc("Number for kcut. required for kcut mode"),
+      llvm::cl::init(0)};
 };
 
 // FrontEnd Conversion Passes

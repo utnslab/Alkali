@@ -681,7 +681,7 @@ bool pipelineHandler(ep2::FuncOp funcOp, PipelinePolicy* policy, PipelineResult*
         } else if (vertexToValue.find(pr2.first) != vertexToValue.end()) {
           vertexToValue[pr2.first].dump();
         }
-        assert(false);
+        // assert(false);
       }
     }
   }
@@ -835,9 +835,9 @@ llvm::SmallVector<SearchDirection, 4> stepSearch(SearchDirection& sd) {
   SmallVector<SmallVector<SearchPair>> functionResult;
 
   PipelineResult results;
+  bool allDone = true;
+  SmallVector<SearchPair> choices;
   for (auto &[func, policy] : sd) {
-    bool allDone = true;
-    SmallVector<SearchPair> choices;
     if (policy->done) {
       // llvm::errs() << "Done with " << func.getSymName() << '\n';
       // we are done with this funciton. continue;
@@ -860,9 +860,9 @@ llvm::SmallVector<SearchDirection, 4> stepSearch(SearchDirection& sd) {
         choices.push_back({sinkOp, sinkPolicy});
       }
     }
-    if (!allDone)
-      functionResult.push_back(std::move(choices));
   }
+  if (!allDone)
+    functionResult.push_back(std::move(choices));
 
   // construct return from generated functions.
   llvm::SmallVector<SearchDirection, 4> ret{};
@@ -878,12 +878,46 @@ llvm::SmallVector<SearchDirection, 4> stepSearch(SearchDirection& sd) {
   return ret;
 }
 
+void kcutPolicy(Operation * moduleOp, int k) {
+  SearchDirection sd;
+
+  moduleOp->walk([&](ep2::FuncOp funcOp) {
+    if (funcOp.isExtern() || !funcOp.isHandler())
+      return;
+
+    sd[funcOp] = std::make_shared<NetronomeKCutPolicy>(k);
+  });
+
+  while (true) {
+    auto cuts = stepSearch(sd);
+    if (cuts.empty())
+      break;
+    sd = cuts[0];
+  }
+
+  // llvm::errs() << "Finish kcut\n";
+  // for (auto &[func, policy] : sd) {
+  //   llvm::errs() << "Function: " << func.getSymName() << '\n';
+  //   llvm::errs() << "Policy: " << policy->sourceWeight << '\n';
+  // }
+
+  moduleOp->walk([&](ep2::FuncOp funcOp){
+    if (funcOp.isExtern() || !funcOp.isHandler())
+      return;
+    if (!sd.contains(funcOp))
+      funcOp.erase();
+  });
+}
+
 void bfsSearchPolicy(Operation * moduleOp) {
   std::queue<SearchDirection> cuts;
 
   // TODO: make a function for init cut
   // init cut: we try to cut the program into 1-3 pieces
   moduleOp->walk([&](ep2::FuncOp funcOp) {
+    if (funcOp.isExtern() || !funcOp.isHandler())
+      return;
+
     {
       llvm::DenseMap<ep2::FuncOp, PolicyP> sd;
       sd[funcOp] = std::make_shared<NetronomeKCutPolicy>(2);
@@ -916,18 +950,20 @@ void bfsSearchPolicy(Operation * moduleOp) {
 
 // Assumes all dead code is eliminated.
 void PipelineHandlerPass::runOnOperation() {
-  bfsSearchPolicy(getOperation());
+  if (mode.getValue() == "search")
+    bfsSearchPolicy(getOperation());
+  else if (mode.getValue() == "kcut") {
+    if (kNum.getValue() == 0) {
+      llvm::errs() << "kcut mode requires kNum to be set\n";
+      signalPassFailure();
+      return;
+    }
 
-  // getOperation()->walk([&](ep2::FuncOp funcOp) {
-  //   NetronomeKCutPolicy policy{3};
-  //   PipelineResult results;
-  //   if (pipelineHandler(funcOp, &policy, &results)) {
-  //     llvm::errs() << "Min-cut suceeded for " << funcOp.getSymName() << '\n';
-  //     functionSplitter(funcOp, results.sinkOps, results.sinkValues);
-  //   } else {
-  //     llvm::errs() << "Min-cut failed for " << funcOp.getSymName() << '\n';
-  //   }
-  // });
+    kcutPolicy(getOperation(), kNum.getValue());
+  } else {
+    llvm::errs() << "Unknown mode: " << mode.getValue() << '\n';
+    signalPassFailure();
+  }
 }
 
 } // namespace ep2
