@@ -789,12 +789,11 @@ struct NetronomeKCutPolicy : public PipelinePolicy {
   }
   int operationWeight(mlir::Operation* op) override {
     return llvm::TypeSwitch<Operation *, int>(op)
-        .Case([&](ep2::LookupOp) { return 10; })
-        .Case([&](ep2::UpdateOp) { return 10; })
         // non weight ops
-        .Case<ep2::StructAccessOp, ep2::ConstantOp, ep2::GlobalImportOp,
-              ep2::BitCastOp>([&](Operation *) { return 1; })
-        .Default([&](Operation *) { return 10; });
+        // .Case([&](ep2::GlobalImportOp) { return 100; })
+        // .Case<ep2::StructAccessOp, ep2::ConstantOp,
+        //       ep2::BitCastOp>([&](Operation *) { return 1; })
+        .Default([&](Operation *) { return 1; });
   }
 
   int typeTransmitCost(mlir::Type ty) override {
@@ -909,7 +908,7 @@ void kcutPolicy(Operation * moduleOp, int k) {
     if (funcOp.isExtern() || !funcOp.isHandler())
       return;
 
-    sd[funcOp] = std::make_shared<NetronomeKCutPolicy>(k, 0.2);
+    sd[funcOp] = std::make_shared<NetronomeKCutPolicy>(k, 0.1);
   });
 
   while (true) {
