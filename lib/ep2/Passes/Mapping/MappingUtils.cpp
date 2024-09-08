@@ -33,9 +33,7 @@ void preMappingCanonicalize(HandlerPipeline &pipeline) {
     auto funcOp = pipeline[i];
     OpBuilder builder(funcOp);
 
-    if (i == 0) { // head of chain. should be an external event
-      funcOp->setAttr("extern", builder.getBoolAttr(true));
-
+    if (i == 0) {
       if (!funcOp->hasAttr("atom"))
         funcOp->setAttr("atom", builder.getStringAttr("main"));
       atomName = funcOp->getAttrOfType<StringAttr>("atom").getValue();
