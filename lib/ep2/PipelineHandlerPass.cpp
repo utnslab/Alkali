@@ -55,7 +55,7 @@ typedef size_t weight_t;
 static constexpr long long INF_WT = 1e18;
 static constexpr long long INF_MIN = 1e17;
 static constexpr long long SMALL_WT = 1;
-static constexpr size_t N_RAND_ITERS = 100;
+static constexpr size_t N_RAND_ITERS = 1000;
 static constexpr int MIN_CUT_SUCCESS = 0;
 static constexpr int MIN_CUT_FAILURE_INF_FLOW = 1;
 static constexpr int MIN_CUT_FAILURE_SRC_INF_CAP_PATH = 2;
@@ -424,7 +424,8 @@ static int runBalancedMinCut(
     }
 
     float frac_src_cut = ((float) wmap_sum) / verts.size();
-    llvm::errs() << "FRAC: " << llvm::format("%.2f\n", frac_src_cut);
+    llvm::errs() << "FRAC: " << llvm::format("%.2f", frac_src_cut) << " " << llvm::format("%.2f", sourceWeight*(1-tol)) << " " << llvm::format("%.2f", sourceWeight*(1+tol)) << '\n';
+
     resultSourceWeight = frac_src_cut;
 
     /*
@@ -505,6 +506,7 @@ static int runBalancedMinCut(
           sourceSet.insert(boostToMyVtx[verts[i]]);
         }
       }
+      llvm::errs() << "DONE\n";
       break;
     }
   }
@@ -590,23 +592,25 @@ bool pipelineHandler(ep2::FuncOp funcOp, PipelinePolicy* policy, PipelineResult*
 
       if (op->getNumResults() > 0) {
         for (size_t i = 0; i<op->getNumResults(); ++i) {
-          mlir::Type ty = op->getResult(i).getType();
-          long long weight = policy->typeTransmitCost(ty);
-          if (isa<ep2::GlobalImportOp>(op)) {
-            weight = INF_WT;
-          }
           mlir::Value v = op->getResult(i);
+          if (!v.use_empty()) {
+            mlir::Type ty = v.getType();
+            long long weight = policy->typeTransmitCost(ty);
+            if (isa<ep2::GlobalImportOp>(op)) {
+              weight = INF_WT;
+            }
 
-          vertexToOp[opToVertex(op)] = op;
-          vertexToValue[valueToVertex(v)] = v;
-          assert(opToVertex(op) != valueToVertex(v));
+            vertexToOp[opToVertex(op)] = op;
+            vertexToValue[valueToVertex(v)] = v;
+            assert(opToVertex(op) != valueToVertex(v));
 
-          myAdjList[opToVertex(op)][valueToVertex(v)] = (long long) weight;
+            myAdjList[opToVertex(op)][valueToVertex(v)] = (long long) weight;
+          }
         }
       } else {
         vertexToOp[opToVertex(op)] = op;
         falseEdges.emplace_back(std::pair<vertex_t, vertex_t>{sinkMap[&blk], opToVertex(op)}, INF_WT);
-        if (op != blk.getTerminator() || isa<ep2::ReturnOp>(op)) {
+        if (isa<ep2::ReturnOp>(op)) {
           pipelineConstraints.emplace_back(opToVertex(op), globalSink);
           myAdjList[opToVertex(op)][globalSink] = INF_WT;
         } else if (myAdjList.count(opToVertex(op)) == 0) {
@@ -680,7 +684,7 @@ bool pipelineHandler(ep2::FuncOp funcOp, PipelinePolicy* policy, PipelineResult*
         } else if (vertexToValue.find(pr2.first) != vertexToValue.end()) {
           vertexToValue[pr2.first].dump();
         }
-        // assert(false);
+        assert(false);
       }
     }
   }
@@ -823,11 +827,15 @@ struct NetronomeKCutPolicy : public PipelinePolicy {
 
   std::pair<std::shared_ptr<PipelinePolicy>, std::shared_ptr<PipelinePolicy>> splitPolicy(PipelineResult &result) override {
     int newCuts = numCuts - 1;
-    // TODO: also adjust tolerance
-    auto source = std::make_shared<NetronomeKCutPolicy>(newCuts, tolerance);
-    auto sink = std::make_shared<NetronomeKCutPolicy>(newCuts, tolerance);
+    // also adjust tolerance
 
-    bool noCutSource = result.sourceWeight < 1.0f / numCuts + tolerance;
+    double localTol = tolerance;
+    localTol = tolerance / (1 - 1.0 / (numCuts));
+
+    auto source = std::make_shared<NetronomeKCutPolicy>(newCuts, localTol);
+    auto sink = std::make_shared<NetronomeKCutPolicy>(newCuts, localTol);
+
+    bool noCutSource = result.sourceWeight < 1.0f / numCuts + localTol;
     source->done = newCuts == 1 || noCutSource;
     sink->done = newCuts == 1 || !noCutSource;
     return std::make_pair(source, sink);
