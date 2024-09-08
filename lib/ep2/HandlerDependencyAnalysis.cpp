@@ -196,6 +196,8 @@ HandlerDependencyAnalysis::HandlerDependencyAnalysis(Operation *module) {
           targets.push_back(it3->second);
 
         // If its an extern, we further search for extern forwards
+        llvm::errs() << "checking extern: " << target.mangle() << "\n";
+        llvm::errs() << "func" << it3->second << "\n";
         if (!it3->second.isExtern())
           continue;
 

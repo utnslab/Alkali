@@ -636,6 +636,23 @@ struct LiftLLVMPasses : public PassWrapper<LiftLLVMPasses, OperationPass<ModuleO
   StringRef getDescription() const final { return "Lift LLVM dialect to EP2 dialect"; }
 };
 
+struct PipelineCanonicalizePass
+    : public PassWrapper<PipelineCanonicalizePass, OperationPass<ModuleOp>> {
+  PipelineCanonicalizePass() = default;
+  PipelineCanonicalizePass(const PipelineCanonicalizePass &pass) {}
+  void runOnOperation() final;
+  void getDependentDialects(DialectRegistry &registry) const override {
+    registry.insert<EP2Dialect, scf::SCFDialect, cf::ControlFlowDialect>();
+  }
+  StringRef getArgument() const final { return "ep2-pipeline-canon"; }
+  StringRef getDescription() const final { return "Canonicalize the pipeline"; }
+
+  Option<std::string> replications{
+      *this, "rep",
+      llvm::cl::desc("replications. array of int. size must match the number "
+                     "of handlers in pipeline")};
+};
+
 } // namespace ep2
 } // namespace mlir
 

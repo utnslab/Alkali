@@ -77,6 +77,7 @@ void EmitFPGAPass::emitFuncHeader(std::ofstream &file, ep2::FuncOp funcOp) {
     }
     index ++;
   }
+  llvm::errs() << "Info: " << funcOp.getName() << " has " << replica_args.size() << " replicated args\n";
   handler_in_edge_map[*cur_funcop].push_back({IN, in_event_name, if_in_extern_event, in_event_wires});
 
   // push output parameter wires

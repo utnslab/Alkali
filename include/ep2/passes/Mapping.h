@@ -6,6 +6,13 @@
 namespace mlir {
 namespace ep2 {
 
+// handler a pipeline and insert controller
+using HandlerPipeline = llvm::SmallVector<ep2::FuncOp>;
+
+void simpleMapping(HandlerPipeline &pipeline, llvm::SmallVector<int> *replications = nullptr);
+void preMappingCanonicalize(HandlerPipeline &pipeline);
+void insertController(HandlerPipeline &pipeline);
+
 // handler split and pipeline
 struct PipelineResult {
   double sourceWeight;

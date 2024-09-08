@@ -56,6 +56,8 @@ add_mlir_dialect_library(MLIREP2
         Passes/Conversion/LiftUtils.cpp
 
         Passes/Mapping/PerformanceModel.cpp
+        Passes/Mapping/MappingUtils.cpp
+        Passes/Mapping/PipelineCanonicalizePass.cpp
 
         DEPENDS
         MLIREP2OpsIncGen

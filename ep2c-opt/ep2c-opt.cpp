@@ -83,6 +83,9 @@ int main(int argc, char **argv) {
   // frontend lift passes
   mlir::PassRegistration<mlir::ep2::LiftLLVMPasses>();
 
+  // pipeline utils
+  mlir::PassRegistration<mlir::ep2::PipelineCanonicalizePass>();
+
   mlir::registerAllPasses();
 
   // Polygeist to MLIR extensions
