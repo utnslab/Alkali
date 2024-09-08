@@ -127,21 +127,21 @@ void EmitFPGAPass::emitControllerMux(std::ofstream &file, ep2::ConnectOp conncet
     int out_count = outvs.size();
 
     assert((in_count >= 1) && (out_count >= 1));
-    assert(!((in_count > 1) && (out_count > 1))); // currently no n-to-n mapping
     
-    std::string mux_name = "ctrl_mux" ;
-    int port_count = in_count;
-    std::string selector_name = "ctrl_selector";
+    std::string mux_name = "ctrl_all_to_all" ;
 
     if(in_count == 1){
         mux_name = "ctrl_demux";
-        port_count = out_count;
-        selector_name = "ctrl_dispatcher";
     }
-    int select_data_width = ceil(log2(port_count));
+    else if(out_count == 1){
+        mux_name = "ctrl_mux";
+    }
 
-    std::vector<struct wire_config> selector_wires;
+    std::vector<struct wire_config> selector_wires, dispatcher_wires;
+    int select_data_width = ceil(log2(in_count));
+    int dispatch_data_width = ceil(log2(out_count));
     struct axis_config selector_axis = {0, 0, select_data_width};
+    struct axis_config dispatcher_axis = {0, 0, dispatch_data_width};
 
     if(in_count == 1 && out_count == 1){
         // in == out, direct connect
@@ -175,16 +175,21 @@ void EmitFPGAPass::emitControllerMux(std::ofstream &file, ep2::ConnectOp conncet
         }
         ports.push_back({AXIS, out_var_names, "(des)mux out", "m_val_axis", axis});
 
-
-        struct wire_config selector_wire = {AXIS, assign_name(mux_name + "_select"), "selector wire", false, "", true, selector_axis};
-        selector_wires.push_back(selector_wire);
-        ports.push_back({AXIS, {selector_wire.name}, "selector wire", "s_selector", selector_axis});
-    
+        if(mux_name == "ctrl_mux" || mux_name == "ctrl_all_to_all"){
+            struct wire_config selector_wire = {AXIS, assign_name(mux_name + "_select"), "selector wire", false, "", true, selector_axis};
+            selector_wires.push_back(selector_wire);
+            ports.push_back({AXIS, {selector_wire.name}, "selector wire", "s_selector", selector_axis});
+        }
+        if(mux_name == "ctrl_demux" || mux_name == "ctrl_all_to_all"){
+            struct wire_config dispatcher_wire = {AXIS, assign_name(mux_name + "_dispacth"), "dispatcher wire", false, "", true, dispatcher_axis};
+            dispatcher_wires.push_back(dispatcher_wire);
+            ports.push_back({AXIS, {dispatcher_wire.name}, "dispatcher wire", "s_dispatcher", dispatcher_axis});
+        }
     
         std::list<struct module_param_config> params;
-        if(mux_name == "ctrl_mux")
+        if(mux_name == "ctrl_mux" || mux_name == "ctrl_all_to_all")
             params.push_back({"S_COUNT  ", in_count});
-        else
+        if(mux_name == "ctrl_demux" || mux_name == "ctrl_all_to_all")
             params.push_back({"D_COUNT  ", out_count});
         params.push_back({"DATA_WIDTH", axis.data_width});
         params.push_back({"KEEP_ENABLE ", axis.if_keep});
@@ -192,10 +197,18 @@ void EmitFPGAPass::emitControllerMux(std::ofstream &file, ep2::ConnectOp conncet
         emitModuleCall(file, mux_name, assign_name(mux_name), ports, params);
     }
 
-
+    std::vector<std::string> selector_var_names, dispatcher_var_names;
+    for(auto &wire : selector_wires){
+        emitwire(file, wire);
+        selector_var_names.push_back(wire.name);
+    }
+    for(auto &wire : dispatcher_wires){
+        emitwire(file, wire);
+        dispatcher_var_names.push_back(wire.name);
+    }
     // emit selector
-    std::list<struct module_port_config> selector_ports;
-    if(mux_name == "ctrl_mux"){
+    std::list<struct module_port_config> selector_ports, dispatcher_ports;
+    if(mux_name == "ctrl_mux" || mux_name == "ctrl_all_to_all"){
         std::vector<std::string> selector_inc_names;
         struct axis_config axis = {0, 0, 1};
         for(auto in : invs){
@@ -207,28 +220,21 @@ void EmitFPGAPass::emitControllerMux(std::ofstream &file, ep2::ConnectOp conncet
             selector_inc_names.push_back(inc_name);
         }
         selector_ports.push_back({AXIS, selector_inc_names, "increase from all port's first arg", "s_inc", axis});
-    }
-
-    std::vector<std::string> selector_var_names;
-    for(auto &wire : selector_wires){
-        emitwire(file, wire);
-        selector_var_names.push_back(wire.name);
-    }
-    selector_ports.push_back({AXIS, selector_var_names, "selector wire", "m_selector", selector_axis});
-    std::list<struct module_param_config> params;
-    if(mux_name == "ctrl_mux")
-    {    
-        params.push_back({"S_COUNT", port_count});
+        selector_ports.push_back({AXIS, selector_var_names, "selector wire", "m_selector", selector_axis});
+        std::list<struct module_param_config> params;
+        params.push_back({"S_COUNT", in_count});
         params.push_back({"SELECT_WIDTH", select_data_width});
+        params.push_back({"REPLICATED_OUT_NUM", (int)selector_wires.size()});
+        emitModuleCall(file, "ctrl_selector", "ctrl_selector", selector_ports, params);
     }
-    else{
-        params.push_back({"D_COUNT", port_count});
-        params.push_back({"DISPATCH_WIDTH", select_data_width});
+    if(mux_name == "ctrl_demux" || mux_name == "ctrl_all_to_all"){
+        dispatcher_ports.push_back({AXIS, dispatcher_var_names, "dispatcher wire", "m_dispatcher", dispatcher_axis});
+        std::list<struct module_param_config> params;
+        params.push_back({"D_COUNT", out_count});
+        params.push_back({"DISPATCH_WIDTH", dispatch_data_width});
+        params.push_back({"REPLICATED_OUT_NUM", (int)dispatcher_wires.size()});
+        emitModuleCall(file, "ctrl_dispatcher", "ctrl_dispatcher", dispatcher_ports, params);
     }
-    
-    params.push_back({"REPLICATED_OUT_NUM", (int)selector_wires.size()});
-    emitModuleCall(file, selector_name, selector_name, selector_ports, params);
-
 
 }
 
