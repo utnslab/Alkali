@@ -651,6 +651,10 @@ struct PipelineCanonicalizePass
       *this, "rep",
       llvm::cl::desc("replications. array of int. size must match the number "
                      "of handlers in pipeline")};
+  Option<bool> inlineTable {
+      *this, "inline-table",
+      llvm::cl::desc("inline all tables regardless of mapping results"),
+      llvm::cl::init(false)};
 };
 
 } // namespace ep2

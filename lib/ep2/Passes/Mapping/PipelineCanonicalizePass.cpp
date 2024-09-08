@@ -4,6 +4,17 @@
 namespace mlir {
 namespace ep2 {
 
+static void addTableInlineAttribute(HandlerPipeline &pipeline) {
+  for (auto &funcOp : pipeline) {
+    funcOp->walk([&](ep2::GlobalImportOp importOp) {
+      auto globalName = importOp.getName();
+      auto globalAttrName = "instances_" + globalName.str();
+
+      funcOp->setAttr(globalAttrName, BoolAttr::get(funcOp->getContext(), true));
+    });
+  }
+}
+
 void PipelineCanonicalizePass::runOnOperation() {
   auto module = getOperation();
   llvm::SmallVector<ep2::FuncOp> pipeline;
@@ -31,6 +42,9 @@ void PipelineCanonicalizePass::runOnOperation() {
   } else
     simpleMapping(pipeline);
   insertController(pipeline);
+
+  if (inlineTable.getValue())
+    addTableInlineAttribute(pipeline);
 }
 
 } // namespace ep2
