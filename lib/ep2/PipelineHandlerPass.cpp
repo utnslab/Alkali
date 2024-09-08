@@ -789,12 +789,12 @@ struct NetronomeKCutPolicy : public PipelinePolicy {
   }
   int operationWeight(mlir::Operation* op) override {
     return llvm::TypeSwitch<Operation *, int>(op)
-        .Case([&](ep2::LookupOp) { return 1; })
-        .Case([&](ep2::UpdateOp) { return 1; })
+        .Case([&](ep2::LookupOp) { return 10; })
+        .Case([&](ep2::UpdateOp) { return 10; })
         // non weight ops
         .Case<ep2::StructAccessOp, ep2::ConstantOp, ep2::GlobalImportOp,
               ep2::BitCastOp>([&](Operation *) { return 1; })
-        .Default([&](Operation *) { return 1; });
+        .Default([&](Operation *) { return 10; });
   }
 
   int typeTransmitCost(mlir::Type ty) override {
