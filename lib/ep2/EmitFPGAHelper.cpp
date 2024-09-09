@@ -192,6 +192,16 @@ void EmitFPGAPass::emitonewire(std::ofstream &file, struct wire_config &wire) {
         << ";\n";
     file << " wire " << " " << wire.name << "_req_data_valid"  << ";\n";
     file << " wire " << " " << wire.name << "_req_data_ready" << ";\n";
+  } else if (wire.type == BIT) {
+    std::string initvalue = "";
+    if (wire.if_init_value) {
+      initvalue = "=" + wire.init_value;
+    }
+
+    file << "//" << wire.debuginfo << "\n";
+    std::string datawidthstr =
+        "[" + std::to_string(wire.bit.size) + "-1:0]";
+    file << " wire " << datawidthstr << wire.name << initvalue << ";\n";
   }
   file << "\n";
 }
@@ -274,7 +284,10 @@ void EmitFPGAPass::emitwireassign(std::ofstream &file,
     file << " assign " << assign.dst_wire.name << "_tready"
          << " = " << assign.src_wire.name << "_req_data_ready"
          << ";\n";
-   }
+   } else if (assign.src_wire.type == BIT && assign.dst_wire.type == BIT) {
+    file << " assign " << assign.dst_wire.name << " = " << assign.src_wire.name
+         << ";\n";
+  }
   file << "\n";
 }
 
@@ -392,6 +405,15 @@ void EmitFPGAPass::emitModuleCall(
            << "),\n";
       file << tab << "." << port.port_name << "_req_data_ready(" << req_data_ready_var_names
            << ")";
+    } else if (port.type == BIT) {
+      std::string var_names = "{";
+      for (int i = 0; i < port.var_name.size(); i++) {
+        auto optional_comma = (i == port.var_name.size() - 1) ? "}" : ",";
+        var_names += (port.var_name[i] + optional_comma);
+      }
+      file << ",\n";
+      file << tab << "//" << port.debuginfo << "\n";
+      file << tab << "." << port.port_name << "(" << var_names << ")";
     }
   }
   file << "\n);\n\n";

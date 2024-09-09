@@ -145,12 +145,49 @@ void EmitFPGAPass::emitControllerMux(std::ofstream &file, ep2::ConnectOp conncet
 
     if(in_count == 1 && out_count == 1){
         // in == out, direct connect
+        struct bits_config bitsc = {event_wire_counts};
+        auto barrier_name = assign_name("barriers");
+        struct wire_config barrier_wire = {BIT, barrier_name, "barrier bits", false, "", true, {.bit = bitsc}};
+        emitwire(file, barrier_wire);
+
+        auto in_var_names = std::vector<std::string>();
+        auto out_var_names = std::vector<std::string>();
         for(int i = 0; i < event_wire_counts ; i++){
             auto inwire = ctrl_ins[*cur_funcop][invs[0]].event_wires[i];
             auto outwire = ctrl_outs[*cur_funcop][outvs[0]].event_wires[i];
-            struct wire_assign_config assign = {-1, -1, -1, -1, inwire, outwire};
-            emitwireassign(file, assign);
+            std::list<struct module_port_config> ports;
+            ports.push_back({AXIS, {inwire.name}, "src wire", "s_in", inwire.axis});
+            ports.push_back({AXIS, {outwire.name}, "dst wire", "m_out", outwire.axis});
+            std::list<struct module_param_config> params;
+            params.push_back({"DATA_WIDTH", inwire.axis.data_width});
+            params.push_back({"KEEP_ENABLE ", inwire.axis.if_keep});
+            ports.push_back({BIT, {barrier_wire.name + "[" + std::to_string(i) +"]"}, "barrier bits", "barrier", {.bit =bitsc}});
+            emitModuleCall(file, "barrier_queue", assign_name("barrier_queue"), ports, params);
+
+            struct bits_config single_bit = {1};
+            auto inc_string = "(" + inwire.name + "_tready && " + inwire.name + "_tvalid" + ")";
+            auto inc_name = assign_name("inc");
+            struct wire_config inc_wire = {BIT, inc_name, "increase counter", true, inc_string, true, {.bit =single_bit}};
+            emitwire(file, inc_wire);
+            in_var_names.push_back(inc_name);
+
+            auto dec_string = "(" + outwire.name + "_tready && " + outwire.name + "_tvalid" + ")";
+            auto dec_name = assign_name("dec");
+            struct wire_config dec_wire = {BIT, dec_name, "decrease counter", true, dec_string, true, {.bit =single_bit}};
+            emitonewire(file, dec_wire);
+            out_var_names.push_back(dec_name);
         }
+        std::reverse(in_var_names.begin(), in_var_names.end());
+        std::reverse(out_var_names.begin(), out_var_names.end());
+        std::list<struct module_port_config> barrier_ports;
+        barrier_ports.push_back({BIT, in_var_names, "inc wire", "s_inc", {.bit =bitsc}});
+        barrier_ports.push_back({BIT, out_var_names, "desc wire", "s_dec", {.bit =bitsc}});
+        barrier_ports.push_back({BIT, {barrier_name}, "barriers", "ctrl_barrier", {.bit =bitsc}});
+        std::list<struct module_param_config> params;
+        params.push_back({"PORT_COUNT", event_wire_counts});
+
+        emitModuleCall(file, "ctrl_barrier", assign_name("ctrl_barrier"), barrier_ports, params);
+
         return;
     }
     

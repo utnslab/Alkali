@@ -258,7 +258,7 @@ void EmitFPGAPass::emitTableInit(std::ofstream &file, ep2::InitOp initop) {
   std::vector<std::string> update_port_wire_names;
   for(int i =0; i < lookups.size(); i ++){
     auto i_str = std::to_string(i);
-    auto port_wire_name = "lookup_p_" +i_str;
+    auto port_wire_name = tabel_name + "_lookup_p_" +i_str;
     lookup_port_wire_names.push_back(port_wire_name);
     // emit wires def for port
     struct wire_config port_wires = {TABLE_LOOKUP, port_wire_name, "Table lookup port wire def ", false, "", true, .table_if=table_if};
@@ -268,7 +268,7 @@ void EmitFPGAPass::emitTableInit(std::ofstream &file, ep2::InitOp initop) {
   
   for(int i =0; i < updates.size(); i ++){
     auto i_str = std::to_string(i);
-    auto port_wire_name = "update_p_" +i_str;
+    auto port_wire_name = tabel_name + "_update_p_" +i_str;
     update_port_wire_names.push_back(port_wire_name);
     // emit wires def for port
     struct wire_config port_wires = {TABLE_UPDATE, port_wire_name, "Table update port wire def ", false, "", true, .table_if=table_if};

@@ -59,7 +59,7 @@ private:
 
   enum INOUT { IN, OUT };
 
-  enum IF_TYPE { AXIS, TABLE_LOOKUP, TABLE_UPDATE};
+  enum IF_TYPE { AXIS, TABLE_LOOKUP, TABLE_UPDATE, BIT};
 
   struct axis_config {
     int if_keep;
@@ -68,6 +68,10 @@ private:
     int user_width;
   };
   
+  struct bits_config {
+    int size;
+  };
+
   struct table_if_config {
     int index_width;
     int data_width;
@@ -81,6 +85,7 @@ private:
     union {
       struct axis_config axis;
       struct table_if_config table_if;
+      struct bits_config bit;
     };
   };
 
@@ -94,6 +99,7 @@ private:
     union {
       struct axis_config axis;
       struct table_if_config table_if;
+      struct bits_config bit;
     };
   };
 
@@ -120,6 +126,7 @@ private:
     union {
       struct axis_config axis;
       struct table_if_config table_if;
+      struct bits_config bit;
     };
   };
 
