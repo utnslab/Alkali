@@ -3,6 +3,10 @@
 #include "extern/extern_dma.h"
 #include "extern/extern_net.h"
 
+static struct tcp_header_t _loc_buf_18;
+__xrw static struct tcp_header_t _loc_buf_18_xfer;
+static struct firewall_meta_header_t _loc_buf_23;
+__xrw static struct firewall_meta_header_t _loc_buf_23_xfer;
 static struct firewall_tcpport_entries_t _loc_buf_20;
 __xrw static struct firewall_tcpport_entries_t _loc_buf_20_xfer;
 static struct eth_header_t _loc_buf_16;
@@ -11,10 +15,6 @@ static struct ip_header_t _loc_buf_17;
 __xrw static struct ip_header_t _loc_buf_17_xfer;
 static struct priority_entries_t _loc_buf_22;
 __xrw static struct priority_entries_t _loc_buf_22_xfer;
-static struct tcp_header_t _loc_buf_18;
-__xrw static struct tcp_header_t _loc_buf_18_xfer;
-static struct firewall_meta_header_t _loc_buf_23;
-__xrw static struct firewall_meta_header_t _loc_buf_23_xfer;
 static struct firewall_ip_entries_t _loc_buf_19;
 __xrw static struct firewall_ip_entries_t _loc_buf_19_xfer;
 static struct priority_entries_t _loc_buf_21;

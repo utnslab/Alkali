@@ -3,12 +3,12 @@
 #include "extern/extern_dma.h"
 #include "extern/extern_net.h"
 
-static struct err_tracker_t _loc_buf_43;
-__xrw static struct err_tracker_t _loc_buf_43_xfer;
 static struct tcp_tracker_t _loc_buf_41;
 __xrw static struct tcp_tracker_t _loc_buf_41_xfer;
 static struct flow_tracker_t _loc_buf_40;
 __xrw static struct flow_tracker_t _loc_buf_40_xfer;
+static struct err_tracker_t _loc_buf_43;
+__xrw static struct err_tracker_t _loc_buf_43_xfer;
 static struct ip_tracker_t _loc_buf_42;
 __xrw static struct ip_tracker_t _loc_buf_42_xfer;
 static int rr_ctr = 0;

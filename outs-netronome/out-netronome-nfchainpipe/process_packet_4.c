@@ -5,20 +5,20 @@
 #include "extern/extern_dma.h"
 #include "extern/extern_net.h"
 
+static struct firewall_meta_header_t _loc_buf_31;
+__xrw static struct firewall_meta_header_t _loc_buf_31_xfer;
 static struct priority_entries_t _loc_buf_30;
 __xrw static struct priority_entries_t _loc_buf_30_xfer;
 static struct priority_entries_t _loc_buf_29;
 __xrw static struct priority_entries_t _loc_buf_29_xfer;
-static struct firewall_meta_header_t _loc_buf_31;
-__xrw static struct firewall_meta_header_t _loc_buf_31_xfer;
-static struct firewall_ip_entries_t _loc_buf_27;
-__xrw static struct firewall_ip_entries_t _loc_buf_27_xfer;
-static struct tcp_header_t _loc_buf_26;
-__xrw static struct tcp_header_t _loc_buf_26_xfer;
 static struct eth_header_t _loc_buf_24;
 __xrw static struct eth_header_t _loc_buf_24_xfer;
 static struct ip_header_t _loc_buf_25;
 __xrw static struct ip_header_t _loc_buf_25_xfer;
+static struct tcp_header_t _loc_buf_26;
+__xrw static struct tcp_header_t _loc_buf_26_xfer;
+static struct firewall_ip_entries_t _loc_buf_27;
+__xrw static struct firewall_ip_entries_t _loc_buf_27_xfer;
 static struct firewall_tcpport_entries_t _loc_buf_28;
 __xrw static struct firewall_tcpport_entries_t _loc_buf_28_xfer;
 static int rr_ctr = 0;

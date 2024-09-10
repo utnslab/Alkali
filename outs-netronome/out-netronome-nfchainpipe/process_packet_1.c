@@ -3,22 +3,22 @@
 #include "extern/extern_dma.h"
 #include "extern/extern_net.h"
 
-static struct firewall_meta_header_t _loc_buf_7;
-__xrw static struct firewall_meta_header_t _loc_buf_7_xfer;
 static struct priority_entries_t _loc_buf_6;
 __xrw static struct priority_entries_t _loc_buf_6_xfer;
-static struct priority_entries_t _loc_buf_5;
-__xrw static struct priority_entries_t _loc_buf_5_xfer;
+static struct firewall_meta_header_t _loc_buf_7;
+__xrw static struct firewall_meta_header_t _loc_buf_7_xfer;
+static struct firewall_ip_entries_t _loc_buf_3;
+__xrw static struct firewall_ip_entries_t _loc_buf_3_xfer;
+static struct tcp_header_t _loc_buf_2;
+__xrw static struct tcp_header_t _loc_buf_2_xfer;
+static struct firewall_tcpport_entries_t _loc_buf_4;
+__xrw static struct firewall_tcpport_entries_t _loc_buf_4_xfer;
 static struct ip_header_t _loc_buf_1;
 __xrw static struct ip_header_t _loc_buf_1_xfer;
 static struct eth_header_t _loc_buf_0;
 __xrw static struct eth_header_t _loc_buf_0_xfer;
-static struct firewall_ip_entries_t _loc_buf_3;
-__xrw static struct firewall_ip_entries_t _loc_buf_3_xfer;
-static struct firewall_tcpport_entries_t _loc_buf_4;
-__xrw static struct firewall_tcpport_entries_t _loc_buf_4_xfer;
-static struct tcp_header_t _loc_buf_2;
-__xrw static struct tcp_header_t _loc_buf_2_xfer;
+static struct priority_entries_t _loc_buf_5;
+__xrw static struct priority_entries_t _loc_buf_5_xfer;
 static int rr_ctr = 0;
 __declspec(aligned(4)) struct event_param_NET_RECV work;
 __xrw struct event_param_NET_RECV work_ref;

@@ -42,6 +42,12 @@ void PipelineCanonicalizePass::runOnOperation() {
   } else
     simpleMapping(pipeline);
 
+  // for netronome, we need to map gloabl state to local state
+  if (mode.getValue() == "netronome") {
+    simpleGlobalMapping(pipeline);
+    bufferToRef(pipeline);
+  }
+
   // add the mode option for the controller
   insertController(pipeline);
 

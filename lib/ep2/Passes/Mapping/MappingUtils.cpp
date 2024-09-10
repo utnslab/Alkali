@@ -7,7 +7,7 @@ namespace ep2 {
 void simpleMapping(HandlerPipeline &pipeline,
                    llvm::SmallVector<int> *replications) {
   // we keep track of a global CU number
-  int cuNumber = 0;
+  int cuNumber = 1;
   // by default, we do a linear mapping
   llvm::SmallVector<int> defaultReplications(pipeline.size(), 1);
   if (!replications)
@@ -30,8 +30,65 @@ void simpleMapping(HandlerPipeline &pipeline,
   }
 }
 
+void simpleGlobalMapping(HandlerPipeline &pipeline) {
+  // we keep track of a global CU number
+  for (auto funcOp : pipeline) {
+    auto moduleOp = funcOp->getParentOfType<ModuleOp>();
+    OpBuilder builder(funcOp);
+    funcOp.walk([&](ep2::GlobalImportOp importOp) {
+      auto globalName = importOp.getName();
+      ep2::GlobalOp globalOp = nullptr;
+      moduleOp.walk([&](ep2::GlobalOp op) {
+        if (op.getName() == globalName)
+          globalOp = op;
+      });
+      if (!globalOp)
+        llvm_unreachable("global not found for globalImport");
+      auto globalAttrName = "instances";
+
+      // all map to local
+      auto instances = funcOp->getAttrOfType<ArrayAttr>(globalAttrName);
+      auto instancesStrs = llvm::map_to_vector(instances, [&](Attribute attr) {
+        return "lmem_" + attr.cast<StringAttr>().getValue().str();
+      });
+      llvm::SmallVector<StringRef> globalInstancesStrs = llvm::map_to_vector(instancesStrs, [&](StringRef str) {
+        return str;
+      });
+
+      // we do not allow. just check for now
+      if (globalOp->hasAttr(globalAttrName))
+        llvm::errs() << "global already has instances\n";
+      globalOp->setAttr(globalAttrName,
+        builder.getStrArrayAttr(globalInstancesStrs));
+    });
+  }
+}
+
+void bufferToRef(HandlerPipeline &pipeline) {
+  for (auto funcOp : pipeline) {
+    OpBuilder builder(funcOp);
+    funcOp.walk([&](Operation *op) {
+      builder.setInsertionPointAfter(op);
+      if (auto bufferOp = dyn_cast<ep2::EmitValueOp>(op)) {
+        builder.create<ep2::EmitOp>(bufferOp.getLoc(), bufferOp.getBuffer(),
+                                    bufferOp.getValue());
+        bufferOp->replaceAllUsesWith(ValueRange{
+          bufferOp.getBuffer()
+        });
+      } else if (auto bufferOp = dyn_cast<ep2::ExtractValueOp>(op)) {
+        auto extractOp = builder.create<ep2::ExtractOp>(bufferOp.getLoc(),
+                                       bufferOp.getOutput().getType(),
+                                       bufferOp.getBuffer());
+        bufferOp->replaceAllUsesWith(ValueRange{
+          bufferOp.getBuffer(), extractOp.getOutput()
+        });
+      }
+    });
+  }
+}
+
 void preMappingCanonicalize(HandlerPipeline &pipeline) {
-  StringRef eventName, atomName;
+  std::string eventName, atomName;
 
   for (size_t i = 0; i < pipeline.size(); i++) {
     auto funcOp = pipeline[i];
@@ -46,10 +103,12 @@ void preMappingCanonicalize(HandlerPipeline &pipeline) {
         funcOp->setAttr("event", builder.getStringAttr("Main"));
       eventName = funcOp->getAttrOfType<StringAttr>("event").getValue();
     } else { // splited names
+      // XXX(zhiyuang): netronome backend requires atom name to be unique
+      // WTF
       auto newEvent = eventName + "_" + std::to_string(i);
+      auto newAtomName = atomName + "_" + std::to_string(i);
       funcOp->setAttr("event", builder.getStringAttr(newEvent));
-      funcOp->setAttr("atom", builder.getStringAttr(atomName));
-      HandlerDependencyAnalysis::HandlerFullName fullname(funcOp);
+      funcOp->setAttr("atom", builder.getStringAttr(newAtomName));
 
       // rename all the init ops
       auto prevFunc = pipeline[i - 1];
@@ -64,13 +123,13 @@ void preMappingCanonicalize(HandlerPipeline &pipeline) {
         toRename.push_back(initOp);
       });
 
+      HandlerDependencyAnalysis::HandlerFullName fullname(funcOp);
       for (auto initOp : toRename) {
-        auto eventType = cast<ep2::StructType>(initOp.getType());
         builder.setInsertionPoint(initOp);
         // add atom
         llvm::SmallVector<Value> newArgs;
         newArgs.push_back(builder.create<ep2::ConstantOp>(
-          initOp.getLoc(), atomName
+          initOp.getLoc(), fullname.atom
         ));
         for (auto arg : initOp.getArgs())
           newArgs.push_back(arg);
@@ -80,7 +139,7 @@ void preMappingCanonicalize(HandlerPipeline &pipeline) {
         });
         auto newType = builder.getType<ep2::StructType>(true, newTypeArgs, fullname.event);
         auto newInit = builder.create<ep2::InitOp>(initOp.getLoc(), newType, newArgs);
-        auto newReturn = builder.create<ep2::ReturnOp>(initOp.getLoc(), ValueRange{newInit});
+        builder.create<ep2::ReturnOp>(initOp.getLoc(), ValueRange{newInit});
         // remove old use chain
         for (auto op : initOp->getUsers())
           op->erase();

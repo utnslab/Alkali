@@ -656,6 +656,10 @@ struct PipelineCanonicalizePass
       *this, "inline-table",
       llvm::cl::desc("inline all tables regardless of mapping results"),
       llvm::cl::init(false)};
+  Option<std::string> mode{
+      *this, "mode",
+      llvm::cl::desc("mode for canonicalization: fpga, netronome"),
+      llvm::cl::init("fpga")};
 };
 
 } // namespace ep2

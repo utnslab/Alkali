@@ -3,14 +3,14 @@
 #include "extern/extern_dma.h"
 #include "extern/extern_net.h"
 
-static struct err_tracker_t _loc_buf_39;
-__xrw static struct err_tracker_t _loc_buf_39_xfer;
 static struct ip_tracker_t _loc_buf_38;
 __xrw static struct ip_tracker_t _loc_buf_38_xfer;
-static struct flow_tracker_t _loc_buf_36;
-__xrw static struct flow_tracker_t _loc_buf_36_xfer;
 static struct tcp_tracker_t _loc_buf_37;
 __xrw static struct tcp_tracker_t _loc_buf_37_xfer;
+static struct err_tracker_t _loc_buf_39;
+__xrw static struct err_tracker_t _loc_buf_39_xfer;
+static struct flow_tracker_t _loc_buf_36;
+__xrw static struct flow_tracker_t _loc_buf_36_xfer;
 static int rr_ctr = 0;
 __declspec(aligned(4)) struct event_param_OoO_DETECT1 work;
 __xrw struct event_param_OoO_DETECT1 work_ref;

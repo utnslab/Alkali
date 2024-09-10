@@ -10,8 +10,11 @@ namespace ep2 {
 using HandlerPipeline = llvm::SmallVector<ep2::FuncOp>;
 
 void simpleMapping(HandlerPipeline &pipeline, llvm::SmallVector<int> *replications = nullptr);
+void simpleGlobalMapping(HandlerPipeline &pipeline);
+
 void preMappingCanonicalize(HandlerPipeline &pipeline);
 void insertController(HandlerPipeline &pipeline);
+void bufferToRef(HandlerPipeline &pipeline);
 
 // handler split and pipeline
 struct PipelineResult {
