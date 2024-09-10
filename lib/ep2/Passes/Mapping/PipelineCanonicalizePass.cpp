@@ -41,6 +41,8 @@ void PipelineCanonicalizePass::runOnOperation() {
     simpleMapping(pipeline, &ints);
   } else
     simpleMapping(pipeline);
+
+  // add the mode option for the controller
   insertController(pipeline);
 
   if (inlineTable.getValue())

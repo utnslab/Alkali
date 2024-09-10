@@ -6,6 +6,8 @@ namespace ep2 {
 
 void simpleMapping(HandlerPipeline &pipeline,
                    llvm::SmallVector<int> *replications) {
+  // we keep track of a global CU number
+  int cuNumber = 0;
   // by default, we do a linear mapping
   llvm::SmallVector<int> defaultReplications(pipeline.size(), 1);
   if (!replications)
@@ -19,7 +21,9 @@ void simpleMapping(HandlerPipeline &pipeline,
     OpBuilder builder(funcOp);
     // TODO: keep this?
     if (!funcOp->hasAttr("instances")) {
-      llvm::SmallVector<StringRef> instanceVec{rep, "any"};
+      llvm::SmallVector<StringRef> instanceVec;
+      for (int i = 0; i < rep; i++)
+        instanceVec.push_back("cu" + std::to_string(cuNumber++));
       auto instances = builder.getStrArrayAttr(instanceVec);
       funcOp->setAttr("instances", instances);
     }
