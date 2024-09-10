@@ -1,5 +1,5 @@
 diff --git a/mlir/lib/Target/Cpp/TranslateToCpp.cpp b/mlir/lib/Target/Cpp/TranslateToCpp.cpp
-index 4645ca4b206e..89edb0594624 100644
+index 4645ca4b206e..052ff69a92bc 100644
 --- a/mlir/lib/Target/Cpp/TranslateToCpp.cpp
 +++ b/mlir/lib/Target/Cpp/TranslateToCpp.cpp
 @@ -24,6 +24,7 @@
@@ -23,7 +23,7 @@ index 4645ca4b206e..89edb0594624 100644
  }
  
  static LogicalResult printOperation(CppEmitter &emitter,
-@@ -417,9 +422,240 @@ static LogicalResult printOperation(CppEmitter &emitter, emitc::CallOp callOp) {
+@@ -417,9 +422,261 @@ static LogicalResult printOperation(CppEmitter &emitter, emitc::CallOp callOp) {
    raw_ostream &os = emitter.ostream();
    Operation &op = *callOp.getOperation();
  
@@ -40,6 +40,11 @@ index 4645ca4b206e..89edb0594624 100644
 +  auto isFolded = [&](mlir::Value v) {
 +    llvm::StringRef name = emitter.getOrCreateName(v);
 +    return name[0] != 'v';
++  };
++
++  auto getTableName = [&](mlir::Value table) {
++    llvm::StringRef tblName = cast<emitc::OpaqueAttr>(dyn_cast<emitc::VariableOp>(table.getDefiningOp()).getValue()).getValue();
++    return tblName.str().substr(1);
 +  };
 +
 +  // More documentation on intrinsics is in LowerEmitcPass.cpp, where we emit these.
@@ -115,11 +120,27 @@ index 4645ca4b206e..89edb0594624 100644
 +      os << "*" << emitter.getOrCreateName(op.getOperand(2)) << " = ";
 +    }
 +    os << emitter.getOrCreateName(op.getOperand(0)) << "->table[";
-+    os << "me_cam_lookup(" << emitter.getOrCreateName(op.getOperand(1)) << ")]";
++
++    std::string tblName = getTableName(op.getOperand(0));
++    int sz = (*callOp.getArgs())[1].cast<IntegerAttr>().getValue().getSExtValue();
++    auto key = emitter.getOrCreateName(op.getOperand(1));
++    if (sz <= 16) {
++      os << "me_cam_lookup(" << key << ")]";
++    } else {
++      os << "lmem_cam_lookup(" << tblName << "_index, " << key << ", " << sz << ")]";
++    }
 +    return success();
 +  } else if (callOp.getCallee() == "__ep2_intrin_table_update") {
++    std::string tblName = getTableName(op.getOperand(0));
++    int sz = (*callOp.getArgs())[1].cast<IntegerAttr>().getValue().getSExtValue();
++    auto key = emitter.getOrCreateName(op.getOperand(1));
++
 +    os << emitter.getOrCreateName(op.getOperand(0)) << "->table[";
-+    os << "me_cam_update(" << emitter.getOrCreateName(op.getOperand(1)) << ")]";
++    if (sz <= 16) {
++      os << "me_cam_update(" << key << ")]";
++    } else {
++      os << "lmem_cam_update(" << tblName << "_index, " << key << ", " << sz << ")]";
++    }
 +    os << " = ";
 +    os << ((*callOp.getArgs())[0].cast<IntegerAttr>().getValue().getSExtValue() ? "*" : "");
 +    os << emitter.getOrCreateName(op.getOperand(2));
@@ -267,7 +288,7 @@ index 4645ca4b206e..89edb0594624 100644
  
    auto emitArgs = [&](Attribute attr) -> LogicalResult {
      if (auto t = dyn_cast<IntegerAttr>(attr)) {
-@@ -451,10 +687,15 @@ static LogicalResult printOperation(CppEmitter &emitter, emitc::CallOp callOp) {
+@@ -451,10 +708,15 @@ static LogicalResult printOperation(CppEmitter &emitter, emitc::CallOp callOp) {
  
    os << "(";
  
@@ -287,7 +308,7 @@ index 4645ca4b206e..89edb0594624 100644
    if (failed(emittedArgs))
      return failure();
    os << ")";
-@@ -772,6 +1013,13 @@ CppEmitter::CppEmitter(raw_ostream &os, bool declareVariablesAtTop)
+@@ -772,6 +1034,13 @@ CppEmitter::CppEmitter(raw_ostream &os, bool declareVariablesAtTop)
  StringRef CppEmitter::getOrCreateName(Value val) {
    if (auto literal = dyn_cast_if_present<emitc::LiteralOp>(val.getDefiningOp()))
      return literal.getValue();
@@ -301,7 +322,7 @@ index 4645ca4b206e..89edb0594624 100644
    if (!valueMapper.count(val))
      valueMapper.insert(val, formatv("v{0}", ++valueInScopeCount.top()));
    return *valueMapper.begin(val);
-@@ -787,7 +1035,7 @@ StringRef CppEmitter::getOrCreateName(Block &block) {
+@@ -787,7 +1056,7 @@ StringRef CppEmitter::getOrCreateName(Block &block) {
  bool CppEmitter::shouldMapToUnsigned(IntegerType::SignednessSemantics val) {
    switch (val) {
    case IntegerType::Signless:
@@ -310,7 +331,7 @@ index 4645ca4b206e..89edb0594624 100644
    case IntegerType::Signed:
      return false;
    case IntegerType::Unsigned:
-@@ -1046,10 +1294,11 @@ LogicalResult CppEmitter::emitType(Location loc, Type type) {
+@@ -1046,10 +1315,11 @@ LogicalResult CppEmitter::emitType(Location loc, Type type) {
    if (auto iType = dyn_cast<IntegerType>(type)) {
      switch (iType.getWidth()) {
      case 1:

@@ -761,14 +761,14 @@ struct TableLookupPattern : public OpConversionPattern<ep2::LookupOp> {
 
       llvm::SmallVector<Type> resTypes = {};
       // Arg0 is whether the table element we are reading out is a reference type.
-      mlir::ArrayAttr args = rewriter.getI32ArrayAttr({true});
+      mlir::ArrayAttr args = rewriter.getI32ArrayAttr({true, op.getTable().getType().getSize()});
       mlir::ArrayAttr templ_args;
       rewriter.create<emitc::CallOp>(op->getLoc(), resTypes, rewriter.getStringAttr("__ep2_intrin_table_lookup"), args, templ_args, ValueRange{adaptor.getTable(), adaptor.getKey(), buf->getResult(0)});
 
       rewriter.replaceOp(op, buf);
     } else {
       llvm::SmallVector<Type> resTypes = {typeConverter->convertType(op.getValue().getType())};
-      mlir::ArrayAttr args = rewriter.getI32ArrayAttr({false});
+      mlir::ArrayAttr args = rewriter.getI32ArrayAttr({false, op.getTable().getType().getSize()});
       mlir::ArrayAttr templ_args;
       rewriter.replaceOpWithNewOp<emitc::CallOp>(op, resTypes, rewriter.getStringAttr("__ep2_intrin_table_lookup"), args, templ_args, ValueRange{adaptor.getOperands()});
     }
@@ -786,7 +786,7 @@ struct TableUpdatePattern : public OpConversionPattern<ep2::UpdateOp> {
                   ConversionPatternRewriter &rewriter) const final {
     llvm::SmallVector<Type> resTypes = {};
     // Same arg pattern as table_lookup op
-    mlir::ArrayAttr args = rewriter.getI32ArrayAttr({isa<ep2::StructType>(op.getValue().getType())});
+    mlir::ArrayAttr args = rewriter.getI32ArrayAttr({isa<ep2::StructType>(op.getValue().getType()), op.getTable().getType().getSize()});
     mlir::ArrayAttr templ_args;
     rewriter.replaceOpWithNewOp<emitc::CallOp>(op, resTypes, rewriter.getStringAttr("__ep2_intrin_table_update"), args, templ_args, adaptor.getOperands());
     return success();

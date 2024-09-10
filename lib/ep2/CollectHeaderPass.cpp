@@ -170,13 +170,29 @@ CollectInfoAnalysis::CollectInfoAnalysis(Operation* module, AnalysisManager& am)
     }
   });
 
-  // find out where instances of each event's handlers reside
-  std::unordered_map<std::string, std::bitset<84>> eventToMEMap;
+  // find bitset of compute units which write to a queue, represented by handler.
+  std::unordered_map<std::string, std::bitset<84>> handlerToMEMap;
+
   module->walk([&](ep2::FuncOp funcOp) {
     if (!funcOp.isExtern() && funcOp->getAttr("type").cast<StringAttr>().getValue() == "handler") {
-      std::string eventName = funcOp->getAttr("event").cast<mlir::StringAttr>().getValue().str();
-      std::string cu = cast<mlir::StringAttr>(funcOp->getAttr("location")).getValue().str();
-      eventToMEMap[eventName].set(std::stoi(cu.substr(2)));
+      funcOp->walk([&](ep2::ReturnOp retOp) {
+        for (size_t i = 0; i<retOp->getNumOperands(); ++i) {
+          mlir::Operation* def = retOp->getOperand(i).getDefiningOp();
+          if (def && isa<ep2::InitOp>(def) && def->hasAttr("enqInfo") &&
+              isa<ep2::StructType>(retOp->getOperand(i).getType()) && cast<ep2::StructType>(retOp->getOperand(i).getType()).getIsEvent()) {
+            std::string eventName = cast<ep2::StructType>(retOp->getOperand(i).getType()).getName().str();
+            llvm::ArrayRef<mlir::Attribute> outputQueues = cast<mlir::ArrayAttr>(def->getAttr("enqInfo")).getValue();
+            for (mlir::Attribute attr : outputQueues) {
+              auto q = cast<mlir::IntegerAttr>(attr).getValue().getSExtValue();
+              std::string tgt = eventName + "_" + std::to_string(q);
+
+              std::string cu = cast<mlir::StringAttr>(funcOp->getAttr("location")).getValue().str();
+              // cu.substr(2) gives the compute unit number, e.g. cu2.
+              handlerToMEMap[tgt].set(std::stoi(cu.substr(2)));
+            }
+          }
+        }
+      });
     }
   });
 
@@ -192,33 +208,43 @@ CollectInfoAnalysis::CollectInfoAnalysis(Operation* module, AnalysisManager& am)
       funcOp->walk([&](ep2::ConnectOp op) {
         assert(op.getMethod() == "Queue" || op.getMethod() == "PartitionByScope");
         std::string eventName = funcOp->getAttr("event").cast<mlir::StringAttr>().getValue().str();
-        std::string prevEventName = funcOp->getAttr("prevEvent").cast<mlir::StringAttr>().getValue().str();
 
         auto& qInfo = this->eventQueues[eventName];
-
-        // 7 addressable islands
-        std::bitset<84> userMEs = eventToMEMap[eventName] | eventToMEMap[prevEventName];
-        std::bitset<84> itUserMEs = userMEs;  
-        std::bitset<84> islandMask;
-        for (size_t i = 0; i<12; ++i) islandMask.set(i);
-        qInfo.memType = MemType::EMEM;
-        for (int i = 0; i<7; ++i) {
-          if ((itUserMEs & islandMask) == userMEs) {
-            qInfo.memType = MemType::CLS;
-            break;
-          }
-          itUserMEs = itUserMEs >> 12;
-        }
-        
         if (op.getMethod() == "Queue" && op.getParameters() && op.getParameters()->getValue().size() > 0) {
           qInfo.size = op.getParameters()->getValue()[0].cast<mlir::IntegerAttr>().getValue().getSExtValue();
         } else {
           qInfo.size = 128;
         }
 
+        std::bitset<84> userMEs;
         for (size_t i = 0; i<op.getOuts().size(); ++i) {
-          qInfo.replicas.push_back(cast<ep2::ConstantOp>(
-            op.getOuts()[i].getDefiningOp()).getValue().cast<ep2::PortAttr>().getInstance());
+          auto replica = cast<ep2::ConstantOp>(op.getOuts()[i].getDefiningOp()).getValue()
+            .cast<ep2::PortAttr>().getInstance();
+          qInfo.replicas.push_back(replica);
+
+          std::string key = eventName + "_" + std::to_string(replica+1);
+          assert(handlerToMEMap.find(key) != handlerToMEMap.end());
+          userMEs |= handlerToMEMap[key];
+        }
+
+        llvm::errs() << userMEs.to_string() << '\n';
+
+        std::bitset<84> islandMask;
+        for (size_t i = 0; i<12; ++i) islandMask.set(i);
+
+        MemType memType = MemType::EMEM; 
+        for (int i = 0; i<7; ++i) {
+          if ((userMEs & islandMask) == userMEs) {
+            memType = MemType::CLS;
+            break;
+          }
+          islandMask = islandMask << 12;
+        }
+
+        if (qInfo.memType == MemType::NONE || qInfo.memType == MemType::CLS) {
+          qInfo.memType = memType;
+        } else if (qInfo.memType != MemType::EMEM) {
+          assert(false && "queue should only be placed in cls or emem");
         }
       });
     } else {
@@ -260,11 +286,17 @@ CollectInfoAnalysis::CollectInfoAnalysis(Operation* module, AnalysisManager& am)
     }
   });
 
-  // Get global tables (allocated in CLS, assume never replicated).
+  // Get global tables (allocated in LMEM or CLS, assume never replicated).
   module->walk([&](ep2::GlobalOp op) {
     if (isa<ep2::TableType>(op.getOutput().getType())) {
       TableInfo ti = getTableStr(cast<ep2::TableType>(op.getOutput().getType()));
-      ti.isLocal = false;
+
+      auto instances = cast<mlir::ArrayAttr>(op->getAttr("instances")).getValue();
+      std::string instance = cast<mlir::StringAttr>(instances[0]).getValue().str();
+      std::string mem = instance.substr(0, instance.find("_"));
+      assert(mem == "lmem" || mem == "cls");
+
+      ti.isLocal = mem == "lmem";
       if (this->tableInfos.find(ti.tableType) == this->tableInfos.end()) {
         this->tableInfos[ti.tableType].first = ti;
       }

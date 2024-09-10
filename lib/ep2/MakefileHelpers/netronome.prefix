@@ -78,6 +78,8 @@ mlir_NFCCSRCS := \
 	$(me_libs_dir)/pkt/libpkt.c \
 	$(me_libs_dir)/std/libstd.c \
 	$(me_libs_dir)/net/libnet.c \
+  $(me_libs_dir)/lu/_c/cam_hash.c \
+  $(me_libs_dir)/lu/_c/cam_cls_hash.c \
 	$(me_blocks_dir)/blm/libblm.c \
 	$(NFP_STD_LIB)/microc/src/rtl.c \
 	$(NFP_STD_LIB)/microc/src/intrinsic.c

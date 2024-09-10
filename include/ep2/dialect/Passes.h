@@ -289,6 +289,7 @@ struct ContextTypeInferencePass : PassWrapper<ContextTypeInferencePass, Operatio
 };
 
 enum class MemType {
+  NONE,
   LMEM,
   CLS,
   CTM,
@@ -310,7 +311,7 @@ struct CollectInfoAnalysis {
     int size;
     std::vector<int> replicas;
 
-    QueueInfo() {}
+    QueueInfo() : memType(MemType::NONE) {}
     QueueInfo(MemType mt, int s, std::vector<int> r) : memType(mt), size(s), replicas(r) {}
   };
 

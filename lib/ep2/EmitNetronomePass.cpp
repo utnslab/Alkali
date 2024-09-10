@@ -177,6 +177,10 @@ void EmitNetronomePass::runOnOperation() {
         }
       }
       if (isEvent) {
+        if (sz % 8 != 0) {
+          fout_prog_hdr << "\tuint8_t pad" << padPos << "[" << ((8 - (sz % 8)) % 8) << "];\n";
+          padPos += 1;
+        }
         if (pr.first == "event_param_NET_RECV") fout_prog_hdr << "\tstruct recv_meta_t meta;\n";
         if (pr.first == "event_param_NET_SEND") fout_prog_hdr << "\tstruct send_meta_t meta;\n";
         fout_prog_hdr << "\t__shared __cls struct context_chain_1_t* ctx;\n";
@@ -196,7 +200,7 @@ void EmitNetronomePass::runOnOperation() {
     };
 
     // Emit work queues
-    int workq_id_incr = 10;
+    int workq_id_incr = 5;
     for (const auto& q : info.eventQueues) {
       std::string eventName = q.first;
       int sz = sizeMap[std::string{"event_param_"} + eventName];
@@ -225,6 +229,9 @@ void EmitNetronomePass::runOnOperation() {
           fout_prog_hdr << "__export __shared __cls ";
         }
         fout_prog_hdr << tInfo.tableType << " " << field << ";\n";
+        if (tInfo.size > 16) {
+          fout_prog_hdr << "__shared __lmem struct flowht_entry_t " << field << "_index[" << tInfo.size << "];\n";
+        }
       }
       fout_prog_hdr << "\n";
     }
