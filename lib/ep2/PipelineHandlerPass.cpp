@@ -932,6 +932,40 @@ void kcutPolicy(Operation * moduleOp, int k) {
   });
 }
 
+static void connectTables(ep2::FuncOp funcOp) {
+  // TODO(zhiyuang): change this to DFA
+  llvm::DenseMap<GlobalImportOp, std::pair<Value, bool>> keyTable;
+  funcOp.walk([&](Operation *op) {
+    if (auto lookupOp = dyn_cast<ep2::LookupOp>(op)) {
+      auto importOp = lookupOp.getTable().getDefiningOp<ep2::GlobalImportOp>();
+      auto [it, _] =
+          keyTable.try_emplace(importOp, std::make_pair(lookupOp.getKey(), true));
+      it->second.second = it->second.second && it->second.first == lookupOp.getKey();
+    } else if (auto updateOp = dyn_cast<ep2::UpdateOp>(op)) {
+      auto importOp = updateOp.getTable().getDefiningOp<ep2::GlobalImportOp>();
+      auto [it, _] =
+          keyTable.try_emplace(importOp, std::make_pair(updateOp.getKey(), true));
+      it->second.second = it->second.second && it->second.first == updateOp.getKey();
+    }
+  });
+
+  llvm::DenseMap<Value, SmallVector<Value>> tableMap;
+  for (auto &[importOp, pair] : keyTable) {
+    auto [key, isUnique] = pair;
+    // We do not consider tables with multiple keys
+    if (!isUnique)
+      continue;
+
+    tableMap[key].push_back(importOp);
+  }
+
+  OpBuilder builder(funcOp);
+  builder.setInsertionPoint(funcOp.getBody().back().getTerminator());
+  for (auto &[key, importOps] : tableMap)
+    if (importOps.size() > 1)
+      builder.create<ep2::SinkOp>(key.getLoc(), importOps);
+}
+
 static bool isTableClean(ep2::FuncOp funcOp) {
   Value key = nullptr;
   bool keyUnique = true;
@@ -955,19 +989,7 @@ static bool isTableClean(ep2::FuncOp funcOp) {
   return keyUnique && key != nullptr;
 }
 
-void tableCutPolicy(Operation * moduleOp, std::string FuncName) {
-  FuncOp targetFunc = nullptr;
-  moduleOp->walk([&](ep2::FuncOp funcOp) {
-    if (funcOp.isExtern() || !funcOp.isHandler())
-      return;
-
-    if (funcOp.getSymName() == FuncName)
-      targetFunc = funcOp;
-  });
-  if (targetFunc == nullptr) {
-    llvm::errs() << "Function not found: " << FuncName << '\n';
-    return;
-  }
+void tableCutPolicy(FuncOp targetFunc) {
 
   // build searching sequence
   SmallVector<std::pair<float, float>> cutParams;
@@ -1066,7 +1088,22 @@ void PipelineHandlerPass::runOnOperation() {
       return;
     }
 
-    tableCutPolicy(getOperation(), funcName.getValue());
+    FuncOp targetFunc = nullptr;
+    getOperation()->walk([&](ep2::FuncOp funcOp) {
+      if (funcOp.isExtern() || !funcOp.isHandler())
+        return;
+
+      if (funcOp.getSymName() == funcName.getValue())
+        targetFunc = funcOp;
+    });
+    if (targetFunc == nullptr) {
+      llvm::errs() << "Function not found: " << funcName.getValue() << '\n';
+      signalPassFailure();
+      return;
+    }
+
+    connectTables(targetFunc);
+    tableCutPolicy(targetFunc);
     getOperation()->walk([](FuncOp funcOp) {
       if (funcOp.isExtern() || !funcOp.isHandler())
         return;
@@ -1074,6 +1111,14 @@ void PipelineHandlerPass::runOnOperation() {
       llvm::errs() << "Function: " << funcOp.getSymName() <<
        " canReplicate?: " << isTableClean(funcOp) <<  '\n';
     });
+
+    // llvm::SmallVector<ep2::SinkOp> sinkOps;
+    // getOperation()->walk([&](ep2::SinkOp sinkOp){
+    //   sinkOps.push_back(sinkOp);
+    // });
+    // for (auto sinkOp : sinkOps) {
+    //   sinkOp.erase();
+    // }
   } else {
     llvm::errs() << "Unknown mode: " << mode.getValue() << '\n';
     signalPassFailure();
