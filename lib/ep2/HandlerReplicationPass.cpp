@@ -71,6 +71,7 @@ void HandlerReplicationPass::runOnOperation() {
   module->walk([&](ep2::FuncOp funcOp) {
     if (funcOp->getAttr("type").cast<StringAttr>().getValue() == "handler" && !funcOp.isExtern()) {
       parentBlock = funcOp->getBlock();
+      llvm::errs() << funcOp.getSymName().str() << '\n';
       auto instances = cast<mlir::ArrayAttr>(funcOp->getAttr("instances")).getValue();
       int sz = instances.size();
       mlir::Operation::CloneOptions options(true, true);

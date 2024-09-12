@@ -286,14 +286,24 @@ CollectInfoAnalysis::CollectInfoAnalysis(Operation* module, AnalysisManager& am)
     }
   });
 
+  std::unordered_set<std::string> usedTables;
+  module->walk([&](ep2::GlobalImportOp op) {
+    usedTables.insert(op.getName().str());
+  });
+
   // Get global tables (allocated in LMEM or CLS, assume never replicated).
   module->walk([&](ep2::GlobalOp op) {
-    if (isa<ep2::TableType>(op.getOutput().getType())) {
+    if (isa<ep2::TableType>(op.getOutput().getType()) && usedTables.find(op.getName().str()) != usedTables.end()) {
       TableInfo ti = getTableStr(cast<ep2::TableType>(op.getOutput().getType()));
+      std::string mem;
 
-      auto instances = cast<mlir::ArrayAttr>(op->getAttr("instances")).getValue();
-      std::string instance = cast<mlir::StringAttr>(instances[0]).getValue().str();
-      std::string mem = instance.substr(0, instance.find("_"));
+      if (!op->hasAttr("instances")) {
+        mem = "cls";
+      } else {
+        auto instances = cast<mlir::ArrayAttr>(op->getAttr("instances")).getValue();
+        std::string instance = cast<mlir::StringAttr>(instances[0]).getValue().str();
+        mem = instance.substr(0, instance.find("_"));
+      }
       assert(mem == "lmem" || mem == "cls");
 
       ti.isLocal = mem == "lmem";
