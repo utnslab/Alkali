@@ -25,6 +25,7 @@ shift $((OPTIND-1))
 
 OUT_FILE_NAME="out-netronome-${1%.*}"
 BASE_NAME="${1%.*}"
+rm -rf "outs-netronome/$OUT_FILE_NAME"
 mkdir -p "outs-netronome/$OUT_FILE_NAME"
 
 cd llvm-project && ninja -C build/ && cd -

@@ -14,7 +14,11 @@ void simpleGlobalMapping(HandlerPipeline &pipeline);
 
 void preMappingCanonicalize(HandlerPipeline &pipeline);
 void insertController(HandlerPipeline &pipeline);
+
+
+// netronome specific passes
 void bufferToRef(HandlerPipeline &pipeline);
+void contextIdentification(HandlerPipeline &pipeline);
 
 // handler split and pipeline
 struct PipelineResult {

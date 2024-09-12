@@ -49,7 +49,7 @@ void simpleGlobalMapping(HandlerPipeline &pipeline) {
       // all map to local
       auto instances = funcOp->getAttrOfType<ArrayAttr>(globalAttrName);
       auto instancesStrs = llvm::map_to_vector(instances, [&](Attribute attr) {
-        return "lmem_" + attr.cast<StringAttr>().getValue().str();
+        return "cls_" + attr.cast<StringAttr>().getValue().str();
       });
       llvm::SmallVector<StringRef> globalInstancesStrs = llvm::map_to_vector(instancesStrs, [&](StringRef str) {
         return str;
@@ -61,6 +61,102 @@ void simpleGlobalMapping(HandlerPipeline &pipeline) {
       globalOp->setAttr(globalAttrName,
         builder.getStrArrayAttr(globalInstancesStrs));
     });
+  }
+}
+
+void contextIdentification(HandlerPipeline &pipeline) {
+  std::string contextName = "context";
+  int contextIdx = 0;
+
+  llvm::SmallVector<DenseMap<int, std::string>> funcContextNames(
+      pipeline.size());
+
+  // start from second stage, to last stage
+  for (size_t i = 1; i < pipeline.size(); i++) {
+    OpBuilder builder(pipeline[i]);
+    auto funcOp = pipeline[i];
+    auto &contextNames = funcContextNames[i];
+
+    for (size_t j = 0; j < funcOp.getNumArguments(); j++) {
+      auto arg = funcOp.getArgument(j);
+      // TODO(zhiyaung): FIXTHIS we force this to be a struct type for now
+      if (isa<ep2::StructType>(arg.getType())) {
+        auto contextName = "context" + std::to_string(contextIdx++);
+        funcOp.setArgAttr(j, "ep2.context_name",
+                          builder.getStringAttr(contextName));
+        contextNames.try_emplace(j, contextName);
+      }
+
+      // we only mark init before the final pipeline stage
+      if (i + 1 < pipeline.size()) {
+        auto &nextContextNames = funcContextNames[i + 1];
+        // find the init op and try to propogate...
+        for (auto &use : arg.getUses()) {
+          auto initOp = dyn_cast<ep2::InitOp>(use.getOwner());
+          if (!initOp)
+            continue;
+
+          auto structType = dyn_cast<ep2::StructType>(initOp.getType());
+          if (!structType || !structType.getIsEvent())
+            continue;
+          
+          // we have a generate usage. try to assign a value
+          auto it = contextNames.find(j);
+          if (it == contextNames.end()) {
+            std::string contextName = "context" + std::to_string(contextIdx++);
+            funcOp.setArgAttr(j, "ep2.context_name",
+                              builder.getStringAttr(contextName));
+            it = contextNames.try_emplace(j, contextName).first;
+          }
+
+          // with/without atom
+          nextContextNames.try_emplace(use.getOperandNumber() - 1, it->second);
+        }
+      }
+    }
+  }
+
+  // we finished the context identification, mark the context
+  for (size_t i = 0; i < pipeline.size(); i++) {
+    auto funcOp = pipeline[i];
+    auto &contextMap = funcContextNames[i];
+
+    OpBuilder builder(funcOp);
+    // set the functions' parameter, except the first one
+    if (i != 0) {
+      for (size_t j = 0; j < funcOp.getNumArguments(); j++) {
+        auto it = contextMap.find(j);
+        if (it != contextMap.end())
+          funcOp.setArgAttr(j, "ep2.context_name", builder.getStringAttr(it->second));
+      }
+    }
+
+    // except the last one, set init attr
+    if (i + 1 < pipeline.size()) {
+      auto nextFunc = pipeline[i + 1];
+      auto &nextContextMap = funcContextNames[i + 1];
+      funcOp.walk([&](ep2::InitOp initOp){
+        auto eventType = dyn_cast<StructType>(initOp.getType());
+        if (!eventType || !eventType.getIsEvent())
+          return;
+
+        HandlerDependencyAnalysis::HandlerFullName fullname(initOp);
+        if (fullname.mangle() != nextFunc.getName())
+          return;
+
+        // push for atom first
+        llvm::SmallVector<StringRef> contextNames;
+        contextNames.push_back("");
+        for (size_t j = 1; j < initOp.getNumOperands(); j++) {
+          auto it = nextContextMap.find(j - 1);
+          if (it != nextContextMap.end())
+            contextNames.push_back(it->second);
+          else
+            contextNames.push_back("");
+        }
+        initOp->setAttr("context_names", builder.getStrArrayAttr(contextNames));
+      });
+    }
   }
 }
 

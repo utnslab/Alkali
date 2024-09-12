@@ -46,6 +46,9 @@ void PipelineCanonicalizePass::runOnOperation() {
   if (mode.getValue() == "netronome") {
     simpleGlobalMapping(pipeline);
     bufferToRef(pipeline);
+    // add the attribute for adding context
+    // TODO(insert DPE, DFE passes)
+    contextIdentification(pipeline);
   }
 
   // add the mode option for the controller
