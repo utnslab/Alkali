@@ -619,12 +619,16 @@ struct PipelineHandlerPass
 
   Option<std::string> mode{
       *this, "mode",
-      llvm::cl::desc("Modes for splits: search, kcut"),
+      llvm::cl::desc("Modes for splits: search, kcut, table"),
       llvm::cl::init("search")};
   Option<int> kNum {
       *this, "knum",
       llvm::cl::desc("Number for kcut. required for kcut mode"),
       llvm::cl::init(0)};
+  Option<std::string> funcName{
+      *this, "func",
+      llvm::cl::desc("Function name for cut. required for table mode"),
+      llvm::cl::init("")};
 };
 
 // FrontEnd Conversion Passes

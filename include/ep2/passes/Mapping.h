@@ -12,7 +12,7 @@ using HandlerPipeline = llvm::SmallVector<ep2::FuncOp>;
 void simpleMapping(HandlerPipeline &pipeline, llvm::SmallVector<int> *replications = nullptr);
 void simpleGlobalMapping(HandlerPipeline &pipeline);
 
-void preMappingCanonicalize(HandlerPipeline &pipeline);
+void preMappingCanonicalize(HandlerPipeline &pipeline, llvm::StringRef mode);
 void insertController(HandlerPipeline &pipeline);
 
 

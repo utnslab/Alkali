@@ -322,7 +322,7 @@ static int runBalancedMinCut(
     }
 
     long flow = boost::push_relabel_max_flow(g, verts[vtxToVecIdx[source]], verts[vtxToVecIdx[sink]]);
-    llvm::errs() << "FLOW: " << flow << '\n';
+    // llvm::errs() << "FLOW: " << flow << '\n';
     assert(flow >= 0);
 
     auto dumpGraphViz = [&]() {
@@ -424,7 +424,7 @@ static int runBalancedMinCut(
     }
 
     float frac_src_cut = ((float) wmap_sum) / verts.size();
-    llvm::errs() << "FRAC: " << llvm::format("%.2f", frac_src_cut) << " " << llvm::format("%.2f", sourceWeight*(1-tol)) << " " << llvm::format("%.2f", sourceWeight*(1+tol)) << '\n';
+    // llvm::errs() << "FRAC: " << llvm::format("%.2f", frac_src_cut) << " " << llvm::format("%.2f", sourceWeight*(1-tol)) << " " << llvm::format("%.2f", sourceWeight*(1+tol)) << '\n';
 
     resultSourceWeight = frac_src_cut;
 
@@ -932,6 +932,82 @@ void kcutPolicy(Operation * moduleOp, int k) {
   });
 }
 
+static bool isTableClean(ep2::FuncOp funcOp) {
+  Value key = nullptr;
+  bool keyUnique = true;
+  funcOp.walk([&](Operation *op) {
+    Value opKey = nullptr;
+    if (auto lookupOp = dyn_cast<ep2::LookupOp>(op))
+      opKey = lookupOp.getKey();
+    else if (auto updateOp = dyn_cast<ep2::UpdateOp>(op))
+      opKey = updateOp.getKey();
+
+    if (opKey == nullptr)
+      return;
+
+    if (key == nullptr)
+      key = opKey;
+    else if (key != opKey)
+      keyUnique = false;
+  });
+
+  // We only want the partition to have a table && have a single key
+  return keyUnique && key != nullptr;
+}
+
+void tableCutPolicy(Operation * moduleOp, std::string FuncName) {
+  FuncOp targetFunc = nullptr;
+  moduleOp->walk([&](ep2::FuncOp funcOp) {
+    if (funcOp.isExtern() || !funcOp.isHandler())
+      return;
+
+    if (funcOp.getSymName() == FuncName)
+      targetFunc = funcOp;
+  });
+  if (targetFunc == nullptr) {
+    llvm::errs() << "Function not found: " << FuncName << '\n';
+    return;
+  }
+
+  // build searching sequence
+  SmallVector<std::pair<float, float>> cutParams;
+  for (int j = 5; j >= 0; j--) // first search tolerance
+    for (int i = 1; i <= j - 1; i++)
+      cutParams.push_back({j / 10.0f, i / 10.0f});
+  // finally we try weak cuts
+  for (int i = 1; i <= 5; i++)
+    cutParams.push_back({i / 10.0f, i / 10.0f});
+
+  bool valid = false;
+  for (auto [sourceWeight, tol] : cutParams) {
+    SearchDirection sd;
+    sd[targetFunc] =
+      std::make_shared<NetronomeKCutPolicy>(2, tol);
+    sd[targetFunc]->sourceWeight = sourceWeight;
+
+    auto cuts = stepSearch(sd);
+    assert(cuts.size() == 1 && "tableCut: expect only one cut");
+    sd = cuts[0];
+
+    for (auto &[func, policy] : sd) 
+      valid = valid || isTableClean(func);
+    llvm::errs() << "Finish table cut: tol=" << tol <<
+      " sourceWeight=" << sourceWeight <<
+      " Valid: " << valid << '\n';
+
+    if (valid) {
+      targetFunc.erase();
+      break;
+    } else if (sd.size() > 1) { // we delete the new functions if ever created
+      for (auto &[func, policy] : sd)
+          func.erase();
+    }
+  }
+
+  if (!valid)
+    llvm::errs() << "Table cut failed\n";
+}
+
 void bfsSearchPolicy(Operation * moduleOp) {
   std::queue<SearchDirection> cuts;
 
@@ -983,6 +1059,21 @@ void PipelineHandlerPass::runOnOperation() {
     }
 
     kcutPolicy(getOperation(), kNum.getValue());
+  } else if (mode.getValue() == "table") {
+    if (funcName.getValue().empty()) {
+      llvm::errs() << "table mode requires funcName to be set\n";
+      signalPassFailure();
+      return;
+    }
+
+    tableCutPolicy(getOperation(), funcName.getValue());
+    getOperation()->walk([](FuncOp funcOp) {
+      if (funcOp.isExtern() || !funcOp.isHandler())
+        return;
+      
+      llvm::errs() << "Function: " << funcOp.getSymName() <<
+       " canReplicate?: " << isTableClean(funcOp) <<  '\n';
+    });
   } else {
     llvm::errs() << "Unknown mode: " << mode.getValue() << '\n';
     signalPassFailure();

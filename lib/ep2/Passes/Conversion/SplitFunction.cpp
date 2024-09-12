@@ -113,16 +113,14 @@ static void removeEmptyBlocks(ep2::FuncOp funcOp) {
 
 std::pair<ep2::FuncOp, ep2::FuncOp> functionSplitter(ep2::FuncOp funcOp, llvm::DenseSet<Operation *> &sinkOps, llvm::DenseSet<Value> &sinkArgs) {
   OpBuilder builder(funcOp);
+  // get generation
+  int generationIndex = 1;
+  if (auto attr = funcOp->getAttrOfType<IntegerAttr>("generationIndex"))
+    generationIndex = (int)attr.getInt();
 
   // mark the function
   std::vector<Operation *> sourceOpVector;
   for (auto &block : funcOp) {
-    // TODO: attr?
-    // for (auto &arg : block.getArguments()) {
-    //   if (sourceArguments.contains(arg)) {
-    //     arg.getArgNumber();
-    //   }
-    // }
     for (auto &op : block) {
       if (sinkOps.contains(&op)) {
         op.setAttr("sink", builder.getBoolAttr(true));
@@ -178,12 +176,14 @@ std::pair<ep2::FuncOp, ep2::FuncOp> functionSplitter(ep2::FuncOp funcOp, llvm::D
     entryBlock.eraseArguments(0, numOldArgs);
     // try add terminate
     tryAddTerminator(builder, sinkFunc);
+    sinkFunc->setAttr("generationIndex", builder.getI32IntegerAttr(generationIndex * 2 + 1));
   }
 
   // process source func. (based on the clone)
   {
     eraseOpsIf(sourceFunc, [](Operation *op) { return inSink(op); });
     tryAddTerminator(builder, sourceFunc);
+    sourceFunc->setAttr("generationIndex", builder.getI32IntegerAttr(generationIndex * 2));
   }
 
   for (auto func : {funcOp, sinkFunc, sourceFunc}) {

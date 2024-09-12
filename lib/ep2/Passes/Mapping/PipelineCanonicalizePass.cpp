@@ -4,6 +4,7 @@
 namespace mlir {
 namespace ep2 {
 
+// only for FPGA
 static void addTableInlineAttribute(HandlerPipeline &pipeline) {
   for (auto &funcOp : pipeline) {
     funcOp->walk([&](ep2::GlobalImportOp importOp) {
@@ -15,15 +16,40 @@ static void addTableInlineAttribute(HandlerPipeline &pipeline) {
   }
 }
 
+static void placeGeneration(DenseMap<int, FuncOp> &funcMap, int generation,
+                            HandlerPipeline &pipeline) {
+  // the handler is not splited
+  auto it = funcMap.find(generation);
+  if (it != funcMap.end())
+    pipeline.push_back(it->second);
+  else {
+    placeGeneration(funcMap, generation * 2, pipeline);
+    placeGeneration(funcMap, generation * 2 + 1, pipeline);
+  }
+}
+
+static void getPipeline(Operation *moduleOp, HandlerPipeline &pipeline) {
+  DenseMap<int, FuncOp> funcMap;
+
+  moduleOp->walk([&](FuncOp funcOp) {
+    if (funcOp.isHandler() && !funcOp.isExtern()) {
+      int index = 1;
+      auto attr = funcOp->getAttrOfType<IntegerAttr>("generationIndex");
+      if (attr)
+        index = (int)attr.getInt();
+      funcMap.try_emplace(index, funcOp);
+    }
+  });
+
+  placeGeneration(funcMap, 1, pipeline);
+}
+
 void PipelineCanonicalizePass::runOnOperation() {
   auto module = getOperation();
   llvm::SmallVector<ep2::FuncOp> pipeline;
-  module->walk([&](FuncOp funcOp) {
-    if (funcOp.isHandler() && !funcOp.isExtern())
-      pipeline.push_back(funcOp);
-  });
+  getPipeline(module, pipeline);
 
-  preMappingCanonicalize(pipeline);
+  preMappingCanonicalize(pipeline, mode.getValue());
 
   if (replications.hasValue()) {
     llvm::SmallVector<StringRef> replicationsVec;

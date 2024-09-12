@@ -33,7 +33,11 @@ LocalAllocAnalysis::LocalAllocAnalysis(Operation* module, AnalysisManager& am) {
     if (isa<ep2::StructType>(op.getValue().getType())) {
       // TODO support ctx store of a block argument
       assert(op.getValue().getDefiningOp() != nullptr);
-      assert(localAllocs.find(op.getValue().getDefiningOp()) != localAllocs.end());
+      if (localAllocs.find(op.getValue().getDefiningOp()) ==
+          localAllocs.end()) {
+        op->dump();
+        llvm_unreachable("store of a non local alloc");
+      }
       localAllocs.emplace(op, localAllocs[op.getValue().getDefiningOp()]);
     }
   });

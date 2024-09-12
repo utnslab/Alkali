@@ -80,6 +80,11 @@ void contextIdentification(HandlerPipeline &pipeline) {
     for (size_t j = 0; j < funcOp.getNumArguments(); j++) {
       auto arg = funcOp.getArgument(j);
       // TODO(zhiyaung): FIXTHIS we force this to be a struct type for now
+      if (isa<ep2::BufferType>(arg.getType())) {
+        // limited by lib/ep2/LocalAllocAnalysis.cpp:36
+        // do not store the buf type
+        continue;
+      }
       if (isa<ep2::StructType>(arg.getType())) {
         auto contextName = "context" + std::to_string(contextIdx++);
         funcOp.setArgAttr(j, "ep2.context_name",
@@ -183,7 +188,7 @@ void bufferToRef(HandlerPipeline &pipeline) {
   }
 }
 
-void preMappingCanonicalize(HandlerPipeline &pipeline) {
+void preMappingCanonicalize(HandlerPipeline &pipeline, StringRef mode) {
   std::string eventName, atomName;
 
   for (size_t i = 0; i < pipeline.size(); i++) {
@@ -204,7 +209,10 @@ void preMappingCanonicalize(HandlerPipeline &pipeline) {
       auto newEvent = eventName + "_" + std::to_string(i);
       auto newAtomName = atomName + "_" + std::to_string(i);
       funcOp->setAttr("event", builder.getStringAttr(newEvent));
-      funcOp->setAttr("atom", builder.getStringAttr(newAtomName));
+      if (mode == "netronome")
+        funcOp->setAttr("atom", builder.getStringAttr(newAtomName));
+      else
+        funcOp->setAttr("atom", builder.getStringAttr(atomName));
 
       // rename all the init ops
       auto prevFunc = pipeline[i - 1];
