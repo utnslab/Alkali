@@ -924,15 +924,18 @@ llvm::SmallVector<SearchDirection, 4> stepSearch(SearchDirection& sd) {
   return ret;
 }
 
-void kcutPolicy(Operation * moduleOp, int k) {
+void kcutPolicy(Operation * moduleOp, int k, FuncOp targetFunc) {
   SearchDirection sd;
 
-  moduleOp->walk([&](ep2::FuncOp funcOp) {
-    if (funcOp.isExtern() || !funcOp.isHandler())
-      return;
+  if (targetFunc)
+    sd[targetFunc] = std::make_shared<NetronomeKCutPolicy>(k, 0.1);
+  else // by default we search for all functions
+    moduleOp->walk([&](ep2::FuncOp funcOp) {
+      if (funcOp.isExtern() || !funcOp.isHandler())
+        return;
 
-    sd[funcOp] = std::make_shared<NetronomeKCutPolicy>(k, 0.1);
-  });
+      sd[funcOp] = std::make_shared<NetronomeKCutPolicy>(k, 0.1);
+    });
 
   while (true) {
     auto cuts = stepSearch(sd);
@@ -1094,6 +1097,16 @@ void bfsSearchPolicy(Operation * moduleOp) {
 
 // Assumes all dead code is eliminated.
 void PipelineHandlerPass::runOnOperation() {
+  // parse parameter
+  FuncOp targetFunc = nullptr;
+  getOperation()->walk([&](ep2::FuncOp funcOp) {
+    if (funcOp.isExtern() || !funcOp.isHandler())
+      return;
+
+    if (funcOp.getSymName() == funcName.getValue())
+      targetFunc = funcOp;
+  });
+
   if (mode.getValue() == "search")
     bfsSearchPolicy(getOperation());
   else if (mode.getValue() == "kcut") {
@@ -1103,22 +1116,8 @@ void PipelineHandlerPass::runOnOperation() {
       return;
     }
 
-    kcutPolicy(getOperation(), kNum.getValue());
+    kcutPolicy(getOperation(), kNum.getValue(), targetFunc);
   } else if (mode.getValue() == "table") {
-    if (funcName.getValue().empty()) {
-      llvm::errs() << "table mode requires funcName to be set\n";
-      signalPassFailure();
-      return;
-    }
-
-    FuncOp targetFunc = nullptr;
-    getOperation()->walk([&](ep2::FuncOp funcOp) {
-      if (funcOp.isExtern() || !funcOp.isHandler())
-        return;
-
-      if (funcOp.getSymName() == funcName.getValue())
-        targetFunc = funcOp;
-    });
     if (targetFunc == nullptr) {
       llvm::errs() << "Function not found: " << funcName.getValue() << '\n';
       signalPassFailure();
