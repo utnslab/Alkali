@@ -55,7 +55,7 @@ typedef size_t weight_t;
 static constexpr long long INF_WT = 1e18;
 static constexpr long long INF_MIN = 1e17;
 static constexpr long long SMALL_WT = 1;
-static constexpr size_t N_RAND_ITERS = 1000;
+static constexpr size_t N_RAND_ITERS = 10;
 static constexpr int MIN_CUT_SUCCESS = 0;
 static constexpr int MIN_CUT_FAILURE_INF_FLOW = 1;
 static constexpr int MIN_CUT_FAILURE_SRC_INF_CAP_PATH = 2;
@@ -395,8 +395,10 @@ static int runBalancedMinCut(
     }
 
     size_t wmap_sum = 0;
+    size_t total_sum = 0;
     for (size_t i = 0; i<verts.size(); ++i) {
       wmap_sum += wmap[i];
+      total_sum += vertex_weights[i];
     }
 
     // find inf-capacity paths from source, sink in g.
@@ -423,8 +425,8 @@ static int runBalancedMinCut(
       boost::depth_first_visit(inf_graph_rev, verts[vtxToVecIdx[sink]], vis, color_map);
     }
 
-    float frac_src_cut = ((float) wmap_sum) / verts.size();
-    // llvm::errs() << "FRAC: " << llvm::format("%.2f", frac_src_cut) << " " << llvm::format("%.2f", sourceWeight*(1-tol)) << " " << llvm::format("%.2f", sourceWeight*(1+tol)) << '\n';
+    float frac_src_cut = ((float) wmap_sum) / total_sum;
+    llvm::errs() << "FRAC: " << llvm::format("%.2f", frac_src_cut) << " " << llvm::format("%.2f", sourceWeight*(1-tol)) << " " << llvm::format("%.2f", sourceWeight*(1+tol)) << '\n';
 
     resultSourceWeight = frac_src_cut;
 
@@ -803,7 +805,7 @@ struct NetronomeKCutPolicy : public PipelinePolicy {
   int operationWeight(mlir::Operation* op) override {
     return llvm::TypeSwitch<Operation *, int>(op)
         // non weight ops
-        // .Case([&](ep2::GlobalImportOp) { return 100; })
+        .Case([&](ep2::GlobalImportOp) { return 100; })
         // .Case<ep2::StructAccessOp, ep2::ConstantOp,
         //       ep2::BitCastOp>([&](Operation *) { return 1; })
         .Default([&](Operation *) { return 1; });
