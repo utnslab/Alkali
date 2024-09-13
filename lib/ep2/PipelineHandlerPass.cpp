@@ -623,7 +623,20 @@ bool pipelineHandler(ep2::FuncOp funcOp, PipelinePolicy* policy, PipelineResult*
           Value v = op->getOperand(i);
           vertexToOp[opToVertex(op)] = op;
           vertexToValue[valueToVertex(v)] = v;
-          myAdjList[valueToVertex(v)][opToVertex(op)] = INF_WT;
+
+          vertex_t c;
+          if (isa<ep2::SinkOp>(op)) {
+            mlir::Operation* p = v.getDefiningOp();
+            if (p != nullptr) {
+              vertexToOp[opToVertex(p)] = p;
+              c = opToVertex(p);
+            } else {
+              c = sourceMap[&blk];
+            }
+          } else {
+            c = valueToVertex(v);
+          }
+          myAdjList[c][opToVertex(op)] = INF_WT;
 
           if (v.getDefiningOp() != nullptr) {
             falseEdges.emplace_back(std::pair<vertex_t, vertex_t>{opToVertex(op), opToVertex(v.getDefiningOp())}, INF_WT);
