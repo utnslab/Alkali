@@ -55,7 +55,7 @@ typedef size_t weight_t;
 static constexpr long long INF_WT = 1e18;
 static constexpr long long INF_MIN = 1e17;
 static constexpr long long SMALL_WT = 1;
-static constexpr size_t N_RAND_ITERS = 10;
+static constexpr size_t N_RAND_ITERS = 100;
 static constexpr int MIN_CUT_SUCCESS = 0;
 static constexpr int MIN_CUT_FAILURE_INF_FLOW = 1;
 static constexpr int MIN_CUT_FAILURE_SRC_INF_CAP_PATH = 2;
@@ -278,15 +278,23 @@ static int runBalancedMinCut(
       rev[e2] = e1;
     };
 
+    std::vector<std::pair<vertex_t, std::pair<vertex_t, long long>>> edgesToInsert;
     for (const auto& pr : myAdjList) {
       vertex_t src = pr.first;
       for (const auto& pr2 : pr.second) {
         vertex_t dst = pr2.first;
         long long wt = pr2.second;
         assert(wt > 0);
-        addEdge(src, dst, wt, true);
+
+        edgesToInsert.emplace_back(src, std::pair<vertex_t, long long>{dst, wt});
       }
     }
+    std::shuffle(edgesToInsert.begin(), edgesToInsert.end(), rand_gen);
+    for (const auto& pr : edgesToInsert) {
+      addEdge(pr.first, pr.second.first, pr.second.second, true);
+    }
+
+    std::shuffle(falseEdges.begin(), falseEdges.end(), rand_gen);
 
     for (const auto& edge : falseEdges) {
       vertex_t s = edge.first.first;
