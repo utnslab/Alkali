@@ -21,20 +21,25 @@ void simpleMapping(HandlerPipeline &pipeline,
     OpBuilder builder(funcOp);
     // TODO: keep this?
     if (!funcOp->hasAttr("instances")) {
-      llvm::SmallVector<StringRef> instanceVec;
+      llvm::SmallVector<std::string> instanceVec;
       for (int i = 0; i < rep; i++)
         instanceVec.push_back("cu" + std::to_string(cuNumber++));
-      auto instances = builder.getStrArrayAttr(instanceVec);
+      auto refVec = llvm::map_to_vector(instanceVec, [&](std::string &str) {
+        return StringRef(str);
+      });
+      auto instances = builder.getStrArrayAttr(refVec);
       funcOp->setAttr("instances", instances);
     }
   }
 }
 
-void simpleGlobalMapping(HandlerPipeline &pipeline) {
+void simpleGlobalMapping(HandlerPipeline &pipeline, int localTableLimit) {
   // we keep track of a global CU number
   for (auto funcOp : pipeline) {
     auto moduleOp = funcOp->getParentOfType<ModuleOp>();
     OpBuilder builder(funcOp);
+    int numTables = 0;
+
     funcOp.walk([&](ep2::GlobalImportOp importOp) {
       auto globalName = importOp.getName();
       ep2::GlobalOp globalOp = nullptr;
@@ -46,11 +51,16 @@ void simpleGlobalMapping(HandlerPipeline &pipeline) {
         llvm_unreachable("global not found for globalImport");
       auto globalAttrName = "instances";
 
+      // TODO(zhiyaung): check this policy
       // all map to local
       auto instances = funcOp->getAttrOfType<ArrayAttr>(globalAttrName);
       auto instancesStrs = llvm::map_to_vector(instances, [&](Attribute attr) {
-        return "cls_" + attr.cast<StringAttr>().getValue().str();
+        if (numTables < localTableLimit)
+          return "lmem_" + attr.cast<StringAttr>().getValue().str();
+        else
+          return "cls_" + attr.cast<StringAttr>().getValue().str();
       });
+
       llvm::SmallVector<StringRef> globalInstancesStrs = llvm::map_to_vector(instancesStrs, [&](StringRef str) {
         return str;
       });
@@ -60,6 +70,9 @@ void simpleGlobalMapping(HandlerPipeline &pipeline) {
         llvm::errs() << "global already has instances\n";
       globalOp->setAttr(globalAttrName,
         builder.getStrArrayAttr(globalInstancesStrs));
+      
+      // increase number of tables
+      numTables++;
     });
   }
 }
@@ -77,6 +90,7 @@ void contextIdentification(HandlerPipeline &pipeline) {
     auto funcOp = pipeline[i];
     auto &contextNames = funcContextNames[i];
 
+    int totalParamSize = 0;
     for (size_t j = 0; j < funcOp.getNumArguments(); j++) {
       auto arg = funcOp.getArgument(j);
       // TODO(zhiyaung): FIXTHIS we force this to be a struct type for now
@@ -85,7 +99,7 @@ void contextIdentification(HandlerPipeline &pipeline) {
         // do not store the buf type
         continue;
       }
-      if (isa<ep2::StructType>(arg.getType())) {
+      if (isa<ep2::StructType>(arg.getType()) || totalParamSize >= 40) {
         auto contextName = "context" + std::to_string(contextIdx++);
         funcOp.setArgAttr(j, "ep2.context_name",
                           builder.getStringAttr(contextName));
@@ -118,6 +132,14 @@ void contextIdentification(HandlerPipeline &pipeline) {
           nextContextNames.try_emplace(use.getOperandNumber() - 1, it->second);
         }
       }
+
+      // calculate the parameter size
+      if (!contextNames.contains(j))
+        totalParamSize +=
+            llvm::TypeSwitch<Type, int>(arg.getType())
+                .Case([&](IntegerType t) { return (int)t.getWidth() / 8; })
+                .Case<ep2::BufferType>([&](auto) { return 12; })
+                .Default([&](auto) { return 0; });
     }
   }
 

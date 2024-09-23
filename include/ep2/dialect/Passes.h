@@ -664,6 +664,10 @@ struct PipelineCanonicalizePass
       *this, "mode",
       llvm::cl::desc("mode for canonicalization: fpga, netronome"),
       llvm::cl::init("fpga")};
+  Option<int> limitLocalTable{
+    *this, "local-table",
+    llvm::cl::desc("Limit the number of local tables"),
+    llvm::cl::init(0)};
 };
 
 } // namespace ep2

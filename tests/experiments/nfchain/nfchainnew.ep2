@@ -191,15 +191,15 @@ struct lb_fwd_tcp_hdr_t
 
 
 global table <bits<32>, firewall_ip_entries_t, 64> firewall_ip_table;
-global table <bits<16>, firewall_tcpport_entries_t, 64> firewall_tcpport_table;
+global table <bits<32>, firewall_tcpport_entries_t, 64> firewall_tcpport_table;
 global table <bits<32>, priority_entries_t, 64> priority_table;
 global table <bits<32>, flow_tracker_t, 64> flow_tracker_table;
 global table <bits<32>, err_tracker_t, 64> err_tracker_table;
 global table <bits<32>, ip_tracker_t, 64> ip_tracker_table;
 global table <bits<32>, tcp_tracker_t, 64> tcp_tracker_table;
-global table <bits<32>, lb_DIP_entries_t, 64> lb_table;
+global table <bits<16>, lb_DIP_entries_t, 64> lb_table;
 global table <bits<32>, lb_fwd_tcp_hdr_t, 64> lb_fwd_table;
-[instances=(cu2), location=cu2] handler NET_RECV:process_packet (context ctx, buf packet) {
+handler NET_RECV:process_packet (context ctx, buf packet) {
     eth_header_t eth_header;
     ip_header_t ip_header;
     tcp_header_t tcp_header;

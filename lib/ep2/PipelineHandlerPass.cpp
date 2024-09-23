@@ -924,24 +924,40 @@ llvm::SmallVector<SearchDirection, 4> stepSearch(SearchDirection& sd) {
   return ret;
 }
 
+static inline void cleanupFuncs(Operation *moduleOp, SearchDirection &sd) {
+  moduleOp->walk([&](ep2::FuncOp funcOp) {
+    if (funcOp.isExtern() || !funcOp.isHandler())
+      return;
+    if (!sd.contains(funcOp))
+      funcOp.erase();
+  });
+}
+
 void kcutPolicy(Operation * moduleOp, int k, FuncOp targetFunc) {
   SearchDirection sd;
 
-  if (targetFunc)
-    sd[targetFunc] = std::make_shared<NetronomeKCutPolicy>(k, 0.1);
-  else // by default we search for all functions
+  for (float t = 0.1; t < 1.0 / k; t += 0.1) {
     moduleOp->walk([&](ep2::FuncOp funcOp) {
       if (funcOp.isExtern() || !funcOp.isHandler())
         return;
 
-      sd[funcOp] = std::make_shared<NetronomeKCutPolicy>(k, 0.1);
+      sd[funcOp] = std::make_shared<NetronomeKCutPolicy>(k, t);
+      if (targetFunc && funcOp != targetFunc)
+        sd[funcOp]->done = true;
     });
 
-  while (true) {
-    auto cuts = stepSearch(sd);
-    if (cuts.empty())
+    while (true) {
+      auto cuts = stepSearch(sd);
+      if (cuts.empty())
+        break;
+      sd = cuts[0];
+    }
+
+    auto success = targetFunc ? !sd.contains(targetFunc) : true;
+    llvm::errs() << "KCut: k=" << k << " tol=" << t << " success=" << success
+                 << '\n';
+    if (success)
       break;
-    sd = cuts[0];
   }
 
   llvm::errs() << "Finish kcut\n";
@@ -950,12 +966,7 @@ void kcutPolicy(Operation * moduleOp, int k, FuncOp targetFunc) {
     llvm::errs() << "Policy: " << policy->sourceWeight << '\n';
   }
 
-  moduleOp->walk([&](ep2::FuncOp funcOp){
-    if (funcOp.isExtern() || !funcOp.isHandler())
-      return;
-    if (!sd.contains(funcOp))
-      funcOp.erase();
-  });
+  cleanupFuncs(moduleOp, sd);
 }
 
 static void connectTables(ep2::FuncOp funcOp) {
@@ -1015,7 +1026,7 @@ static bool isTableClean(ep2::FuncOp funcOp) {
   return keyUnique && key != nullptr;
 }
 
-void tableCutPolicy(FuncOp targetFunc) {
+bool tableCutPolicy(FuncOp targetFunc) {
 
   // build searching sequence
   SmallVector<std::pair<float, float>> cutParams;
@@ -1054,6 +1065,36 @@ void tableCutPolicy(FuncOp targetFunc) {
 
   if (!valid)
     llvm::errs() << "Table cut failed\n";
+
+  return valid;
+}
+
+void weightPolicy(FuncOp targetFunc, PolicyP weightPolicy) {
+  SearchDirection sd;
+
+  auto moduleOp = targetFunc->getParentOfType<ModuleOp>();
+  moduleOp->walk([&](ep2::FuncOp funcOp) {
+    if (funcOp.isExtern() || !funcOp.isHandler())
+      return;
+
+    if (targetFunc && funcOp != targetFunc) {
+      sd[funcOp] = std::make_shared<NetronomeKCutPolicy>(1, 0.1);
+      sd[funcOp]->done = true;
+    } else
+      sd[funcOp] = weightPolicy;
+  });
+
+  auto cuts = stepSearch(sd);
+  assert(cuts.size() == 1 && "tableCut: expect only one cut");
+  sd = cuts[0];
+
+  llvm::errs() << "Finish weightCut\n";
+  for (auto &[func, policy] : sd) {
+    llvm::errs() << "Function: " << func.getSymName() << '\n';
+    llvm::errs() << "Policy: " << policy->sourceWeight << '\n';
+  }
+
+  cleanupFuncs(moduleOp, sd);
 }
 
 void bfsSearchPolicy(Operation * moduleOp) {
@@ -1092,7 +1133,28 @@ void bfsSearchPolicy(Operation * moduleOp) {
       cuts.push(n);
     }
   }
+}
 
+void iterationPolicy(ModuleOp moduleOp) {
+  while (true) {
+    SmallVector<FuncOp> toCut;
+    moduleOp->walk([&](ep2::FuncOp funcOp) {
+      if (funcOp.isExtern() || !funcOp.isHandler())
+        return;
+      
+      if (!isTableClean(funcOp))
+        toCut.push_back(funcOp);
+    });
+
+    if (toCut.empty())
+      break;
+    
+    for (auto funcOp : toCut) {
+      llvm::errs() << "Cutting function: " << funcOp.getSymName() << '\n';
+      auto success = tableCutPolicy(funcOp);
+      assert(success && "Iteration policy failed");
+    }
+  }
 }
 
 // Assumes all dead code is eliminated.
@@ -1107,9 +1169,10 @@ void PipelineHandlerPass::runOnOperation() {
       targetFunc = funcOp;
   });
 
-  if (mode.getValue() == "search")
-    bfsSearchPolicy(getOperation());
-  else if (mode.getValue() == "kcut") {
+  // decide invocation mode
+  if (mode.getValue() == "search") {
+    iterationPolicy(getOperation());
+  } else if (mode.getValue() == "kcut") {
     if (kNum.getValue() == 0) {
       llvm::errs() << "kcut mode requires kNum to be set\n";
       signalPassFailure();
@@ -1134,13 +1197,19 @@ void PipelineHandlerPass::runOnOperation() {
        " canReplicate?: " << isTableClean(funcOp) <<  '\n';
     });
 
-    // llvm::SmallVector<ep2::SinkOp> sinkOps;
-    // getOperation()->walk([&](ep2::SinkOp sinkOp){
-    //   sinkOps.push_back(sinkOp);
-    // });
-    // for (auto sinkOp : sinkOps) {
-    //   sinkOp.erase();
-    // }
+    llvm::SmallVector<ep2::SinkOp> sinkOps;
+    getOperation()->walk([&](ep2::SinkOp sinkOp){
+      sinkOps.push_back(sinkOp);
+    });
+    for (auto sinkOp : sinkOps) {
+      sinkOp.erase();
+    }
+  } else if (mode.getValue() == "weight") {
+    if (targetFunc == nullptr) {
+      llvm::errs() << "Function not found: " << funcName.getValue() << '\n';
+      signalPassFailure();
+      return;
+    }
   } else {
     llvm::errs() << "Unknown mode: " << mode.getValue() << '\n';
     signalPassFailure();

@@ -10,7 +10,7 @@ namespace ep2 {
 using HandlerPipeline = llvm::SmallVector<ep2::FuncOp>;
 
 void simpleMapping(HandlerPipeline &pipeline, llvm::SmallVector<int> *replications = nullptr);
-void simpleGlobalMapping(HandlerPipeline &pipeline);
+void simpleGlobalMapping(HandlerPipeline &pipeline, int localTableNumber = 0);
 
 void preMappingCanonicalize(HandlerPipeline &pipeline, llvm::StringRef mode);
 void insertController(HandlerPipeline &pipeline);

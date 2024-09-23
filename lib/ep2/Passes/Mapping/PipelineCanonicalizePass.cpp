@@ -70,7 +70,7 @@ void PipelineCanonicalizePass::runOnOperation() {
 
   // for netronome, we need to map gloabl state to local state
   if (mode.getValue() == "netronome") {
-    simpleGlobalMapping(pipeline);
+    simpleGlobalMapping(pipeline, limitLocalTable.getValue());
     bufferToRef(pipeline);
     // add the attribute for adding context
     // TODO(insert DPE, DFE passes)
