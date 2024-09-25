@@ -1,0 +1,288 @@
+struct dma_write_cmd_t {
+    bits<32> addr; 
+    bits<32> size; 
+}
+
+extern event NET_RECV {context ctx; buf packet;}
+extern event NET_SEND{context ctx; buf packet;}
+
+extern event DMA_WRITE_REQ{context ctx; buf data; dma_write_cmd_t desc;}
+
+[location=cu7]  extern handler NET_SEND:net_send (context ctx, buf packet) {
+}
+
+[location=cu8] extern handler DMA_WRITE_REQ:dma_write (context ctx, buf data, dma_write_cmd_t desc) {
+}
+
+############## main program ###########
+
+struct eth_header_t {
+    bits<48> dst_mac;
+    bits<48> src_mac;
+    bits<16> ether_type;
+}
+
+# Totoal 24 bytes
+struct ip_header_t {
+    # Version (4),  IHL (4), DSCP (6), ECN(2)
+    bits<16> misc; 
+    bits<16> length;
+    bits<16> identification;
+    # Flags (3), Fragment Offset (13)
+    bits<16> fragment_offset;
+    
+    # TTL (8), Transport Protocol (8)
+    bits<16> TTL_transport;
+    bits<16> checksum;
+    bits<32> source_ip;
+    bits<32> dst_ip;
+    bits<32> options;
+}
+
+struct tcp_header_t {
+    bits<16> sport;                   # /** Source port */
+    bits<16> dport;                   # /** Destination port */
+
+    bits<32> seq;                     # /** Sequence number */
+
+    bits<32> ack;                     # /** Acknowledgement number */
+
+    bits<8>  off;                   # /** Data offset */
+    bits<8>  flags;                   # /** Flags */
+    bits<16> win;                     # /** Window */
+
+    bits<16> sum;                     # /** Checksum */
+    bits<16> urp;                     # /** Urgent pointer */
+}
+
+struct flow_state_t
+{
+    bits<32> tx_next_seq;             # /*> Sequence number of next byte to be sent */
+    bits<16> flags;                   # /*> RX/TX Flags */
+    bits<16> dupack_cnt;              # /*> Duplicate ACK count */
+    bits<32> rx_len;                  # /*> Length of receive buffer */
+    bits<32> rx_avail;                # /*> Available RX buffer space */
+    bits<32> rx_next_seq;             # /*> Next sequence number expected */
+    bits<32> rx_next_pos;             # /*> Offset of next byte in RX buffer */
+    bits<32> rx_ooo_len;              # /*> Length of Out-of-Order bytes */
+    bits<32> rx_ooo_start;            # /*> Start position of Out-of-Order bytes */
+
+    bits<16> sport;                   # /** Source port */
+    bits<16> dport;                   # /** Destination port */
+
+    bits<32> seq;                     # /** Sequence number */
+
+    bits<32> ack;                     # /** Acknowledgement number */
+
+    bits<8>  off;                   # /** Data offset */
+    bits<8>  flags;                   # /** Flags */
+    bits<16> win;                     # /** Window */
+
+    bits<16> sum;                     # /** Checksum */
+    bits<16> urp;                     # /** Urgent pointer */
+    bits<16> TTL_transport;
+    bits<16> checksum;
+    bits<32> source_ip;
+    bits<32> dst_ip;
+    bits<32> options;
+}
+
+struct pkt_info_t
+{
+    bits<64> mac_src;
+    bits<64> mac_dst;                  # /*> Length of receive buffer */
+    bits<32> ip_src;
+    bits<32> ip_dst;
+    bits<16> port_src;
+    bits<16> port_dst;
+}
+
+struct flow_tracker_t
+{
+    bits<32> total_packet_cnt;
+    bits<32> total_byte_cnt;
+}
+
+struct err_tracker_t
+{
+    bits<32> total_drop_cnt;
+    bits<32> total_err_cnt;
+    bits<32> total_byte_cnt;
+}
+
+struct ip_tracker_t
+{
+    bits<32> ip_src_cnt;
+    bits<32> ip_dst_cnt;
+    bits<32> ip_outbound_cnt;
+}
+
+struct tcp_tracker_t
+{
+    bits<32> tcp_src_port_cnt;
+    bits<32> tcp_dst_port_cnt;
+    bits<32> tcp_sync_cnt;
+}
+
+struct firewall_ip_entries_t
+{
+    bits<32> new_ip_src;
+    bits<32> new_ip_dst;
+    bits<32> priority;
+    bits<32> timeout;
+    bits<32> if_allow;
+}
+
+struct firewall_tcpport_entries_t
+{
+    bits<32> new_tcp_src;
+    bits<32> new_tcp_dst;
+    bits<32> priority;
+    bits<32> timeout;
+    bits<32> if_allow;
+}
+struct priority_entries_t
+{
+    bits<32> cookies;
+    bits<32> cookiesx;
+}
+
+
+struct firewall_meta_header_t
+{
+    bits<32> fid;
+    bits<32> allow;
+    bits<32> acc_priority;
+    bits<32> reserved;
+    bits<32> reserved1;
+    bits<32> reserved2;
+    bits<32> reserved3;
+}
+
+struct connect_tracker_meta_header_t
+{
+    bits<32> tcp_tracker;
+    bits<32> ip_tracker;
+    bits<32> mac_tracker;
+    bits<32> reserved;
+    bits<32> reserved1;
+    bits<32> reserved2;
+    bits<32> reserved3;
+}
+
+struct lb_DIP_entries_t
+{
+    bits<64> mac_src;
+    bits<64> mac_dst;                  # /*> Length of receive buffer */
+    bits<32> ip_src;
+    bits<32> ip_dst;
+    bits<16> port_src;
+    bits<16> port_dst;
+    bits<32> if_alloc;
+    bits<64> hash;
+}
+
+struct lb_fwd_tcp_hdr_t
+{
+    bits<64> raw1;                  
+    bits<64> raw2;                  
+    bits<32> raw3;                  
+}
+
+
+global table <bits<32>, firewall_ip_entries_t, 64> firewall_ip_table;
+global table <bits<32>, firewall_tcpport_entries_t, 64> firewall_tcpport_table;
+global table <bits<32>, priority_entries_t, 64> priority_table;
+global table <bits<32>, flow_tracker_t, 64> flow_tracker_table;
+global table <bits<32>, err_tracker_t, 64> err_tracker_table;
+global table <bits<32>, ip_tracker_t, 64> ip_tracker_table;
+global table <bits<32>, tcp_tracker_t, 64> tcp_tracker_table;
+global table <bits<16>, lb_DIP_entries_t, 64> lb_table;
+global table <bits<32>, lb_fwd_tcp_hdr_t, 64> lb_fwd_table;
+handler NET_RECV:process_packet (context ctx, buf packet) {
+    eth_header_t eth_header;
+    ip_header_t ip_header;
+    tcp_header_t tcp_header;
+    pkt_info_t pkt_info;
+    firewall_ip_entries_t firewall_ip_entries;
+    firewall_tcpport_entries_t firewall_tcpport_entries;
+    priority_entries_t priority_entry1;
+    priority_entries_t priority_entry2;
+
+    packet.extract(eth_header);
+    packet.extract(ip_header);
+    packet.extract(tcp_header);
+
+    bits<32> fid;
+    fid = ip_header.source_ip + ip_header.dst_ip + tcp_header.sport + tcp_header.dport;
+
+    # firewall logic
+    bits<32> src_ip;
+    src_ip = ip_header.source_ip;
+    firewall_ip_entries = firewall_ip_table.lookup(fid);
+
+    firewall_tcpport_entries = firewall_tcpport_table.lookup(fid);
+    priority_entry1 = priority_table.lookup(fid);
+    priority_entry2 = priority_table.lookup(fid);
+    firewall_meta_header_t meta_header;
+
+    meta_header.allow = firewall_tcpport_entries.if_allow + firewall_ip_entries.if_allow;
+    meta_header.acc_priority = priority_entry1.cookies + priority_entry2.cookies;
+    meta_header.fid = fid;
+    meta_header.reserved = firewall_ip_entries.timeout + firewall_tcpport_entries.timeout;
+    bits<32> firewall_drop_bit = firewall_tcpport_entries.if_allow + firewall_ip_entries.if_allow;
+    packet.emit(meta_header);
+
+    # flow tracker logic
+
+
+    err_tracker_t err_tracker_entry;
+    err_tracker_entry = err_tracker_table.lookup(fid);
+    err_tracker_entry.total_drop_cnt = err_tracker_entry.total_drop_cnt + 1 - firewall_drop_bit;
+    err_tracker_entry.total_byte_cnt = err_tracker_entry.total_byte_cnt + 256 + tcp_header.seq + tcp_header.sum;
+    bits<32> signature =  err_tracker_entry.total_drop_cnt + err_tracker_entry.total_byte_cnt + tcp_header.sum;
+    err_tracker_table.update(fid, err_tracker_entry);
+
+    tcp_tracker_t tcp_tracker_entry;
+    tcp_tracker_entry = tcp_tracker_table.lookup(src_ip);
+    tcp_tracker_entry.tcp_src_port_cnt = tcp_tracker_entry.tcp_src_port_cnt -  firewall_drop_bit;
+    bits<32> signature2 =  tcp_tracker_entry.tcp_sync_cnt;
+    tcp_tracker_table.update(src_ip, tcp_tracker_entry);
+    tcp_tracker_entry.tcp_sync_cnt = tcp_tracker_entry.tcp_sync_cnt + signature;
+    connect_tracker_meta_header_t meta_header2;
+    meta_header2.tcp_tracker = tcp_tracker_entry.tcp_src_port_cnt;
+    meta_header2.ip_tracker = tcp_tracker_entry.tcp_sync_cnt;
+    packet.emit(meta_header2);
+
+    #L4 load balancer
+    bits<16> src_port;
+    src_port = tcp_header.sport;
+    bits<32> base_ip_src;
+    base_ip_src = 134744072;
+    bits<32> base_ip_dst;
+    base_ip_dst = 134744071;
+    bits<16> base_port_src;
+    base_port_src = 50;
+    bits<16> base_port_dst;
+    base_port_dst = 60;
+    lb_DIP_entries_t lb_DIP_entry;
+    lb_DIP_entry = lb_table.lookup(src_port);
+    lb_DIP_entry.if_alloc = 1;
+    lb_DIP_entry.mac_src =  lb_DIP_entry.mac_src + fid;
+    lb_DIP_entry.mac_dst =  lb_DIP_entry.mac_dst + fid;
+    lb_DIP_entry.ip_src = base_ip_src + fid;
+    lb_DIP_entry.ip_dst = base_ip_dst + fid;
+    lb_DIP_entry.port_src = base_port_src + fid;
+    lb_DIP_entry.port_dst = base_port_dst + fid;
+    lb_DIP_entry.hash = base_ip_src + base_ip_dst + base_port_src + base_port_dst + fid;
+    lb_table.update(src_port, lb_DIP_entry);
+
+    bits<32> new_fid;
+    new_fid = lb_DIP_entry.ip_src + lb_DIP_entry.ip_dst + lb_DIP_entry.port_src + lb_DIP_entry.port_dst;
+    lb_fwd_tcp_hdr_t new_tcp_hdr;
+    new_tcp_hdr.raw1 = new_fid;
+    packet.emit(new_tcp_hdr);
+
+    # firewall logic
+    generate NET_SEND:net_send{ctx, packet};
+}
