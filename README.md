@@ -1,8 +1,9 @@
-# EP2: Expressive, Portable and Performant Lanaguege for SmartNICs
+# Alkali: Portable and High-Performance SmartNIC Programs with Alkali
 
 ## Building - Building MLIR
 
 ```sh
+git apply patches/translateToCpp.patch
 mkdir llvm-project/build && cd llvm-project/build
 cmake -G Ninja ../llvm \
  -DLLVM_ENABLE_PROJECTS="mlir;clang" \
@@ -19,7 +20,7 @@ cd .. &&  ninja -C build/
 sudo apt install libz3-dev
 ```
 
-## Building - Component Build
+## Building - Alkali Compiler Build
 
 This setup assumes that you have built LLVM and MLIR in `$BUILD_DIR` and installed them to `$PREFIX`. To build and launch the tests, run
 ```sh
@@ -31,16 +32,20 @@ mkdir build && cd build
     -DCMAKE_BUILD_TYPE=DEBUG
 cd .. &&  ninja -C build/
 ```
-To build the documentation from the TableGen description of the dialect operations, run
+This will generate Alkali compiler binary in ./build/bin/ep2c
+
+## Running Alkali Example
+
+After `ep2c` is built, you run example with
 ```sh
-cmake --build . --target mlir-doc
+bash run_fpga_cut.sh nfchainnew.ep2
 ```
+This will compile the nfchain example for FPGA NICs. The generated Verilog code can be found in ./fpga_split_out/nfchainnew.ep2 . It transform the oringinal RTC handler into pipeline and data parallel FPGA codes.
 
-## Running Example
-
-After `ep2c` is built, run example with
+Similarly, if you want to compile the nfchain example for Agilio NICs, run:
 ```sh
-./bin/ep2c --emit=mlir ../example.ep2.txt
+bash  run_netronome_cut.sh nfchainnew.ep2
 ```
+The generated Agilio Micro C code can be found in ./outs-netronome/out-netronome-nfchainnew.
 
-To run netronome backend, do ./run.sh XXX.ep2, and output files will be generated in tests/ folder.
+More other applications can be found in ./tests/
