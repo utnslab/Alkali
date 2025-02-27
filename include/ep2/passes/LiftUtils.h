@@ -14,7 +14,9 @@ std::optional<Type> stripMemRefType(OpBuilder &builder, Type type);
 Type liftLLVMType(OpBuilder &builder, Type type);
 
 std::pair<ep2::FuncOp, ep2::FuncOp> functionSplitter(ep2::FuncOp funcOp, llvm::DenseSet<Operation *> &sinkOps, llvm::DenseSet<Value> &sinkArgs);
+// functions for creating generate
 std::pair<ep2::InitOp, ep2::ReturnOp> createGenerate(OpBuilder &builder, mlir::Location loc, StringRef name, ArrayRef<Value> values);
+std::pair<ep2::InitOp, ep2::ReturnOp> createGenerate(OpBuilder &builder, mlir::Location loc, StringRef event, StringRef atom, ArrayRef<Value> values);
 
 } // namespace ep2
 } // namespace mlir

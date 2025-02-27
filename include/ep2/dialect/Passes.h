@@ -505,12 +505,19 @@ struct EmitLLVMHeaderPass
 
 struct ContextToMemPass :
         public PassWrapper<ContextToMemPass, OperationPass<ModuleOp>> {
+    ContextToMemPass() = default;
+    ContextToMemPass(const ContextToMemPass &pass) {}
+
     void runOnOperation() final;
     void getDependentDialects(DialectRegistry &registry) const override {
         registry.insert<EP2Dialect, func::FuncDialect, LLVM::LLVMDialect, emitc::EmitCDialect>();
     }
     StringRef getArgument() const final { return "ep2-context-to-mem"; }
-    StringRef getDescription() const final { return "Restore context to memory"; }
+    StringRef getDescription() const final { return "Restore context to memory. Inverse of context-to-arg"; }
+  Option<bool> transformExtern{
+      *this, "transform-extern",
+      llvm::cl::desc("Whether to transform extern functions"),
+      llvm::cl::init(false) };
 };
 
 struct BufferReusePass :
@@ -633,12 +640,19 @@ struct PipelineHandlerPass
 
 // FrontEnd Conversion Passes
 struct LiftLLVMPasses : public PassWrapper<LiftLLVMPasses, OperationPass<ModuleOp>> {
+  LiftLLVMPasses() = default;
+  LiftLLVMPasses(const LiftLLVMPasses &pass) {}
   void runOnOperation() final;
   void getDependentDialects(DialectRegistry &registry) const override {
-    registry.insert<LLVM::LLVMDialect, EP2Dialect, polygeist::PolygeistDialect, memref::MemRefDialect>();
+    registry.insert<LLVM::LLVMDialect, EP2Dialect, memref::MemRefDialect>();
   }
   StringRef getArgument() const final { return "ep2-lift-llvm"; }
   StringRef getDescription() const final { return "Lift LLVM dialect to EP2 dialect"; }
+
+  Option<std::string> structDesc {
+      *this, "struct-desc",
+      llvm::cl::desc("the layout description of the structs. in JSON format."),
+      llvm::cl::Required };
 };
 
 struct PipelineCanonicalizePass

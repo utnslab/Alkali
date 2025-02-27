@@ -36,15 +36,17 @@ This will generate Alkali compiler binary in ./build/bin/ep2c
 
 ## Running Alkali Example
 
-After `ep2c` is built, you run example with
+The source files are located in `tests/experiments_c`. First, compile the C source into Alkali IR `./run_c.sh nfchain.c`. It will generate IR into `out.mlir`. 
+
+After that is built, you run example with
 ```sh
-bash run_fpga_cut.sh nfchainnew.ep2
+bash run_fpga_cut.sh out.mlir
 ```
 This will compile the nfchain example for FPGA NICs. The generated Verilog code can be found in ./fpga_split_out/nfchainnew.ep2 . It transform the oringinal RTC handler into pipeline and data parallel FPGA codes.
 
 Similarly, if you want to compile the nfchain example for Agilio NICs, run:
 ```sh
-bash  run_netronome_cut.sh nfchainnew.ep2
+bash  run_netronome_cut.sh out.mlir
 ```
 The generated Agilio Micro C code can be found in ./outs-netronome/out-netronome-nfchainnew.
 

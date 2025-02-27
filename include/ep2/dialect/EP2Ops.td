@@ -864,7 +864,7 @@ def MulOp : EP2_Op<"mul",
 // ReturnOp
 //===----------------------------------------------------------------------===//
 
-def TerminateOp : EP2_Op<"terminate", [Pure, HasParent<"FuncOp">, Terminator]> {
+def TerminateOp : EP2_Op<"terminate", [HasParent<"FuncOp">, Terminator]> {
   let summary = "End the current function execution";
   let description = [{
     Note that this function will not return value

@@ -7,6 +7,8 @@
 #include "llvm/ADT/StringMap.h"
 #include "llvm/ADT/EquivalenceClasses.h"
 #include "llvm/Support/Debug.h"
+#include "llvm/Support/MemoryBuffer.h"
+#include "llvm/Support/JSON.h"
 
 #include "mlir/Analysis/DataFlow/DenseAnalysis.h"
 #include "mlir/Analysis/DataFlow/DeadCodeAnalysis.h"
@@ -129,18 +131,22 @@ class StackVariableAnalysis : public DenseForwardDataFlowAnalysis<StackSlotValue
 
     auto opChanged =
         TypeSwitch<Operation *, ChangeResult>(op)
-            // Table and global vars
-            .Case<memref::AllocaOp, memref::GetGlobalOp>([&](Operation *op) {
+            // Only allocate creates the stack slot
+            .Case<LLVM::AllocaOp, ep2::InitOp>([&](Operation *op) {
               after->init(op->getResult(0));
               return ChangeResult::Change;
             })
-            .Case<polygeist::Memref2PointerOp, polygeist::Pointer2MemrefOp,
-                  UnrealizedConversionCastOp>([&](Operation *op) {
-              after->init(op->getResult(0), op->getOperand(0));
+            .Case<LLVM::StoreOp>([&](LLVM::StoreOp &op) {
+              after->update(op.getAddr(), op.getValue());
               return ChangeResult::Change;
             })
-            .Case([&](ep2::AssignOp op) {
+            .Case<ep2::AssignOp>([&](ep2::AssignOp &op) {
+              // LHS is address
               after->update(op.getLhs(), op.getRhs());
+              return ChangeResult::Change;
+            })
+            .Case<UnrealizedConversionCastOp, LLVM::LoadOp>([&](Operation *op) {
+              after->init(op->getResult(0), op->getOperand(0));
               return ChangeResult::Change;
             })
             .Default([&](Operation *op) { return ChangeResult::NoChange; });
@@ -153,8 +159,8 @@ class StackVariableAnalysis : public DenseForwardDataFlowAnalysis<StackSlotValue
                                             CallControlFlowAction action,
                                             const StackSlotValue &before,
                                             StackSlotValue *after) override {
-    AbstractDenseForwardDataFlowAnalysis::visitCallControlFlowTransfer(
-        call, action, before, after);
+    llvm::errs() << "Call Control Flow Transfer\n";
+    call->dump();
   }
 
   void setToEntryState(StackSlotValue *state) override {
@@ -162,213 +168,62 @@ class StackVariableAnalysis : public DenseForwardDataFlowAnalysis<StackSlotValue
   }
 };
 
-struct Memref2PointerEliminate : public OpConversionPattern<polygeist::Memref2PointerOp> {
-  using OpConversionPattern::OpConversionPattern;
-
-  LogicalResult matchAndRewrite(polygeist::Memref2PointerOp op, OpAdaptor adaptor,
-                  ConversionPatternRewriter &rewriter) const override {
-    rewriter.replaceOp(op, {adaptor.getSource()});
-    return success();
+struct OperatorRemoveGuard {
+  std::vector<Operation *> ops{};
+  ~OperatorRemoveGuard() { clear(); }
+  bool clear() {
+    auto empty = ops.empty();
+    for (auto op : ops)
+      op->erase();
+    ops.clear();
+    return !empty;
+  }
+  void add(Operation *op) { ops.push_back(op); }
+  template <typename F>
+  static void until(F &&f) {
+    OperatorRemoveGuard guard;
+    do { f(guard); } while (guard.clear());
   }
 };
 
-struct Pointer2MemrefEliminate : public OpConversionPattern<polygeist::Pointer2MemrefOp> {
-  using OpConversionPattern::OpConversionPattern;
+// XXX(zhiyuang): this is a hacky way to do this
+static std::map<std::string, std::vector<int>> tableDesc;
 
-  LogicalResult matchAndRewrite(polygeist::Pointer2MemrefOp op, OpAdaptor adaptor,
-                  ConversionPatternRewriter &rewriter) const override {
-    rewriter.replaceOp(op, {adaptor.getSource()});
-    return success();
-  }
-};
+Type liftLLVMType(OpBuilder &builder, Type type) {
+  return TypeSwitch<Type, Type>(type)
+      .Case<LLVM::LLVMPointerType>([&](LLVM::LLVMPointerType ptrType) {
+        return ptrType;
+      })
+      .Case<LLVM::LLVMStructType>([&](LLVM::LLVMStructType structType) {
+        // TODO(zhiyuang): support recursive struct
+        // Drop the first "struct." prefix
+        auto name = structType.getName().drop_front(7).str();
+        auto it = tableDesc.find(name);
 
-// helper functions
-Value castEP2Value(OpBuilder &builder, Value source, Type target) {
-  auto castOp = builder.create<mlir::UnrealizedConversionCastOp>(
-      source.getLoc(), TypeRange{target}, ValueRange{source});
-  return castOp.getResult(0);
+        if (name.empty() || it == tableDesc.end()) {
+          auto liftedTypes = llvm::map_to_vector(
+              structType.getBody(), [&](Type type) { return liftLLVMType(builder, type); });
+          return builder.getType<ep2::StructType>(false, liftedTypes, "__anno__");
+        } else {
+          // we have a spec for the table
+          // TODO(zhiyuang): now assume all tables contains integer. support better in the future!
+          auto liftedTypes = llvm::map_to_vector(
+              llvm::zip(structType.getBody(), it->second), [&](std::tuple<Type, int> tuple) -> Type {
+                auto [type, size] = tuple;
+                return builder.getIntegerType(size);
+              });
+
+          return builder.getType<ep2::StructType>(false, liftedTypes, name);
+        }
+      })
+      .Default([&](Type type) { return type; });
 }
-Value castEP2Value(OpBuilder &builder, Value source) {
-  return castEP2Value(builder, source, builder.getType<ep2::AnyType>());
-}
-Value castEP2Value(OpBuilder &builder, Value source, TypeConverter &converter) {
-  auto newType = converter.convertType(source.getType());
-  assert(newType && "Conversion Failure");
-  return castEP2Value(builder, source, newType);
-}
 
-// used when we want to get type of the value before the cast
-Value castEP2ValueIgnoreCast(OpBuilder &builder, Value source, TypeConverter &converter) {
-  auto op = source.getDefiningOp();
-  auto isCast = llvm::isa_and_nonnull<polygeist::Memref2PointerOp, polygeist::Pointer2MemrefOp>(op);
-  if (isCast)
-    return castEP2ValueIgnoreCast(builder, op->getOperand(0), converter);
-  else
-    return castEP2Value(builder, source, converter);
-};
-
-std::optional<int64_t> affineToIndex(AffineMap map) {
-  if (!(map.isConstant() && map.getConstantResults().size() == 2))
-    return std::nullopt;
-  return map.getConstantResults()[1];
-}
-
-struct CallRewrite : public OpRewritePattern<func::CallOp> {
-  TypeConverter &converter;
-  CallRewrite(MLIRContext *context, TypeConverter &converter) : OpRewritePattern(context), converter(converter) {};
-
-  LogicalResult matchAndRewrite(func::CallOp op,
-                                PatternRewriter &rewriter) const final {
-    auto funcName = op.getCallee();
-    auto func = op->getParentOfType<ModuleOp>()
-      .lookupSymbol<func::FuncOp>(funcName);
-    if (func && !func.isDeclaration())
-      return rewriter.notifyMatchFailure(op, "Not an external function on decl");
-
-    auto loc = op.getLoc();
-    auto args = op.getArgOperands();
-    if (funcName == "bufextract") {
-      auto buf =  castEP2Value(rewriter, args[0], rewriter.getType<ep2::BufferType>());
-      auto header = castEP2Value(rewriter, args[1]);
-
-      auto extractOp = rewriter.create<ep2::ExtractOp>(loc, header.getType(), buf);
-      rewriter.replaceOpWithNewOp<ep2::AssignOp>(op, header, extractOp);
-      return success();
-    } else if (funcName == "bufemit") {
-      auto buf =  castEP2Value(rewriter, args[0], rewriter.getType<ep2::BufferType>());
-      auto header = castEP2Value(rewriter, args[1]);
-
-      rewriter.replaceOpWithNewOp<ep2::EmitOp>(op, buf, header);
-      return success();
-    } else if (funcName == "table_lookup") {
-      auto table = castEP2ValueIgnoreCast(rewriter, args[0], converter);
-      auto key = castEP2ValueIgnoreCast(rewriter, args[1], converter);
-      auto value = castEP2ValueIgnoreCast(rewriter, args[2], converter);
-
-      auto lookupOp = rewriter.create<ep2::LookupOp>(loc, value.getType(), table, key);
-      rewriter.replaceOpWithNewOp<ep2::AssignOp>(op, value, lookupOp);
-      return success();
-    } else if (funcName == "table_update") {
-      auto table = castEP2ValueIgnoreCast(rewriter, args[0], converter);
-      auto key = castEP2ValueIgnoreCast(rewriter, args[1], converter);
-      auto value = castEP2ValueIgnoreCast(rewriter, args[2], converter);
-
-      rewriter.replaceOpWithNewOp<ep2::UpdateOp>(op, table, key, value);
-      return success();
-    } else {
-      // TODO(zhiyuang): normal event calls. delete them for now.
-      auto callee = op.getCallee();
-      auto values = llvm::map_to_vector(args, [&](Value arg) {
-        return castEP2ValueIgnoreCast(rewriter, arg, converter);
-      });
-      auto [_, callOp] = createGenerate(rewriter, loc, callee, values);
-
-      rewriter.replaceOp(op, callOp);
-      return success();
-    }
-
-  }
-};
-
-struct UndefEliminate : public OpRewritePattern<LLVM::UndefOp> {
-  using OpRewritePattern::OpRewritePattern;
-
-  LogicalResult matchAndRewrite(LLVM::UndefOp op,
-                                PatternRewriter &rewriter) const final {
-    for (auto &use : op->getUses()) {
-      rewriter.eraseOp(use.getOwner());
-    }
-    rewriter.eraseOp(op);
-    return success();
-  }
-};
-
-struct StoreRewrite : public OpRewritePattern<affine::AffineStoreOp> {
-  TypeConverter &converter;
-  StoreRewrite(MLIRContext *context, TypeConverter &converter) :
-    OpRewritePattern(context), converter(converter) {};
-
-  LogicalResult matchAndRewrite(affine::AffineStoreOp op,
-                                PatternRewriter &rewriter) const final {
-    auto ep2Type = converter.convertType(op.getMemRefType());
-    if (ep2Type == nullptr)
-      return rewriter.notifyMatchFailure(op, "Not a buffer type");
-
-    return TypeSwitch<Type, mlir::LogicalResult>(ep2Type)
-        .Case([&](ep2::StructType type) {
-          auto memory = castEP2Value(rewriter, op.getMemRef(), type);
-          // TODO: change this to a support function
-          auto res = op.getMap().getConstantResults();
-
-          auto updateOp = rewriter.create<ep2::StructUpdateOp>(
-              op.getLoc(), memory.getType(), memory, res[1],
-              op.getValueToStore());
-          // avoid crush, use Operation * methods. see
-          // https://github.com/llvm/llvm-project/issues/39319
-          rewriter.create<ep2::AssignOp>(op.getLoc(), memory,
-                                         updateOp->getOpResults().front());
-          rewriter.eraseOp(op);
-          return success();
-        })
-        .Case([&](IntegerType type) {
-          auto memory = castEP2Value(rewriter, op.getMemRef(), type);
-          // Assign for scalar
-          rewriter.create<ep2::AssignOp>(
-              op.getLoc(), memory, op.getValueToStore());
-          rewriter.eraseOp(op);
-          return success();
-        })
-        .Default([&](Type type) {
-          return rewriter.notifyMatchFailure(op, "Unsupported store target");
-        });
-  }
-};
-
-struct FoldPolygeistCast : public OpRewritePattern<UnrealizedConversionCastOp> {
-  using OpRewritePattern::OpRewritePattern;
-
-  LogicalResult matchAndRewrite(UnrealizedConversionCastOp op,
-                                PatternRewriter &rewriter) const final {
-    if (op.getNumOperands() != 1 || op.getNumResults() != 1)
-      return failure();
-    Value source = op.getOperand(0);
-    auto changed = failure();
-    while (source.getDefiningOp() &&
-           isa<polygeist::Memref2PointerOp, polygeist::Pointer2MemrefOp>(
-               source.getDefiningOp())) {
-      source = source.getDefiningOp()->getOperand(0);
-      changed = success();
-    }
-
-    // TODO: zhiyuang: source could be null
-    if (changed.succeeded())
-      rewriter.replaceOpWithNewOp<UnrealizedConversionCastOp>(
-          op, op.getResultTypes(), ValueRange{source});
-    return changed;
-  }
-};
-
-} // local namespace
-
+// Dialect Conversion
 void populateTypeConversion(TypeConverter &typeConverter, OpBuilder &builder) {
-  // for struct
-  auto bufType = LLVM::LLVMStructType::getLiteral(builder.getContext(), {
-    MemRefType::get(ArrayRef<int64_t>{mlir::ShapedType::kDynamic}, builder.getI8Type()),
-    builder.getI16Type()
-  });
 
-  // ep2 specialized types. conversion of type
-  typeConverter.addConversion([&,bufType](Type type)  -> std::optional<Type> {
-    if (type == bufType) {
-      return builder.getType<ep2::BufferType>();
-    }
-    return type;
-  });
-
-  // general memref handling
-  typeConverter.addConversion([&](MemRefType memref) -> std::optional<Type> {
-    return stripMemRefType(builder, memref);
-  });
+  // bind the funciion within the context
+  typeConverter.addConversion([&](Type type) { return liftLLVMType(builder, type); });
 
   // wildcard conversion to make system work. remove this later!
   typeConverter.addSourceMaterialization(
@@ -400,202 +255,390 @@ void populateTypeConversion(TypeConverter &typeConverter, OpBuilder &builder) {
             .create<UnrealizedConversionCastOp>(loc, TypeRange{type}, inputs)
             .getOutputs()[0];
       });
+
+
 }
 
-LogicalResult runCallEliminate(Operation * op) {
-  auto builder = OpBuilder(op);
 
-  TypeConverter converter;
-  populateTypeConversion(converter, builder);
+Type convertLLVMPointer(OpBuilder &builder, Value pointer) {
+  auto ptrType = pointer.getType().cast<LLVM::LLVMPointerType>();
 
-  // apply rules
-  mlir::RewritePatternSet patterns(builder.getContext());
-  patterns
-      .add<FoldPolygeistCast, UndefEliminate>(builder.getContext());
-  patterns.add<StoreRewrite, CallRewrite>(builder.getContext(), converter);
+  if (auto elementType = ptrType.getElementType())
+    return liftLLVMType(builder, elementType);
+  else if (auto allocaOp = dyn_cast_or_null<LLVM::AllocaOp>(pointer.getDefiningOp())) {
+    auto type = allocaOp.getElemType();
+    if (type)
+      return liftLLVMType(builder, *type);
+  }
 
-  FrozenRewritePatternSet patternSet(std::move(patterns));
-  return applyPatternsAndFoldGreedily(op, patternSet);
+  return builder.getType<ep2::AnyType>();
 }
 
-struct AssignEliminate : OpConversionPattern<ep2::AssignOp> {
-  using OpConversionPattern::OpConversionPattern;
+Value castEP2Value(OpBuilder &builder, Value source, Type target) {
+  auto castOp = builder.create<mlir::UnrealizedConversionCastOp>(
+      source.getLoc(), TypeRange{target}, ValueRange{source});
+  return castOp.getResult(0);
+}
+Value castEP2Value(OpBuilder &builder, Value source) {
+  return castEP2Value(builder, source, builder.getType<ep2::AnyType>());
+}
 
-  LogicalResult matchAndRewrite(ep2::AssignOp assignOp, OpAdaptor adaptor,
-                  ConversionPatternRewriter &rewriter) const final {
-    // If the table is installed correctly, we should eliminate all assign
-    if (assignOp.getLhs() != assignOp.getRhs())
-      return failure();
-    rewriter.eraseOp(assignOp);
+auto parseFunctionName(StringRef name) {
+  if (name.startswith("EXT__")) // this is a extern function. ignore this for now
+    name = name.drop_front(5);
+  return name.split("__");
+}
+
+// canonicalize the LLVM input
+void handlerCanonicalize(OpBuilder &builder, ep2::FuncOp funcOp) {
+  funcOp->setAttr("type", builder.getStringAttr("handler"));
+
+  auto name = funcOp.getName();
+  if (name.startswith("EXT__")) {
+    // drop the prefix "EXT__"
+    name = name.drop_front(5);
+    funcOp->setAttr("extern", builder.getBoolAttr(true));
+  }
+
+  auto [event, atom] = parseFunctionName(name);
+
+  funcOp->setAttr("event", builder.getStringAttr(event));
+  funcOp->setAttr("atom", builder.getStringAttr(atom));
+
+  auto canonName = "__handler_" + event.str() + "_" + atom.str();
+  funcOp.setName(canonName);
+}
+
+struct FuncRewrite : public OpRewritePattern<LLVM::LLVMFuncOp> {
+  TypeConverter &converter;
+  FuncRewrite(MLIRContext *context, TypeConverter &converter)
+      : OpRewritePattern(context), converter(converter) {}
+
+  LogicalResult matchAndRewrite(LLVM::LLVMFuncOp op,
+                                PatternRewriter &rewriter) const final {
+
+    // EP2 parameter conversion
+    for (auto &block : op.getBlocks()) {
+      for (auto &arg : block.getArguments()) {
+        if (isa<LLVM::LLVMPointerType>(arg.getType())) {
+          // only for BA, this is a buffer type
+          arg.setType(rewriter.getType<ep2::BufferType>());
+        } else // else we convert the type
+          arg.setType(liftLLVMType(rewriter, arg.getType()));
+      }
+    }
+
+    auto entryBlock = &op.front();
+    auto newFunc = rewriter.create<ep2::FuncOp>(op.getLoc(), op.getName(),
+      rewriter.getFunctionType(entryBlock->getArgumentTypes(), {}));
+    newFunc.getRegion().takeBody(op.getRegion());
+
+    handlerCanonicalize(rewriter, newFunc);
+
+    rewriter.eraseOp(op);
     return success();
   }
 };
 
-struct MemRefAllocaConversion : OpConversionPattern<memref::AllocaOp> {
-  using OpConversionPattern::OpConversionPattern;
+// Rewrite for Calls
+struct CallRewrite : public OpRewritePattern<LLVM::CallOp> {
+  TypeConverter &converter;
+  CallRewrite(MLIRContext *context, TypeConverter &converter) : OpRewritePattern(context), converter(converter) {};
 
-  LogicalResult matchAndRewrite(memref::AllocaOp op, OpAdaptor adaptor,
-                  ConversionPatternRewriter &rewriter) const final {
-    auto retType = getTypeConverter()->convertType(op.getType());
-    rewriter.replaceOpWithNewOp<ep2::InitOp>(op, retType);
-    return success();
-  }
-};
+  LogicalResult matchAndRewrite(LLVM::CallOp op,
+                                PatternRewriter &rewriter) const final {
+    auto funcName = op.getCallee();
 
-struct AffineLoadConversion : OpConversionPattern<affine::AffineLoadOp> {
-  using OpConversionPattern::OpConversionPattern;
+    auto loc = op.getLoc();
+    auto args = op.getArgOperands();
 
-  LogicalResult matchAndRewrite(affine::AffineLoadOp op, OpAdaptor adaptor,
-                  ConversionPatternRewriter &rewriter) const final {
-    // TODO: check this is an 1D index
-    // auto index = adaptor.getIndices().back();
-    auto type = getTypeConverter()->convertType(op.getMemRefType());
-    if (type == nullptr)
-      return rewriter.notifyMatchFailure(op, "Memref Conversion Failure");
+    // auto anyTableType = rewriter.getType<ep2::TableType>(
+    //     rewriter.getType<ep2::AnyType>(), rewriter.getType<ep2::AnyType>(), 0);
 
-    return TypeSwitch<Type, LogicalResult>(type)
-        .Case([&](ep2::StructType type) {
-          auto index = affineToIndex(op.getMap());
-          if (!index)
-            return rewriter.notifyMatchFailure(op, "Not a 2d constant affine");
+    if (funcName == "bufextract") {
+      auto buf =  castEP2Value(rewriter, args[0], rewriter.getType<ep2::BufferType>());
+      auto header = castEP2Value(rewriter, args[1], convertLLVMPointer(rewriter, args[1]));
 
-          rewriter.replaceOpWithNewOp<ep2::StructAccessOp>(
-              op, adaptor.getMemref(), *index);
-          return success();
-        })
-        .Case([&](IntegerType type) {
-          rewriter.replaceOp(op, {adaptor.getMemref()});
-          return success();
-        })
-        .Default([&](Type type) {
-          return rewriter.notifyMatchFailure(op, "Unsupported load target");
-        });
-  }
-};
+      auto extractOp = rewriter.create<ep2::ExtractOp>(loc, header.getType(), buf);
+      rewriter.replaceOpWithNewOp<ep2::AssignOp>(op, header, extractOp);
+      return success();
+    } else if (funcName == "bufemit") {
+      auto buf =  castEP2Value(rewriter, args[0], rewriter.getType<ep2::BufferType>());
+      auto header = castEP2Value(rewriter, args[1]);
 
-struct CastConversion : OpConversionPattern<UnrealizedConversionCastOp> {
-  using OpConversionPattern::OpConversionPattern;
+      rewriter.replaceOpWithNewOp<ep2::EmitOp>(op, buf, header);
+      return success();
+    } else if (funcName == "table_lookup") {
+      // TODO(zhiyuang): do we need an extra cast here?
+      auto table = castEP2Value(rewriter, args[0]);
+      auto key = castEP2Value(rewriter, args[1]);
+      auto value = castEP2Value(rewriter, args[2]);
 
-  LogicalResult matchAndRewrite(UnrealizedConversionCastOp op, OpAdaptor adaptor,
-                  ConversionPatternRewriter &rewriter) const final {
+      auto lookupOp = rewriter.create<ep2::LookupOp>(loc, value.getType(), table, key);
+      rewriter.replaceOpWithNewOp<ep2::AssignOp>(op, value, lookupOp);
+      return success();
+    } else if (funcName == "table_update") {
+      auto table = castEP2Value(rewriter, args[0]);
+      auto key = castEP2Value(rewriter, args[1]);
+      auto value = castEP2Value(rewriter, args[2]);
 
-    SmallVector<Type> newTypes;
-    if (failed(getTypeConverter()->convertTypes(op.getResultTypes(), newTypes)))
-      return failure();
-    // we convert this to our cast op
-    if (newTypes.size() == 1) {
-      rewriter.replaceOpWithNewOp<ep2::BitCastOp>(op, newTypes[0], adaptor.getInputs()[0]);
+      rewriter.replaceOpWithNewOp<ep2::UpdateOp>(op, table, key, value);
+      return success();
+    } else {
+      // this is a generation call. Here we use the raw format, and use another pass to call it later
+      auto callee = op.getCallee();
+      // TODO(zhiyuang): check this? what's a format of value call
+      auto argValues = llvm::to_vector(args);
+      auto [event, atom] = parseFunctionName(*callee);
+      auto [_, returnOp] = createGenerate(rewriter, op.getLoc(), event, atom, argValues);
+
+      rewriter.replaceOp(op, returnOp);
       return success();
     }
 
-    // we do not support n to n cast
-    return failure();
   }
 };
 
-struct ReturnConversion : OpConversionPattern<func::ReturnOp> {
-  using OpConversionPattern::OpConversionPattern;
+class LoadRewrite : public OpRewritePattern<LLVM::LoadOp> {
+  using OpRewritePattern::OpRewritePattern;
+  LogicalResult matchAndRewrite(LLVM::LoadOp op, PatternRewriter &rewriter) const final {
+    auto gepOp = dyn_cast_if_present<LLVM::GEPOp>(op.getAddr().getDefiningOp());
+    if (!gepOp)
+      return rewriter.notifyMatchFailure(op, "unsupported load type");
 
-  LogicalResult matchAndRewrite(func::ReturnOp op, OpAdaptor adaptor,
-                  ConversionPatternRewriter &rewriter) const final {
+    // TODO(zhiyuang): error check the logic
+    // GEP to StructUpdate
+    auto elemType = gepOp.getElemType();
+    auto structType = liftLLVMType(rewriter, *elemType);
+
+    auto offset = gepOp.getIndices()[1].get<IntegerAttr>();
+
+    // TODO: use adaptor?
+    auto converted = castEP2Value(rewriter, gepOp.getOperand(0), structType);
+    rewriter.replaceOpWithNewOp<ep2::StructAccessOp>(op, converted, offset.getInt());
+    return success();
+  }
+};
+
+class StoreRewrite : public OpRewritePattern<LLVM::StoreOp> {
+  using OpRewritePattern::OpRewritePattern;
+
+  LogicalResult
+  matchAndRewrite(LLVM::StoreOp op, PatternRewriter &rewriter) const final {
+    auto gepOp = dyn_cast_if_present<LLVM::GEPOp>(op.getAddr().getDefiningOp());
+    if (!gepOp)
+      return rewriter.notifyMatchFailure(op, "unsupported store type");
+
+    // GEP to StructUpdate
+    auto elemType = gepOp.getElemType();
+    auto structType = liftLLVMType(rewriter, *elemType);
+
+    auto offset = gepOp.getIndices()[1].get<IntegerAttr>();
+    auto newStruct = rewriter.create<ep2::StructUpdateOp>(
+        op.getLoc(), structType, gepOp.getOperand(0), offset.getInt(), op.getValue());
+
+    rewriter.replaceOpWithNewOp<ep2::AssignOp>(op, gepOp.getBase(), newStruct);
+    return success();
+  }
+};
+
+// convert alloca of struct to init
+struct InitRewrite : public OpRewritePattern<LLVM::AllocaOp> {
+  using OpRewritePattern::OpRewritePattern;
+  LogicalResult matchAndRewrite(LLVM::AllocaOp op, PatternRewriter &rewriter) const final {
+    auto elemType = dyn_cast_if_present<LLVM::LLVMStructType>(op.getElemType().value_or(nullptr));
+    if (!elemType)
+      return rewriter.notifyMatchFailure(op, "non-target alloca");
+    
+    auto structType = liftLLVMType(rewriter, elemType);
+
+    rewriter.replaceOpWithNewOp<ep2::InitOp>(op, structType);
+    return success();
+  }
+};
+
+struct ReturnRewrite : public OpRewritePattern<LLVM::ReturnOp> {
+  using OpRewritePattern::OpRewritePattern;
+  LogicalResult matchAndRewrite(LLVM::ReturnOp op, PatternRewriter &rewriter) const final {
+    // TODO: check is no value
     rewriter.replaceOpWithNewOp<ep2::TerminateOp>(op);
     return success();
   }
 };
 
-struct HandlerConversion : OpConversionPattern<func::FuncOp> {
-  using OpConversionPattern::OpConversionPattern;
+} // namespace
 
-  LogicalResult matchAndRewrite(func::FuncOp funcOp, OpAdaptor adaptor,
-                  ConversionPatternRewriter &rewriter) const final {
-    auto loc = funcOp->getLoc();
-
-    if (funcOp.isExternal() || funcOp.getName() == "main") {
-      // TODO: check if its API func
-      rewriter.eraseOp(funcOp);
-      return success();
-    }
-
-    // empty
-    TypeConverter::SignatureConversion signatureConversion(
-        funcOp.getNumArguments());
-
-    llvm::SmallVector<Type> newTypes;
-    if (getTypeConverter()->convertTypes(funcOp.getArgumentTypes(), newTypes).failed())
-      return rewriter.notifyMatchFailure(funcOp, "Failed in Converting Function Arguments Failure");
-
-    auto newFuncOp = rewriter.create<ep2::FuncOp>(
-        loc, funcOp.getName(),
-        rewriter.getFunctionType(newTypes, {}), 
-        NamedAttrList{ rewriter.getNamedAttr("type", rewriter.getStringAttr("handler")) }
-    );
-    // remove the auto-created block
-    newFuncOp.getBody().begin()->erase();
-
-    // change the function body. As we do not require original block, ok to direct rewrite
-    rewriter.inlineRegionBefore(funcOp.getBody(), newFuncOp.getBody(), newFuncOp.end());
-    if (failed(rewriter.convertRegionTypes(&newFuncOp.getBody(), *getTypeConverter())))
-      return failure();
-
-    // remove original func
-    rewriter.replaceOp(funcOp, newFuncOp);
-
-    return success();
-  }
-};
-
-struct MemRefGlobalConversion : OpConversionPattern<memref::GlobalOp> {
-  using OpConversionPattern::OpConversionPattern;
-
-  LogicalResult matchAndRewrite(memref::GlobalOp op, OpAdaptor adaptor,
-                  ConversionPatternRewriter &rewriter) const final {
-    auto retType = getTypeConverter()->convertType(op.getType());
-    rewriter.create<ep2::GlobalOp>(op.getLoc(), retType, op.getSymName());
-    rewriter.eraseOp(op);
-    return success();
-  }
-};
-
-struct MemRefGetGlobalConversion : OpConversionPattern<memref::GetGlobalOp> {
-  using OpConversionPattern::OpConversionPattern;
-
-  LogicalResult matchAndRewrite(memref::GetGlobalOp op, OpAdaptor adaptor,
-                  ConversionPatternRewriter &rewriter) const final {
-    auto retType = getTypeConverter()->convertType(op.getType());
-    auto importOp = rewriter.create<ep2::GlobalImportOp>(op.getLoc(), retType, op.getName());
-    // remove the extra "deref" comes with op
-    for (auto &use : op->getUses()) {
-      rewriter.replaceOp(use.getOwner(), importOp.getResult());
-    }
-    rewriter.eraseOp(op);
-    return success();
-  }
-};
-
-LogicalResult runFinalLift(Operation * op) {
+static LogicalResult preAnalysisRewrite(Operation *op) {
   auto builder = OpBuilder(op);
 
   TypeConverter converter;
   populateTypeConversion(converter, builder);
 
-  ConversionTarget target(*op->getContext());
-  target.addIllegalOp<ep2::AssignOp, func::FuncOp, func::ReturnOp, memref::GlobalOp, memref::GetGlobalOp>();
-  target.addDynamicallyLegalOp<UnrealizedConversionCastOp>([&](UnrealizedConversionCastOp op) {
-    for (auto val : op.getInputs())
-      if (!isa<ep2::EP2Dialect>(val.getType().getDialect()))
-        return true;
-    return false;
-  });
-  target.markUnknownOpDynamicallyLegal([&](Operation *op) {
-    return converter.isLegal(op);
-  });
-
   // apply rules
   mlir::RewritePatternSet patterns(builder.getContext());
-  patterns.add<MemRefGlobalConversion, MemRefGetGlobalConversion>(converter, builder.getContext());
-  patterns.add<AssignEliminate>(converter, builder.getContext());
-  patterns.add<MemRefAllocaConversion,AffineLoadConversion,CastConversion>(converter, builder.getContext());
-  patterns.add<HandlerConversion, ReturnConversion>(converter, builder.getContext());
+  patterns.add<FuncRewrite, CallRewrite>(builder.getContext(), converter);
+  patterns.add<LoadRewrite, StoreRewrite, InitRewrite, ReturnRewrite>(builder.getContext());
+
+  FrozenRewritePatternSet patternSet(std::move(patterns));
+  return applyPatternsAndFoldGreedily(op, patternSet);
+}
+
+namespace {
+
+// rewrite patterns
+class ConstantConversion : public OpConversionPattern<LLVM::ConstantOp> {
+  using OpConversionPattern::OpConversionPattern;
+  LogicalResult matchAndRewrite(LLVM::ConstantOp op, OpAdaptor adaptor,
+                                ConversionPatternRewriter &rewriter) const final {
+    auto valueAttr = op.getValue();
+    return TypeSwitch<Attribute, LogicalResult>(valueAttr)
+        .Case([&](IntegerAttr attr) {
+          rewriter.replaceOpWithNewOp<ep2::ConstantOp>(op, attr.getValue().getBitWidth(), attr.getInt());
+          return success();
+        })
+        .Default([&](Attribute attr) {
+          // TODO(zhiyuang): check this. we remove for now.
+          rewriter.eraseOp(op);
+          return success();
+          // return rewriter.notifyMatchFailure(op, "unsupported constant type");
+        });
+  }
+};
+
+class InsertValueConversion : public OpConversionPattern<LLVM::InsertValueOp> {
+  using OpConversionPattern::OpConversionPattern;
+  LogicalResult matchAndRewrite(LLVM::InsertValueOp op, OpAdaptor adaptor,
+                                ConversionPatternRewriter &rewriter) const final {
+    rewriter.eraseOp(op);
+    return success();
+  }
+};
+
+std::optional<Type> tableIdentification (OpBuilder &builder, LLVM::LLVMStructType structType) {
+  auto types = structType.getBody();
+  if (types.size() < 3)
+    return std::nullopt;
+
+  auto keyType = liftLLVMType(builder, types[0]);
+  auto valueType = liftLLVMType(builder, types[1]);
+
+  auto sizeType = types[2].dyn_cast<LLVM::LLVMArrayType>();
+  if (!sizeType)
+    return std::nullopt;
+  
+  auto size = sizeType.getNumElements();
+  return builder.getType<ep2::TableType>(keyType, valueType, size);
+}
+
+class AddressOfConversion : public OpConversionPattern<LLVM::AddressOfOp> {
+  using OpConversionPattern::OpConversionPattern;
+  LogicalResult matchAndRewrite(LLVM::AddressOfOp op, OpAdaptor adaptor,
+                                ConversionPatternRewriter &rewriter) const final {
+    OpBuilder builder(op);
+    auto moduleOp = op->getParentOfType<ModuleOp>();
+    SymbolTable symbolTable(moduleOp);
+
+    auto table = symbolTable.lookup<LLVM::GlobalOp>(op.getGlobalName());
+    if (!table)
+      return rewriter.notifyMatchFailure(op, "cannot find global variable");
+
+    auto tableType = table.getType();
+    return TypeSwitch<Type, LogicalResult>(tableType)
+        // This is a table...
+        .Case<LLVM::LLVMStructType>([&](LLVM::LLVMStructType structType) {
+
+          auto tableType = tableIdentification(rewriter, structType);
+          if (!tableType.has_value())
+            return rewriter.notifyMatchFailure(op, "unsupported table type");
+
+          rewriter.replaceOpWithNewOp<ep2::GlobalImportOp>(op, *tableType, op.getGlobalName());
+          return success();
+        })
+        .Default([&](Type type) {
+          return rewriter.notifyMatchFailure(op, "unsupported type");
+        });
+  }
+};
+
+class GloablOpConversion : public OpConversionPattern<LLVM::GlobalOp> {
+  using OpConversionPattern::OpConversionPattern;
+  LogicalResult matchAndRewrite(LLVM::GlobalOp op, OpAdaptor adaptor,
+                                ConversionPatternRewriter &rewriter) const final {
+    
+    auto elemType = dyn_cast_if_present<LLVM::LLVMStructType>(op.getType());
+    if (!elemType) {
+      rewriter.eraseOp(op);
+      return success();
+    }
+    
+    auto tableType = tableIdentification(rewriter, elemType);
+    if (!tableType.has_value()) {
+      rewriter.eraseOp(op);
+      return success();
+    }
+      
+    rewriter.create<ep2::GlobalOp>(op.getLoc(), *tableType, op.getName());
+    rewriter.eraseOp(op);
+
+    return success();
+  }
+};
+
+class AddConversion : public OpConversionPattern<LLVM::AddOp> {
+  using OpConversionPattern::OpConversionPattern;
+  LogicalResult matchAndRewrite(LLVM::AddOp op, OpAdaptor adaptor,
+                                ConversionPatternRewriter &rewriter) const final {
+    rewriter.replaceOpWithNewOp<ep2::AddOp>(op, op.getResult().getType(), adaptor.getLhs(), adaptor.getRhs());
+    return success();
+  }
+};
+
+class SubConversion : public OpConversionPattern<LLVM::SubOp> {
+  using OpConversionPattern::OpConversionPattern;
+  LogicalResult matchAndRewrite(LLVM::SubOp op, OpAdaptor adaptor,
+                                ConversionPatternRewriter &rewriter) const final {
+    rewriter.replaceOpWithNewOp<ep2::SubOp>(op, op.getResult().getType(), adaptor.getLhs(), adaptor.getRhs());
+    return success();
+  }
+};
+
+class SExtConversion : public OpConversionPattern<LLVM::SExtOp> {
+  using OpConversionPattern::OpConversionPattern;
+  LogicalResult matchAndRewrite(LLVM::SExtOp op, OpAdaptor adaptor,
+                                ConversionPatternRewriter &rewriter) const final {
+    rewriter.replaceOpWithNewOp<ep2::BitCastOp>(op, op.getResult().getType(), adaptor.getArg());
+    return success();
+  }
+};
+
+class TruncConversion : public OpConversionPattern<LLVM::TruncOp> {
+  using OpConversionPattern::OpConversionPattern;
+  LogicalResult matchAndRewrite(LLVM::TruncOp op, OpAdaptor adaptor,
+                                ConversionPatternRewriter &rewriter) const final {
+    rewriter.replaceOpWithNewOp<ep2::BitCastOp>(op, op.getResult().getType(), adaptor.getArg());
+    return success();
+  }
+};
+
+} // namespace
+
+static LogicalResult postAnalysisRewrite(Operation *op) {
+  auto builder = OpBuilder(op);
+
+  // type conversion
+  TypeConverter typeConverter;
+  populateTypeConversion(typeConverter, builder);
+
+  ConversionTarget target(*builder.getContext());
+  target.addLegalDialect<ep2::EP2Dialect>();
+  target.addIllegalOp<LLVM::AddressOfOp, LLVM::GlobalOp, LLVM::InsertValueOp, LLVM::ConstantOp>();
+  // arth
+  target.addIllegalOp<LLVM::AddOp, LLVM::SExtOp, LLVM::TruncOp>();
+  
+  mlir::RewritePatternSet patterns(builder.getContext());
+  patterns.add<ConstantConversion, AddressOfConversion, InsertValueConversion,
+               GloablOpConversion>(typeConverter, builder.getContext());
+  patterns.add<AddConversion, SubConversion, SExtConversion, TruncConversion>(typeConverter, builder.getContext());
 
   FrozenRewritePatternSet patternSet(std::move(patterns));
 
@@ -604,73 +647,110 @@ LogicalResult runFinalLift(Operation * op) {
 
 void LiftLLVMPasses::runOnOperation() {
   OpBuilder builder(getOperation());
-  // Set all functions to public
-  getOperation()->walk([&](func::FuncOp func) {
-    // make sure everything is public and cannot be ignored
-    if (!func.isDeclaration())
-        func.setPublic();
-  });
 
-  // transform function call first
-  if (failed(runCallEliminate(getOperation()))) {
-    getOperation()->dump();
-    llvm::errs() << "Eliminate Failure\n";
+  // process for json array
+  if (!structDesc.hasValue()) {
+    llvm::errs() << "struct description is required\n";
     return signalPassFailure();
   }
 
-  OpPassManager pm;
-  auto &funcPm = pm.nest<FuncOp>();
-  funcPm.addPass(createCSEPass());
-
-  if (failed(runPipeline(pm, getOperation())))
+  auto jsonBuffer = llvm::MemoryBuffer::getFile(structDesc.getValue());
+  if (jsonBuffer.getError()) {
+    llvm::errs() << "cannot open file\n";
     return signalPassFailure();
+  }
 
-  LLVM_DEBUG(llvm::dbgs() << "<Lift[1]> Elimination Finish\n");
+  auto json = llvm::json::parse(jsonBuffer.get()->getBuffer());
+  if (auto err = json.takeError()) {
+    llvm::errs() << "cannot parse json\n";
+    return signalPassFailure();
+  }
+
+  tableDesc.clear();
+  llvm::json::Path::Root root;
+  llvm::json::Path path(root);
+  llvm::json::fromJSON(json.get(), tableDesc, path);
+
+  // Set all functions to public
+  {
+    OperatorRemoveGuard toRemove;
+    getOperation()->walk([&](LLVM::LLVMFuncOp func) {
+      // make sure everything is public and cannot be ignored
+      if (!func.isDeclaration())
+          func.setPublic();
+      // remove the main function
+      if (func.getName() == "main")
+        toRemove.add(func);
+      // clear external lib functions
+      if (func.isExternal())
+        toRemove.add(func);
+    });
+  }
+
+  if (failed(preAnalysisRewrite(getOperation())))
+    return signalPassFailure();
+  
+  if (failed(postAnalysisRewrite(getOperation())))
+    return signalPassFailure();
 
   DataFlowSolver solver;
   // must have this two lines, to help with liveness
   solver.load<SparseConstantPropagation>();
   solver.load<DeadCodeAnalysis>();
   solver.load<StackVariableAnalysis>();
+  // currently we cannot go with "blackbox" function calls
+  // this is fixed within newer MLIR versions
 
   if (solver.initializeAndRun(getOperation()).failed())
     return signalPassFailure();
 
-  getOperation()->walk([&](func::FuncOp func) {
-    auto frozenOpList = llvm::map_to_vector(func.getOps(), [](auto &op){return &op;});
-    for (auto op : frozenOpList) {
-      // find the correct slot to use
-      builder.setInsertionPoint(op);
+  // replace!
+  {
+    OperatorRemoveGuard toRemove;
+    getOperation()->walk([&](Operation *op) {
+      // since its dense, we always have state
       auto state = solver.lookupState<StackSlotValue>(op);
-      if (state) {
-        // replace the OPs and optimize
-        auto newOperands = llvm::map_to_vector(op->getOperands(), [&](Value operand) {
-          auto mappedValue = state->lookup(operand);
-          if (mappedValue.getType() != operand.getType()) {
-            auto castOp = builder.create<UnrealizedConversionCastOp>(
-                operand.getLoc(), TypeRange{operand.getType()},
-                ValueRange{mappedValue});
-            mappedValue = castOp.getResult(0);
-          }
-          return mappedValue;
-        });
-        op->setOperands(newOperands);
+
+      // replace the operator with memory slots
+      for (unsigned i = 0; i < op->getNumOperands(); i++) {
+        auto arg = op->getOperand(i);
+        op->setOperand(i, state->lookup(arg));
       }
-    }
+
+      // speciali handling after the replacement
+      TypeSwitch<Operation *>(op)
+          .Case([&](LLVM::StoreOp storeOp) {
+            // TODO(zhiyuang): how to cast TypedValue to Value?
+            if (storeOp.getOperand(0) == storeOp.getOperand(1))
+              toRemove.add(storeOp);
+          })
+          .Case([&](ep2::AssignOp assignOp) {
+            if (assignOp.getLhs() == assignOp.getRhs())
+              toRemove.add(assignOp);
+          })
+          .Case([&](ep2::LookupOp lookupOp) {
+            auto valueType = lookupOp.getTable().getType().getValueType();
+            lookupOp.getResult().setType(valueType);
+          })
+          .Case([&](LLVM::LoadOp loadOp){
+            // if we find load op try to load a value.. eliminate it
+            auto addr = loadOp.getOperand();
+            if (!isa<LLVM::LLVMPointerType>(addr.getType())) {
+              loadOp.replaceAllUsesWith(addr);
+              toRemove.add(loadOp);
+            }
+          });
+
+    });
+  }
+
+  // dce
+  OperatorRemoveGuard::until([&](OperatorRemoveGuard &toRemove) {
+    getOperation()->walk([&](Operation *op) {
+      if (op->use_empty() && (isPure(op) || isa<LLVM::AllocaOp>(op)))
+        toRemove.add(op);
+    });
   });
-
-  LLVM_DEBUG(llvm::dbgs() << "<Lift[2]> Finish Analysis and Replace\n");
-  LLVM_DEBUG(getOperation()->print(llvm::dbgs()));
-
-  // eliminate the assign op.
-  if (runFinalLift(getOperation()).failed())
-    signalPassFailure();
-
-  LLVM_DEBUG(llvm::dbgs() << "<Lift[2]> Finish Assign Elimination and Conversion\n");
-
-  // CSE until no change
-  if (runPipeline(pm, getOperation()).failed())
-    signalPassFailure();
 }
 
 

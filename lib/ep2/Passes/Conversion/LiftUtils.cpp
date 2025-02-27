@@ -22,11 +22,34 @@ Type liftLLVMType(OpBuilder &builder, Type type) {
         return ptrType;
       })
       .Case<LLVM::LLVMStructType>([&](LLVM::LLVMStructType structType) {
+        // TODO(zhiyuang): we should handle size annotations
         auto liftedTypes = llvm::map_to_vector(
             structType.getBody(), [&](Type type) { return liftLLVMType(builder, type); });
         return builder.getType<ep2::StructType>(false, liftedTypes, kAnnoStructName);
       })
       .Default([&](Type type) { return type; });
+}
+
+std::optional<ep2::TableType> tryParseTable(OpBuilder& builder, LLVM::LLVMStructType type) {
+  auto types = type.getBody();
+
+  if (types.size() < 4)
+    return std::nullopt;
+  
+  auto magicType = types[0].dyn_cast<LLVM::LLVMArrayType>();
+  if (!(magicType && magicType.getNumElements() == 9321))
+    return std::nullopt;
+  
+  auto keyType = liftLLVMType(builder, types[1]);
+  auto valueType = liftLLVMType(builder, types[2]);
+
+  auto sizeType = types[3].dyn_cast<LLVM::LLVMArrayType>();
+  if (!(sizeType && sizeType.getElementType().isa<IntegerType>()))
+    return std::nullopt;
+  auto size = sizeType.getNumElements();
+
+  // TODO(zhiyuang): further parse other signatures
+  return builder.getType<ep2::TableType>(keyType, valueType, size);
 }
 
 std::optional<Type> stripMemRefType(OpBuilder &builder, Type type) {
@@ -36,20 +59,18 @@ std::optional<Type> stripMemRefType(OpBuilder &builder, Type type) {
   auto elementType = memRefType.getElementType();
   auto dims = memRefType.getShape();
   
-  llvm::errs() << "Converting " << type << "\n";
-
   // this is a pointer type.
   if (dims.size() == 1 && dims[0] == mlir::ShapedType::kDynamic) {
     if (auto structType = dyn_cast<LLVM::LLVMStructType>(elementType)) {
       // we got a pointer to struct ...
-      // we only handle the 
-      auto types = structType.getBody();
-      if (types.size() == 2) {
-        // this is a table type
-        auto keyType = liftLLVMType(builder, types[0]);
-        auto valueType = liftLLVMType(builder, types[1]);
-        return builder.getType<ep2::TableType>(keyType, valueType, 100);
-      }
+      // we only handle the struct with our type signature
+
+      auto tableType = tryParseTable(builder, structType);
+      // TODO(zhiyuang): for non table type, do we want to parse them as a struct?
+      if (!tableType.has_value())
+        llvm_unreachable("Unsupported struct type");
+
+      return tableType;
     }
   } else if (dims.size() == 2 && dims[0] == 1) {
     // This is a specialized struct type

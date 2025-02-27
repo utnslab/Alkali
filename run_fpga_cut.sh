@@ -1,6 +1,23 @@
 ninja -C build/ -j 32
- rm -rf *.sv
-./build/bin/ep2c $1 -o nfchain.mlir
+rm -rf *.sv
+
+file="$1"
+# Extract the extension from the filename
+extension="${file##*.}"
+
+case "$extension" in
+  ep2)
+    ./build/bin/ep2c $1 -o nfchain.mlir
+    ;;
+  mlir)
+    cp $1 nfchain.mlir
+    ;;
+  *)
+    echo "Unsupported file extension: .$extension"
+    exit 1
+    ;;
+esac
+
 
 ./build/bin/ep2c-opt nfchain.mlir -canonicalize -ep2-buffer-to-value --ep2-context-to-argument -o nfchain_value.mlir
 ./build/bin/ep2c-opt nfchain_value.mlir --ep2-pipeline-handler="mode=search" -o split_tmp.mlir

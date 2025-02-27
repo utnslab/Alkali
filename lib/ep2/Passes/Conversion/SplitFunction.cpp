@@ -68,6 +68,25 @@ std::pair<ep2::InitOp, ep2::ReturnOp> createGenerate(OpBuilder &builder, mlir::L
   return std::make_pair(initOp, builder.create<ep2::ReturnOp>(loc, ValueRange{initOp}));
 }
 
+// This version will also create an atom..
+std::pair<ep2::InitOp, ep2::ReturnOp>
+createGenerate(OpBuilder &builder, mlir::Location loc, StringRef event,
+               StringRef atom, ArrayRef<Value> values) {
+  auto atomOp = builder.create<ep2::ConstantOp>(loc, atom);
+  SmallVector<Value> newValue{};
+  newValue.push_back(atomOp);
+  newValue.append(values.begin(), values.end());
+
+  auto initOp = builder.create<ep2::InitOp>(loc, event, newValue);
+
+  // TODO(zhiyuang): check if we want this. This will instruct to add a context with context-mem pass
+  auto strings = llvm::map_to_vector(
+      newValue, [](Value value) { return StringRef(""); });
+  initOp->setAttr("context_names", builder.getStrArrayAttr(strings));
+
+  return std::make_pair(initOp, builder.create<ep2::ReturnOp>(loc, ValueRange{initOp}));
+}
+
 template<typename F>
 void eraseOpsIf(ep2::FuncOp funcOp, F &&pred) {
   std::vector<Operation *> opvec;

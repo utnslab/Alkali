@@ -571,11 +571,15 @@ mlir::Operation *EP2Dialect::materializeConstant(mlir::OpBuilder &builder,
                                                  mlir::Attribute value,
                                                  mlir::Type type,
                                                  mlir::Location loc) {
+  // TODO(zhiyuang): reason about this folding?
   if (llvm::isa<StructType>(type))
     return builder.create<StructConstantOp>(loc, type,
                                             llvm::cast<mlir::ArrayAttr>(value));
-  return builder.create<ConstantOp>(loc, type,
-                                    llvm::cast<mlir::IntegerAttr>(value));
+  else if (llvm::isa<ep2::AtomType>(type))
+    return builder.create<ConstantOp>(loc, llvm::cast<mlir::StringAttr>(value).getValue());
+  else 
+    return builder.create<ConstantOp>(loc, type,
+                                      llvm::cast<mlir::IntegerAttr>(value));
 }
 
 LogicalResult EP2Dialect::verifyRegionArgAttribute(Operation *op,

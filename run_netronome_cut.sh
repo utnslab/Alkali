@@ -16,8 +16,24 @@ ninja -C build/
 
 set -x
 
-# canonicalize from ep2 or mlir
-./build/bin/ep2c $1 --emit=mlir -o "outs-netronome/$OUT_FILE_NAME/$BASE_NAME.mlir" 
+file="$1"
+# Extract the extension from the filename
+extension="${file##*.}"
+
+case "$extension" in
+  ep2)
+    ./build/bin/ep2c $1 --emit=mlir -o "outs-netronome/$OUT_FILE_NAME/$BASE_NAME.mlir" 
+    echo "Running base command for .ep2 file..."
+    ;;
+  mlir)
+    cp $1 "outs-netronome/$OUT_FILE_NAME/$BASE_NAME.mlir"
+    ;;
+  *)
+    echo "Unsupported file extension: .$extension"
+    exit 1
+    ;;
+esac
+
 ./build/bin/ep2c-opt -canonicalize -ep2-buffer-to-value --ep2-context-to-argument \
     -ep2-pipeline-handler="mode=search" \
     "outs-netronome/$OUT_FILE_NAME/$BASE_NAME.mlir" -o "outs-netronome/$OUT_FILE_NAME/cut.mlir" 

@@ -18,8 +18,11 @@ namespace ep2 {
 
 namespace {
 
-void restoreContext(FuncOp funcOp) {
-  if (funcOp.isController() || funcOp.isExtern())
+void restoreContext(bool transferExtern, FuncOp funcOp) {
+  if (funcOp.isController())
+    return;
+  
+  if (!transferExtern && funcOp.isExtern())
     return;
 
   // insert all buffers from function arugments
@@ -50,11 +53,11 @@ void restoreContext(FuncOp funcOp) {
 
   // change the init op
   SmallVector<InitOp> toErase;
+  // This will create the context based on the context_names array attr
   funcOp->walk([&](InitOp initOp) {
     auto event = initOp.getType().dyn_cast<StructType>();
     if (!event || !event.getIsEvent())
       return;
-
     auto attr = initOp->getAttrOfType<ArrayAttr>("context_names");
     if (!attr)
       return;
@@ -120,7 +123,10 @@ void ContextToMemPass::runOnOperation() {
   OpBuilder builder(moduleOp);
 
   // restore context
-  moduleOp->walk(restoreContext);
+  moduleOp->walk(
+    [&](FuncOp funcOp) {
+      restoreContext(transformExtern.getValue(), funcOp);
+    });
 
   OpPassManager pm;
   pm.addPass(createCanonicalizerPass());

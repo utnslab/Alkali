@@ -234,8 +234,6 @@ handler NET_RECV:process_packet (context ctx, buf packet) {
     packet.emit(meta_header);
 
     # flow tracker logic
-
-
     err_tracker_t err_tracker_entry;
     err_tracker_entry = err_tracker_table.lookup(fid);
     err_tracker_entry.total_drop_cnt = err_tracker_entry.total_drop_cnt + 1 - firewall_drop_bit;
