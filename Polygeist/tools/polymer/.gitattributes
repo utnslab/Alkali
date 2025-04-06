@@ -1,2 +1,0 @@
-*.mlir linguist-detectable=false
-example/**/*.c linguist-detectable=false

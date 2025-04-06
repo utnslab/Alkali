@@ -47,13 +47,9 @@ include_directories(${STANDALONE_BINARY_DIR}/include)
 link_directories(${LLVM_BUILD_LIBRARY_DIR})
 add_definitions(${LLVM_DEFINITIONS})
 
-add_subdirectory(Polygeist)
-include_directories(${PROJECT_SOURCE_DIR}/Polygeist/include)
-include_directories(${PROJECT_BINARY_DIR}/Polygeist/include)
-
-
 add_subdirectory(include)
 add_subdirectory(lib)
 
 add_subdirectory(ep2c)
 add_subdirectory(ep2c-opt)
+
