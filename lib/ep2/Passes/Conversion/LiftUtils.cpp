@@ -1,7 +1,6 @@
 #include "ep2/dialect/Dialect.h"
 #include "ep2/dialect/Passes.h"
 
-#include "polygeist/Ops.h"
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
 #include "mlir/Dialect/ControlFlow/IR/ControlFlow.h"
 #include "mlir/Dialect/Affine/IR/AffineOps.h"

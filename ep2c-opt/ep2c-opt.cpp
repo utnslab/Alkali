@@ -5,7 +5,6 @@
 #include "ep2/dialect/Passes.h"
 
 #include "ep2/dialect/FPGAPasses.h"
-#include "polygeist/Dialect.h"
 
 #include "mlir/Dialect/Affine/Passes.h"
 #include "mlir/Dialect/LLVMIR/Transforms/Passes.h"
@@ -48,7 +47,6 @@ int main(int argc, char **argv) {
   mlir::DialectRegistry registry;
   mlir::registerAllDialects(registry);
   registry.insert<mlir::ep2::EP2Dialect>();
-  registry.insert<mlir::polygeist::PolygeistDialect>();
 
   mlir::PassRegistration<mlir::ep2::ArchMappingPass>();
   mlir::PassRegistration<mlir::ep2::BufferToValuePass>();

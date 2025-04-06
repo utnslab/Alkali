@@ -36,7 +36,6 @@
 #include "mlir/Interfaces/FunctionInterfaces.h"
 
 #include "ep2/dialect/Dialect.h"
-#include "polygeist/Dialect.h"
 
 namespace mlir {
 namespace ep2 {
