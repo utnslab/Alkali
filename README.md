@@ -40,14 +40,14 @@ The source files are located in `tests/experiments_c`. First, compile the C sour
 
 After that is built, you run example with
 ```sh
-bash run_fpga_cut.sh out.mlir
+bash ./scripts/fpga_compile.sh out.mlir
 ```
-This will compile the nfchain example for FPGA NICs. The generated Verilog code can be found in ./fpga_split_out/nfchainnew.ep2 . It transform the oringinal RTC handler into pipeline and data parallel FPGA codes.
+This will compile the nfchain example for FPGA NICs. The generated Verilog code can be found in ./fpga_out. It transform the oringinal RTC handler into pipeline and data parallel FPGA codes.
 
 Similarly, if you want to compile the nfchain example for Agilio NICs, run:
 ```sh
-bash  run_netronome_cut.sh out.mlir
+bash ./scripts/netronome_compile.sh out.mlir
 ```
-The generated Agilio Micro C code can be found in ./outs-netronome/out-netronome-nfchainnew.
+The generated Agilio Micro C code can be found in ./netronome_out.
 
 More other applications can be found in ./tests/

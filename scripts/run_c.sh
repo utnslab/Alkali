@@ -35,7 +35,7 @@ echo "Compile ${C_INPUT_FILE} to ${C_MLIR_FILE}"
 
 BIN_DIR=build/bin
 CLANG_BIN_DIR=llvm-project/build/bin
-EXTRACT_PY=./extract_struct_def.py
+EXTRACT_PY=./scripts/extract_struct_def.py
 
 cc -E $C_INPUT_FILE -o $C_PREPROCESS
 python3 $EXTRACT_PY $C_INPUT_FILE -o cinput.struct.json
