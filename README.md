@@ -36,7 +36,7 @@ This will generate Alkali compiler binary in ./build/bin/ep2c
 
 ## Running Alkali Example
 
-The source files are located in `tests/experiments_c`. First, compile the C source into Alkali IR `./run_c.sh nfchain.c`. It will generate IR into `out.mlir`. 
+The source files are located in `tests/experiments_c`. First, compile the C source into Alkali IR `./scripts/run_c.sh nfchain.c`. It will generate IR into `out.mlir`. 
 
 After that is built, you run example with
 ```sh
