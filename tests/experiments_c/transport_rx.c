@@ -1,147 +1,127 @@
-struct buf_t {
-  char *data;
-  short len;
-};
-typedef struct buf_t buf_t;
-
-struct table_t {
-  char *table;
-  short size;
-};
-typedef struct table_t table_t;
+#include "alkali.h"
+#include "generic_handlers.h"
 
 struct pkt_info_t {
-  int flow_id;
-  int pk_len;
-  int pk_seq;
+  BITS_FIELD(32, flow_id);
+  BITS_FIELD(32, pk_len);
+  BITS_FIELD(32, pk_seq);
 };
-typedef struct pkt_info_t pkt_info_t;
 
 struct eth_header_t {
-  int dst_mac_1;
-  short dst_mac_2;
-  int src_mac_1;
-  short src_mac_2;
-  short ether_type;
+  BITS_FIELD(32, dst_mac_1);
+  BITS_FIELD(16, dst_mac_2);
+  BITS_FIELD(32, src_mac_1);
+  BITS_FIELD(16, src_mac_2);
+  BITS_FIELD(16, ether_type);
 };
-typedef struct eth_header_t eth_header_t;
+
 
 struct ip_header_t {
-  short misc;
-  short length;
-  short identification;
-  short fragment_offset;
-  short TTL_transport;
-  short checksum;
-  int source_ip;
-  int dst_ip;
-  int options;
+  BITS_FIELD(16, misc);
+  BITS_FIELD(16, length);
+  BITS_FIELD(16, identification);
+  BITS_FIELD(16, fragment_offset);
+  BITS_FIELD(16, TTL_transport);
+  BITS_FIELD(16, checksum);
+  BITS_FIELD(32, source_ip);
+  BITS_FIELD(32, dst_ip);
+  BITS_FIELD(32, options);
 };
-typedef struct ip_header_t ip_header_t;
+
 
 struct tcp_header_t {
-  short sport;
-  short dport;
-  int seq;
-  int ack;
-  char off;
-  char flags;
-  short win;
-  short sum;
-  short urp;
-};
-typedef struct tcp_header_t tcp_header_t;
+  BITS_FIELD(16, sport);                   // /** Source port */
+  BITS_FIELD(16, dport);                   // /** Destination port */
 
-struct flow_state_t {
-  int tx_next_seq;
-  short flags;
-  short dupack_cnt;
-  int rx_len;
-  int rx_avail;
-  int rx_next_seq;
-  int rx_next_pos;
-  int rx_ooo_len;
-  int rx_ooo_start;
+  BITS_FIELD(32, seq);                     // /** Sequence number */
+
+  BITS_FIELD(32, ack);                     // /** Acknowledgement number */
+
+  BITS_FIELD(8,  off);                   // /** Data offset */
+  BITS_FIELD(8,  flags);                   // /** Flags */
+  BITS_FIELD(16, win);                     // /** Window */
+
+  BITS_FIELD(16, sum);                     // /** Checksum */
+  BITS_FIELD(16, urp);                     // /** Urgent pointer */
 };
-typedef struct flow_state_t flow_state_t;
+
+
+struct flow_state_t
+{
+    BITS_FIELD(32, tx_next_seq);             // /*, Sequence number of next byte to be sent */
+    BITS_FIELD(16, flags);                   // /*, RX/TX Flags */
+    BITS_FIELD(16, dupack_cnt);              // /*, Duplicate ACK count */
+    BITS_FIELD(32, rx_len);                  // /*, Length of receive buffer */
+    BITS_FIELD(32, rx_avail);                // /*, Available RX buffer space */
+    BITS_FIELD(32, rx_next_seq);             // /*, Next sequence number expected */
+    BITS_FIELD(32, rx_next_pos);             // /*, Offset of next byte in RX buffer */
+    BITS_FIELD(32, rx_ooo_len);              // /*, Length of Out-of-Order bytes */
+    BITS_FIELD(32, rx_ooo_start);            // /*, Start position of Out-of-Order bytes */
+};
 
 struct dma_write_cmd_t {
-  int addr;
-  int size;
+  BITS_FIELD(32, addr);
+  BITS_FIELD(32, size);
 };
-typedef struct dma_write_cmd_t dma_write_cmd_t;
 
-void bufextract(buf_t buf, char *extracted_data) {}
+ak_TABLE(64, BITS(32), struct flow_state_t,) flow_table;
 
-void bufemit(buf_t buf, char *emit_data) {}
+void NET_RECV__process_packet(buf_t packet) {
+  struct eth_header_t eth_header;
+  struct ip_header_t ip_header;
+  struct tcp_header_t tcp_header;
+  struct pkt_info_t pkt_info;
 
-void bufemitbuf(buf_t buf, buf_t emit_buf) {}
-
-void table_lookup(table_t tab, int key, char *value) {}
-
-void table_update(table_t tab, int key, char *value) {}
-
-void _dma_write_event(buf_t packet, dma_write_cmd_t dma_cmd) {}
-
-void _packet_send_event(buf_t packet) {}
-
-table_t flow_table;
-
-void _packet_event_handler(buf_t packet) {
-  eth_header_t eth_header;
-  ip_header_t ip_header;
-  tcp_header_t tcp_header;
-  pkt_info_t pkt_info;
-
-  bufextract(packet, &eth_header);
-  bufextract(packet, &ip_header);
-  bufextract(packet, &tcp_header);
+  bufextract(packet, (void *)&eth_header);
+  bufextract(packet, (void *)&ip_header);
+  bufextract(packet, (void *)&tcp_header);
 
   pkt_info.pk_len = ip_header.length + 14;
   pkt_info.pk_seq = tcp_header.seq;
   pkt_info.flow_id = tcp_header.dport;
 
-  flow_state_t flow_state;
-  table_lookup(flow_table, pkt_info.flow_id, &flow_state);
+  struct flow_state_t flow_state;
+  
+  int flow_id = pkt_info.flow_id;
+  table_lookup(&flow_table, &flow_id, &flow_state);
 
   int trim_start = flow_state.rx_next_seq - pkt_info.pk_seq;
   int trim_end;
-  if ((pkt_info.pk_len - trim_start) < flow_state.rx_avail) {
-    trim_end = 0;
-  } else {
+  
+  // TODO: aIR support "if else", but C frontend currently don't have support. TODO is to add support for "if else" in C frontend.
+
+  // if ((pkt_info.pk_len - trim_start) < flow_state.rx_avail) {
+  //   trim_end = 0;
+  // } else {
     trim_end = pkt_info.pk_len - trim_start - flow_state.rx_avail;
-  }
+  // }
   int payload_bytes = pkt_info.pk_len - (trim_start + trim_end);
 
-  if (trim_start <= pkt_info.pk_len) {
-    if (payload_bytes > 0) {
+  // if (trim_start <= pkt_info.pk_len) {
+    // if (payload_bytes > 0) {
       int dma_pos = flow_state.rx_next_pos;
       flow_state.rx_avail =  payload_bytes;
       flow_state.rx_next_seq = flow_state.rx_next_seq + payload_bytes;
       flow_state.rx_next_pos = flow_state.rx_next_pos + payload_bytes;
 
-      dma_write_cmd_t dma_cmd;
+      struct dma_write_cmd_t dma_cmd;
       dma_cmd.addr = dma_pos;
       dma_cmd.size = payload_bytes;
-      _dma_write_event(packet, dma_cmd);
-    }
-    table_update(flow_table, pkt_info.flow_id, &flow_state);
+      // EXT__DMA_WRITE_REQ__dma_write(packet, &dma_cmd);
+    // }
+    table_update(&flow_table, &flow_id, &flow_state);
 
     // generate ack
     tcp_header.seq = flow_state.tx_next_seq;
     tcp_header.ack = flow_state.rx_next_seq;
     tcp_header.win = flow_state.rx_avail;
 
-    buf_t packet_out;
-    bufemit(packet_out, &eth_header);
-    bufemit(packet_out, &ip_header);
-    bufemit(packet_out, &tcp_header);
-    bufemitbuf(packet_out, packet);
+    struct buf_tag packet_out;
+    bufemit(&packet_out, &eth_header);
+    bufemit(&packet_out, &ip_header);
+    bufemit(&packet_out, &tcp_header);
+    bufemit(&packet_out, packet);
 
-    _packet_send_event(packet_out);
-  }
-}
-
-int main(){
-  return 0;
+    EXT__NET_SEND__net_send(&packet_out);
+  // }
 }

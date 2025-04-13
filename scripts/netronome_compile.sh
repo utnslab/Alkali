@@ -37,12 +37,12 @@ case "$extension" in
 esac
 
 # Common Optimizations
-./build/bin/ep2c-opt "netronome_out/$BASE_NAME.mlir" -canonicalize -ep2-buffer-to-value --ep2-context-to-argument -o netronome_out/commonopt.mlir
+./build/bin/ep2c-opt "netronome_out/$BASE_NAME.mlir" -ep2-context-infer  -canonicalize -ep2-buffer-to-value --ep2-context-to-argument -canonicalize -cse -canonicalize -o netronome_out/commonopt.mlir
 
 
 # Cut Optimization
 if [ "$disable_cut" != "disable_cut" ]; then
-  ./build/bin/ep2c-opt -ep2-pipeline-handler="mode=search" \
+  ./build/bin/ep2c-opt -ep2-pipeline-handler="mode=kcut knum=3" \
     "netronome_out/commonopt.mlir" -o "netronome_out/cut.mlir" 
 else
   echo "Warning: cut optimization is disabled, skipping cut optimization"

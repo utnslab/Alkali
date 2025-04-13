@@ -31,7 +31,7 @@ esac
 
 # Cut Optimization
 if [ "$disable_cut" != "disable_cut" ]; then
-  ./build/bin/ep2c-opt "fpga_out/commonopt.mlir" --ep2-pipeline-handler="mode=search" -o "fpga_out/cut.mlir"
+  ./build/bin/ep2c-opt "fpga_out/commonopt.mlir" --ep2-pipeline-handler="mode=kcut knum=4" -o "fpga_out/cut.mlir"
 else
   echo "Warning: cut optimization is disabled, skipping cut optimization"
   cp "fpga_out/commonopt.mlir" "fpga_out/cut.mlir"
