@@ -30,6 +30,7 @@ typedef struct buf_tag * buf_t;
 
 /* function prototypes */
 extern void send_packet(buf_t packet);
+extern buf_t bufinit();
 extern void bufextract(buf_t packet, void *extracted_data);
 extern void bufemit(buf_t packet, void *extracted_data);
 

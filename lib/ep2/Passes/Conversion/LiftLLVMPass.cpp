@@ -367,6 +367,9 @@ struct CallRewrite : public OpRewritePattern<LLVM::CallOp> {
 
       rewriter.replaceOpWithNewOp<ep2::EmitOp>(op, buf, header);
       return success();
+    } else if (funcName == "bufinit") {
+      rewriter.replaceOpWithNewOp<ep2::InitOp>(op, rewriter.getType<ep2::BufferType>());
+      return success();
     } else if (funcName == "table_lookup") {
       // TODO(zhiyuang): do we need an extra cast here?
       auto table = castEP2Value(rewriter, args[0]);
