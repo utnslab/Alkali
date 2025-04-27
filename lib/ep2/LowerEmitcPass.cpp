@@ -76,7 +76,7 @@ struct ConstPattern : public OpConversionPattern<ep2::ConstantOp> {
     auto value = adaptor.getValue();
     if (fromType.isa<ep2::AtomType>()) {
       size_t v = analyzer.atomToNum[initOp.getValue().cast<mlir::StringAttr>().getValue()].second;
-      value = rewriter.getI32IntegerAttr({v});
+      value = rewriter.getI32IntegerAttr({static_cast<int>(v)});
     }
 
     rewriter.replaceOpWithNewOp<emitc::ConstantOp>(initOp, resType, value);
@@ -266,7 +266,7 @@ struct StructAccessPattern : public OpConversionPattern<ep2::StructAccessOp> {
     llvm::SmallVector<Type> resTypes = {typeConverter->convertType(accessOp.getResult().getType())};
 
     // Same encoding as ctx_read intrinsic.
-    mlir::ArrayAttr args = rewriter.getI32ArrayAttr({(uint32_t) accessOp.getIndex(), isa<ep2::StructType>(accessOp->getResult(0).getType())});
+    mlir::ArrayAttr args = rewriter.getI32ArrayAttr({ static_cast<int>(accessOp.getIndex()), isa<ep2::StructType>(accessOp->getResult(0).getType())});
     mlir::ArrayAttr templ_args;
     auto load = rewriter.create<emitc::CallOp>(loc, resTypes, rewriter.getStringAttr("__ep2_intrin_struct_access"), args, templ_args, ValueRange{adaptor.getOperands()[0]});
     rewriter.replaceOp(accessOp, load);
@@ -340,7 +340,7 @@ struct ExtractOffsetPattern : public OpConversionPattern<ep2::ExtractOffsetOp> {
     specifying an offset. Regular ExtractOp keeps a dynamic offset, ExtractOffsetOp
     statically encodes it.
     */
-    mlir::ArrayAttr args2 = rewriter.getI32ArrayAttr({0, memcpySize, 0, extractOp.getOffset() / 8});
+    mlir::ArrayAttr args2 = rewriter.getI32ArrayAttr({0, memcpySize, 0, static_cast<int>(extractOp.getOffset() / 8)});
     mlir::ArrayAttr templ_args2;
     rewriter.create<emitc::CallOp>(loc, resTypes2, rewriter.getStringAttr("__ep2_intrin_memcpy"), args2, templ_args2, ValueRange{varOp, adaptor.getBuffer()});
     return success();
@@ -369,7 +369,7 @@ struct EmitPattern : public OpConversionPattern<ep2::EmitOp> {
     Arg1: size of copy
     Arg2: tag, like usual.
     */
-    mlir::ArrayAttr args2 = rewriter.getI32ArrayAttr({srcOffs, memcpySize, isa<ep2::BufferType>(resType) ? 2 : 1});
+    mlir::ArrayAttr args2 = rewriter.getI32ArrayAttr({static_cast<int>(srcOffs), memcpySize, isa<ep2::BufferType>(resType) ? 2 : 1});
     mlir::ArrayAttr templ_args2;
     auto emit = rewriter.create<emitc::CallOp>(loc, resTypes2, rewriter.getStringAttr("__ep2_intrin_memcpy"), args2, templ_args2, ValueRange{adaptor.getBuffer(), adaptor.getValue()});
     rewriter.replaceOp(emitOp, emit);
@@ -393,7 +393,10 @@ struct EmitOffsetPattern : public OpConversionPattern<ep2::EmitOffsetOp> {
 
     llvm::SmallVector<Type> resTypes2 = {};
     // Same change from EmitOp, as ExtractOp -> ExtractOffsetOp.
-    mlir::ArrayAttr args2 = rewriter.getI32ArrayAttr({srcOffs, memcpySize, isa<ep2::BufferType>(resType) ? 2 : 1, emitOp.getOffset() / 8});
+    mlir::ArrayAttr args2 = rewriter.getI32ArrayAttr(
+        {static_cast<int32_t>(srcOffs), memcpySize,
+         isa<ep2::BufferType>(resType) ? 2 : 1,
+         static_cast<int32_t>(emitOp.getOffset() / 8)});
     mlir::ArrayAttr templ_args2;
     auto emit = rewriter.create<emitc::CallOp>(loc, resTypes2, rewriter.getStringAttr("__ep2_intrin_memcpy"), args2, templ_args2, ValueRange{adaptor.getBuffer(), adaptor.getValue()});
     rewriter.replaceOp(emitOp, emit);
@@ -412,7 +415,9 @@ struct StructUpdatePattern : public OpConversionPattern<ep2::StructUpdateOp> {
     llvm::SmallVector<Type> resTypes2 = {typeConverter->convertType(updateOp.getOperand(0).getType())};
 
     // Same encoding as ctx_write, ctx_read, struct_access_op
-    mlir::ArrayAttr args2 = rewriter.getI32ArrayAttr({updateOp.getIndex(), isa<ep2::StructType>(updateOp->getOperand(1).getType())});
+    mlir::ArrayAttr args2 = rewriter.getI32ArrayAttr(
+        {static_cast<int32_t>(updateOp.getIndex()),
+         isa<ep2::StructType>(updateOp->getOperand(1).getType())});
     mlir::ArrayAttr templ_args2;
     auto callOp = rewriter.create<emitc::CallOp>(loc, resTypes2, rewriter.getStringAttr("__ep2_intrin_struct_write"), args2, templ_args2, ValueRange{adaptor.getNewValue(), adaptor.getInput()});
 
@@ -454,7 +459,9 @@ struct InitPattern : public OpConversionPattern<ep2::InitOp> {
         unsigned p = 0;
         for (const auto& opd : adaptor.getOperands()) {
           llvm::SmallVector<Type> resTypes2 = {};
-          mlir::ArrayAttr args2 = rewriter.getI32ArrayAttr({p, isa<ep2::StructType>(initOp->getOperand(p).getType())});
+          mlir::ArrayAttr args2 = rewriter.getI32ArrayAttr(
+              {static_cast<int32_t>(p),
+               isa<ep2::StructType>(initOp->getOperand(p).getType())});
           mlir::ArrayAttr templ_args2;
           rewriter.create<emitc::CallOp>(loc, resTypes2, rewriter.getStringAttr("__ep2_intrin_struct_write"), args2, templ_args2, ValueRange{opd, alloc});
           p += 1;
@@ -484,7 +491,9 @@ struct InitPattern : public OpConversionPattern<ep2::InitOp> {
         if (p == 1) {
           args2 = rewriter.getStrArrayAttr({"ctx"});
         } else {
-          args2 = rewriter.getI32ArrayAttr({p-2, isa<ep2::StructType>(initOp->getOperand(p).getType())});
+          args2 = rewriter.getI32ArrayAttr(
+              {static_cast<int32_t>(p - 2),
+               isa<ep2::StructType>(initOp->getOperand(p).getType())});
         }
         mlir::ArrayAttr templ_args2;
         rewriter.create<emitc::CallOp>(loc, resTypes2, rewriter.getStringAttr("__ep2_intrin_struct_write"), args2, templ_args2, ValueRange{opd, alloc});
@@ -927,7 +936,9 @@ struct FunctionPattern : public OpConversionPattern<ep2::FuncOp> {
           rewriter.getType<emitc::PointerType>(convertedType);
       // materialize block type
       llvm::SmallVector<Type> resTypes2 = {convertedType};
-      mlir::ArrayAttr args2 = rewriter.getI32ArrayAttr({i, isa<ep2::StructType>(wrapperTypes[0].getBody()[i])});
+      mlir::ArrayAttr args2 = rewriter.getI32ArrayAttr(
+          {static_cast<int32_t>(i),
+           isa<ep2::StructType>(wrapperTypes[0].getBody()[i])});
       mlir::ArrayAttr templ_args2;
       auto param = rewriter.create<emitc::CallOp>(loc, resTypes2, rewriter.getStringAttr("__ep2_intrin_struct_access"), args2, templ_args2, ValueRange{eventPtr.getResult()});
       signatureConversion.remapInput(i + sourceIdx, param.getResult(0));

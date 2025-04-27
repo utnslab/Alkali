@@ -29,7 +29,7 @@ mkdir build && cd build
     -DLLVM_EXTERNAL_LIT=$PWD/../llvm-project/build/bin/llvm-lit \
     -DMLIR_DIR=$PWD/../llvm-project/build/lib/cmake/mlir \
     -DCLANG_DIR=$PWD/../llvm-project/build/lib/cmake/clang \
-    -DCMAKE_BUILD_TYPE=DEBUG
+    -DCMAKE_BUILD_TYPE=Debug
 cd .. &&  ninja -C build/
 ```
 This will generate Alkali compiler binary in ./build/bin/ep2c

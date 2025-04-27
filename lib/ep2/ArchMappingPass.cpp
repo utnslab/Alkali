@@ -1,3 +1,4 @@
+#include <iostream>
 #include "mlir/IR/BuiltinDialect.h"
 
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
@@ -32,7 +33,7 @@ class MappingSolver {
     z3::expr_vector matrix(ctx);
     for (size_t i = 0; i < spec.getNumUnit<U1>(); i++)
       for (size_t j = 0; j < spec.getNumUnit<U2>(); j++)
-        matrix.push_back(z3::ite(index1 == i && index2 == j, ctx.int_val(data[i][j]), ctx.int_val(0)));
+        matrix.push_back(z3::ite(index1 == static_cast<int>(i) && index2 == static_cast<int>(j), ctx.int_val(data[i][j]), ctx.int_val(0)));
     return z3::sum(matrix);
   }
 

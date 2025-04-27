@@ -40,9 +40,16 @@
 
 #define BOOST_NO_EXCEPTIONS
 #include <boost/throw_exception.hpp>
-void boost::throw_exception(std::exception const& e){
-  llvm::errs() << e.what() << '\n';
-  abort();
+namespace boost {
+  void throw_exception(std::exception const& e){
+    llvm::errs() << e.what() << '\n';
+    abort();
+  }
+
+  void throw_exception(std::exception const &e,
+                       boost::source_location const & /*loc*/) {
+    throw_exception(e);
+  }
 }
 
 using namespace mlir;

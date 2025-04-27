@@ -72,6 +72,6 @@ add_mlir_dialect_library(MLIREP2
         )
 
 # link to z3 libs
-target_include_directories(MLIREP2 PRIVATE ${Z3_CXX_INCLUDE_DIRS})
-target_link_libraries(MLIREP2 PRIVATE ${Z3_LIBRARIES})
+target_include_directories(MLIREP2 PRIVATE ${Z3_CXX_INCLUDE_DIRS} ${Boost_INCLUDE_DIRS})
+target_link_libraries(MLIREP2 PRIVATE ${Z3_LIBRARIES} Boost::graph)
 target_compile_options(MLIREP2 PRIVATE ${Z3_COMPONENT_CXX_FLAGS})
