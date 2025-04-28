@@ -1,26 +1,42 @@
-# Alkali: Portable and High-Performance SmartNIC Programs with Alkali
+# Portable and High-Performance SmartNIC Programs with Alkali
 
-## Building - Building MLIR
+![Status](https://img.shields.io/badge/Version-Experimental-green.svg)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+
+Alkali is a compiler infrastructure for SmartNICs, delivering both functional and performance portability across a wide range of SmartNIC hardware. It centers on a unified intermediate representation (IR), a common set of optimization and transformation passes, and an automated network-application parallelization pipeline.
+
+Currently, this repo contains Alkali frontend for C and $\alpha$IR, the definition and implementation of IR, optimization & transformation passes, and code generation for following backends: Verilog(FPGA), MicroC(Netronome), and LLVM(ARM DPDK/RiscV).
+
+
+- [Portable and High-Performance SmartNIC Programs with Alkali](#portable-and-high-performance-smartnic-programs-with-alkali)
+  - [Building](#building)
+    - [Building - Alkali Compiler Build](#building---alkali-compiler-build)
+  - [Running Alkali Example](#running-alkali-example)
+  - [Reference](#reference)
+  - [Contact](#contact)
+
+
+
+## Building
+
+Alkali depends on Boost and Z3. You need to install the external dependencies first, and build MLIR libraries using the following command:
 
 ```sh
+# current z3 version is Z3 4.8.7
+sudo apt install libz3-dev
+
+# build MLIR
 git apply patches/translateToCpp.patch
 mkdir llvm-project/build && cd llvm-project/build
 cmake -G Ninja ../llvm \
  -DLLVM_ENABLE_PROJECTS="mlir;clang" \
- -DLLVM_TARGETS_TO_BUILD="AArch64;AMDGPU;ARM;AVR;BPF;Hexagon;Lanai;LoongArch;Mips;MSP430;NVPTX;PowerPC;RISCV;Sparc;SystemZ;VE;WebAssembly;X86;XCore" \
+ -DLLVM_TARGETS_TO_BUILD="AArch64;AMDGPU;ARM;RISCV;X86" \
  -DLLVM_ENABLE_ASSERTIONS=ON \
  -DCMAKE_BUILD_TYPE=Release 
 cd .. &&  ninja -C build/
 ```
 
-## Install the external dependencies
-
-```sh
-# current z3 version is Z3 4.8.7
-sudo apt install libz3-dev
-```
-
-## Building - Alkali Compiler Build
+### Building - Alkali Compiler Build
 
 This setup assumes that you have built LLVM and MLIR in `$BUILD_DIR` and installed them to `$PREFIX`. To build and launch the tests, run
 ```sh
@@ -32,22 +48,46 @@ mkdir build && cd build
     -DCMAKE_BUILD_TYPE=Debug
 cd .. &&  ninja -C build/
 ```
-This will generate Alkali compiler binary in ./build/bin/ep2c
+
+Alkali binaries, `ep2c` and `ep2c-opt`, will be generated `build/bin`.
 
 ## Running Alkali Example
 
-The source files are located in `tests/experiments_c`. First, compile the C source into Alkali IR `./scripts/run_c.sh nfchain.c`. It will generate IR into `out.mlir`. 
+The source files are located in `tests`.
+Alkali framework will first convert the input file (C or $\alpha$IR) into MLIR representation, and then apply optimization, mapping and code generation.
+
+We provide several scripts and examples.
+First, compile the C source into Alkali IR `./scripts/run_c.sh nfchain.c`. It will generate IR into `out.mlir`. 
 
 After that is built, you run example with
 ```sh
 bash ./scripts/fpga_compile.sh out.mlir
 ```
-This will compile the nfchain example for FPGA NICs. The generated Verilog code can be found in ./fpga_out. It transform the oringinal RTC handler into pipeline and data parallel FPGA codes.
+This will compile the nfchain example for FPGA NICs. The generated Verilog code can be found in `./fpga_out`. It transforms the oringinal RTC handler into pipeline and data parallel FPGA codes.
 
 Similarly, if you want to compile the nfchain example for Agilio NICs, run:
 ```sh
 bash ./scripts/netronome_compile.sh out.mlir
 ```
-The generated Agilio Micro C code can be found in ./netronome_out.
+The generated Agilio Micro C code can be found in `./netronome_out`.
 
-More other applications can be found in ./tests/
+More example applications can be found in ./tests/
+
+## Reference
+
+If you use Alkali in your research or projects, please cite our paper [Portable and High-Performance SmartNIC Programs with Alkali](https://www.usenix.org/conference/nsdi25/presentation/lin-jiaxin):
+
+```
+@inproceedings{alkali,
+  title={Portable and High-Performance SmartNIC Programs with Alkali},
+  author={Lin, Jiaxin and Guo, Zhiyuan and Shah, Mihir and Ji, Tao and Zhang, Yiying and Kim, Daehyeok and Akella, Aditya}
+  booktitle={22st USENIX Symposium on Networked Systems Design and Implementation (NSDI 25)},
+  year={2025}
+}
+```
+
+## Contact
+
+If you encounter any issues, want to report a bug, or request a new feature, please open an issue on this repository.
+For additional assistance, you can also reach out to
+`z9guo [at] ucsd [dot] edu` and `jxlin [at] utexas [dot] edu`.
