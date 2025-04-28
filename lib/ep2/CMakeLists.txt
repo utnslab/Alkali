@@ -58,6 +58,7 @@ add_mlir_dialect_library(MLIREP2
         Passes/Mapping/PerformanceModel.cpp
         Passes/Mapping/MappingUtils.cpp
         Passes/Mapping/PipelineCanonicalizePass.cpp
+        Passes/Mapping/PipeliningPass.cpp
 
         DEPENDS
         MLIREP2OpsIncGen
@@ -73,5 +74,5 @@ add_mlir_dialect_library(MLIREP2
 
 # link to z3 libs
 target_include_directories(MLIREP2 PRIVATE ${Z3_CXX_INCLUDE_DIRS} ${Boost_INCLUDE_DIRS})
-target_link_libraries(MLIREP2 PRIVATE ${Z3_LIBRARIES} Boost::graph)
+target_link_libraries(MLIREP2 PRIVATE ${Z3_LIBRARIES})
 target_compile_options(MLIREP2 PRIVATE ${Z3_COMPONENT_CXX_FLAGS})

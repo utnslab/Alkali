@@ -876,10 +876,6 @@ struct NetronomeKCutPolicy : public PipelinePolicy {
   }
 };
 
-using PolicyP = std::shared_ptr<PipelinePolicy>;
-using SearchPair = std::pair<ep2::FuncOp, PolicyP>;
-using SearchDirection = llvm::DenseMap<ep2::FuncOp, PolicyP>;
-
 llvm::SmallVector<SearchDirection, 4> stepSearch(SearchDirection& sd) {
   SmallVector<SmallVector<SearchPair>> functionResult;
 
@@ -1010,7 +1006,7 @@ static void connectTables(ep2::FuncOp funcOp) {
       builder.create<ep2::SinkOp>(key.getLoc(), importOps);
 }
 
-static bool isTableClean(ep2::FuncOp funcOp) {
+bool isTableClean(ep2::FuncOp funcOp) {
   Value key = nullptr;
   bool keyUnique = true;
   funcOp.walk([&](Operation *op) {
@@ -1033,8 +1029,47 @@ static bool isTableClean(ep2::FuncOp funcOp) {
   return keyUnique && key != nullptr;
 }
 
-bool tableCutPolicy(FuncOp targetFunc) {
+std::pair<bool, SmallVector<ep2::FuncOp>> tableCut(ep2::FuncOp targetFunc) {
+  // build searching sequence
+  SmallVector<std::pair<float, float>> cutParams;
+  for (int j = 5; j >= 0; j--) // first search tolerance
+    for (int i = 1; i <= j - 1; i++)
+      cutParams.push_back({j / 10.0f, i / 10.0f});
+  // finally we try weak cuts
+  for (int i = 1; i <= 5; i++)
+    cutParams.push_back({i / 10.0f, i / 10.0f});
+  
+  bool valid = false;
 
+  for (auto [sourceWeight, tol] : cutParams) {
+    SearchDirection sd;
+    sd[targetFunc] =
+      std::make_shared<NetronomeKCutPolicy>(2, tol);
+    sd[targetFunc]->sourceWeight = sourceWeight;
+
+    auto cuts = stepSearch(sd);
+    assert(cuts.size() == 1 && "tableCut: expect only one cut");
+    sd = cuts[0];
+
+    for (auto &[func, policy] : sd) 
+      valid = valid || isTableClean(func);
+    llvm::errs() << "Finish table cut: tol=" << tol <<
+      " sourceWeight=" << sourceWeight <<
+      " Valid: " << valid << '\n';
+
+    if (valid) {
+      auto resultFuncs = llvm::map_to_vector(sd, [](auto &pair) { return pair.first; });
+      return {true, resultFuncs};
+    } else if (sd.size() > 1) { // we delete the new functions if ever created
+      for (auto &[func, policy] : sd)
+          func.erase();
+    }
+  }
+
+  return {false, {}};
+}
+
+bool tableCutPolicy(FuncOp targetFunc) {
   // build searching sequence
   SmallVector<std::pair<float, float>> cutParams;
   for (int j = 5; j >= 0; j--) // first search tolerance
@@ -1217,6 +1252,35 @@ void PipelineHandlerPass::runOnOperation() {
       signalPassFailure();
       return;
     }
+  } else if (mode.getValue() == "loop") {
+    SmallVector<ep2::FuncOp> toOpt;
+    getOperation()->walk([&](FuncOp funcOp) {
+      if (funcOp.isExtern() || !funcOp.isHandler())
+        return;
+      toOpt.push_back(funcOp);
+    });
+
+    // TODO(zhiyuang): move this out of cutting options
+    assert(toOpt.size() == 1 && "Loop mode only supports one function");
+    auto targetFunc = toOpt[0];
+      
+    // try to optimize the function
+    BottleneckExplorer explorer;
+    std::unique_ptr<PerformanceModel> model;
+    if (target.getValue() == "fpga") {
+      model = std::make_unique<FPGAPerformanceModel>();
+    } else if (target.getValue() == "netronome") {
+      model = std::make_unique<NetronomePerformanceModel>();
+    } else {
+      llvm::errs() << "Unknown target: " << target.getValue() << '\n';
+      signalPassFailure();
+      return;
+    }
+    PipelineMapper mapper(std::move(model));
+
+    optimizationLoop(targetFunc, mapper, explorer);
+
+    mapper.finalize(getOperation());
   } else {
     llvm::errs() << "Unknown mode: " << mode.getValue() << '\n';
     signalPassFailure();

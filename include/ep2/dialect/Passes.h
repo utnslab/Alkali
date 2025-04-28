@@ -635,6 +635,10 @@ struct PipelineHandlerPass
       *this, "func",
       llvm::cl::desc("Function name for cut. required for table mode"),
       llvm::cl::init("")};
+  Option<std::string> target{
+      *this, "target",
+      llvm::cl::desc("Target backend name for cut. required for loop"),
+      llvm::cl::init("")};
 };
 
 // FrontEnd Conversion Passes
@@ -657,6 +661,12 @@ struct LiftLLVMPasses : public PassWrapper<LiftLLVMPasses, OperationPass<ModuleO
 struct PipelineCanonicalizePass
     : public PassWrapper<PipelineCanonicalizePass, OperationPass<ModuleOp>> {
   PipelineCanonicalizePass() = default;
+  PipelineCanonicalizePass(std::string _replications, bool _inlineTable,
+                           std::string _mode) {
+    replications.setValue(_replications);
+    inlineTable.setValue(_inlineTable);
+    mode.setValue(_mode);
+  }
   PipelineCanonicalizePass(const PipelineCanonicalizePass &pass) {}
   void runOnOperation() final;
   void getDependentDialects(DialectRegistry &registry) const override {

@@ -24,6 +24,7 @@
 
 #include "mlir/Transforms/Passes.h"
 #include "ep2/passes/LiftUtils.h"
+#include "ep2/Utilities.h"
 
 #include <algorithm>
 #include <functional>
@@ -164,24 +165,6 @@ class StackVariableAnalysis : public DenseForwardDataFlowAnalysis<StackSlotValue
 
   void setToEntryState(StackSlotValue *state) override {
     propagateIfChanged(state, state->reset());
-  }
-};
-
-struct OperatorRemoveGuard {
-  std::vector<Operation *> ops{};
-  ~OperatorRemoveGuard() { clear(); }
-  bool clear() {
-    auto empty = ops.empty();
-    for (auto op : ops)
-      op->erase();
-    ops.clear();
-    return !empty;
-  }
-  void add(Operation *op) { ops.push_back(op); }
-  template <typename F>
-  static void until(F &&f) {
-    OperatorRemoveGuard guard;
-    do { f(guard); } while (guard.clear());
   }
 };
 

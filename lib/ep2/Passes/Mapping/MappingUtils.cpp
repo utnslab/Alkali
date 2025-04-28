@@ -19,7 +19,7 @@ void simpleMapping(HandlerPipeline &pipeline,
 
   for (auto [funcOp, rep] : llvm::zip(pipeline, *replications)) {
     OpBuilder builder(funcOp);
-    // TODO: keep this?
+    // TODO: Here we explicitly ignore instances that already mapped
     if (!funcOp->hasAttr("instances")) {
       llvm::SmallVector<std::string> instanceVec;
       for (int i = 0; i < rep; i++)

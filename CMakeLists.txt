@@ -1,8 +1,8 @@
 cmake_minimum_required(VERSION 3.20.0)
-project(standalone-dialect LANGUAGES CXX C)
+project(ep2-dialect LANGUAGES CXX C)
 
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 set(CMAKE_BUILD_WITH_INSTALL_NAME_DIR ON)
-
 set(CMAKE_CXX_STANDARD 17 CACHE STRING "C++ standard to conform to")
 
 if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
@@ -35,11 +35,12 @@ if(MLIR_ENABLE_BINDINGS_PYTHON)
   mlir_configure_python_dev_packages()
 endif()
 
+# find the dependencies
 find_package(Z3 REQUIRED)
 message(STATUS "Found Z3 ${Z3_VERSION_STRING}")
 
-find_package(Boost REQUIRED COMPONENTS graph)
-message(STATUS "Found Boost ${Boost_VERSION_MACRO}")
+find_package(Boost REQUIRED COMPONENTS CONFIG)
+message(STATUS "Found Boost ${Boost_VERSION_STRING}")
 
 set(STANDALONE_SOURCE_DIR ${PROJECT_SOURCE_DIR})
 set(STANDALONE_BINARY_DIR ${PROJECT_BINARY_DIR})
