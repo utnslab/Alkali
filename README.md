@@ -5,7 +5,10 @@
 
 Alkali is a compiler infrastructure for SmartNICs, delivering both functional and performance portability across a wide range of SmartNIC hardware. It centers on a unified intermediate representation (IR), a common set of optimization and transformation passes, and an automated network-application parallelization pipeline.
 
-Currently, this repo contains Alkali frontend for C and $\alpha$IR, the definition and implementation of IR, optimization & transformation passes, and code generation for following backends: Verilog(FPGA), MicroC(Netronome), and LLVM(ARM DPDK/RiscV).
+
+Currently, this repo contains Alkali frontend for C and αIR, the definition and implementation of IR, optimization & transformation passes, and code generation for following backends: Verilog(FPGA), MicroC(Netronome), and LLVM(ARM DPDK/RiscV).
+
+
 
 
 - [Portable and High-Performance SmartNIC Programs with Alkali](#portable-and-high-performance-smartnic-programs-with-alkali)
@@ -54,7 +57,7 @@ Alkali binaries, `ep2c` and `ep2c-opt`, will be generated `build/bin`.
 ## Running Alkali Example
 
 The source files are located in `tests`.
-Alkali framework will first convert the input file (C or $\alpha$IR) into MLIR representation, and then apply optimization, mapping and code generation.
+Alkali framework will first convert the input file (C or αIR) into MLIR representation, and then apply optimization, mapping and code generation.
 
 We provide several scripts and examples.
 First, compile the C source into Alkali IR `./scripts/run_c.sh nfchain.c`. It will generate IR into `out.mlir`. 
