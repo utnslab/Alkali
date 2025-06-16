@@ -1,0 +1,116 @@
+{
+    "nfp_nbi_dma_nbi_dma_config":
+    {
+	"ctm_poll_search_enable" : true,
+	"rate_limit_enable" :false,
+	"ctm_poll_interval" :0,
+	"ctm_poll_enable" : true,
+	"nbi_number":1,
+	"dis_rx_blq_wr_in_err":false,
+	"dis_rx_alloc_in_err":false,
+	"dis_rx_push_last_err":false,
+	"dis_buf_rd_err":false,
+	"dis_bd_ram_err":false,
+	"dis_ds_ram_err":false,
+	"dis_bc_ram_err":false,
+	"dis_push_bus_select":0
+    },
+    "nfp_nbi_dma_bp_config":
+    {
+	"0": {
+		"bp"				: 0,
+		"drop_enable"			: true,
+		"ctm_offset"			: 1,
+		"primary_buffer_list"		: 0,
+		"secondary_buffer_list"		: 0,
+		"ctm_split_length"		: 3,
+		"bpe_head"			: 0,
+		"bpe_chain_end"			: 1
+	     },
+	"1": {
+		"bp"				: 1,
+		"drop_enable"			: true,
+		"ctm_offset"			: 1,
+		"primary_buffer_list"		: 0,
+		"secondary_buffer_list"		: 0,
+		"ctm_split_length"		: 3,
+		"bpe_head"			: 0,
+		"bpe_chain_end"			: 1
+	     },
+	"2": {
+		"bp"				: 2,
+		"drop_enable"			: true,
+		"ctm_offset"			: 1,
+		"primary_buffer_list"		: 0,
+		"secondary_buffer_list"		: 0,
+		"ctm_split_length"		: 3,
+		"bpe_head"			: 0,
+		"bpe_chain_end"			: 1
+	     },
+	"3": {
+		"bp"				: 3,
+		"drop_enable"			: true,
+		"ctm_offset"			: 1,
+		"primary_buffer_list"		: 0,
+		"secondary_buffer_list"		: 0,
+		"ctm_split_length"		: 3,
+		"bpe_head"			: 0,
+		"bpe_chain_end"			: 1
+	     },
+	"4": {
+		"bp"				: 4,
+		"drop_enable"			: true,
+		"ctm_offset"			: 1,
+		"primary_buffer_list"		: 0,
+		"secondary_buffer_list"		: 0,
+		"ctm_split_length"		: 3,
+		"bpe_head"			: 0,
+		"bpe_chain_end"			: 1
+	     },
+	"5": {
+		"bp"				: 5,
+		"drop_enable"			: true,
+		"ctm_offset"			: 1,
+		"primary_buffer_list"		: 0,
+		"secondary_buffer_list"		: 0,
+		"ctm_split_length"		: 3,
+		"bpe_head"			: 0,
+		"bpe_chain_end"			: 1
+	     },
+	"6": {
+		"bp"				: 6,
+		"drop_enable"			: true,
+		"ctm_offset"			: 1,
+		"primary_buffer_list"		: 0,
+		"secondary_buffer_list"		: 0,
+		"ctm_split_length"		: 3,
+		"bpe_head"			: 0,
+		"bpe_chain_end"			: 1
+	     },
+	"7": {
+		"bp"				: 7,
+		"drop_enable"			: true,
+		"ctm_offset"			: 1,
+		"primary_buffer_list"		: 0,
+		"secondary_buffer_list"		: 0,
+		"ctm_split_length"		: 3,
+		"bpe_head"			: 0,
+		"bpe_chain_end"			: 1
+	     }
+    },
+    "nfp_nbi_dma_bpe_config":
+    {
+	"0": {
+		"bpe"				: 0,
+		"ctm_target"			: 32,
+		"packet_credits"		: 128,
+		"buffer_credits"		: 63
+	     },
+	"1": {
+		"bpe"				: 1,
+		"ctm_target"			: 33,
+		"packet_credits"		: 128,
+		"buffer_credits"		: 63
+	     }
+    }
+}
