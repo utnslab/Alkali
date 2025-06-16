@@ -46,10 +46,12 @@ namespace boost {
     abort();
   }
 
+#ifdef BOOST_ASSERT_SOURCE_LOCATION_HPP_INCLUDED
   void throw_exception(std::exception const &e,
                        boost::source_location const & /*loc*/) {
     throw_exception(e);
   }
+#endif
 }
 
 using namespace mlir;
