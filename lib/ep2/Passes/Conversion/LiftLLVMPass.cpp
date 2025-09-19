@@ -42,6 +42,8 @@ struct StackSlotValue : public AbstractDenseLattice {
   llvm::DenseMap<Value, Value> updateTable{};
   using AbstractDenseLattice::AbstractDenseLattice;
 
+  MLIR_DEFINE_EXPLICIT_INTERNAL_INLINE_TYPE_ID(StackSlotValue);
+
   ChangeResult join(const AbstractDenseLattice &rhs) override {
     auto rvalue = static_cast<const StackSlotValue &>(rhs);
     auto changed = ChangeResult::NoChange;
@@ -337,7 +339,11 @@ struct CallRewrite : public OpRewritePattern<LLVM::CallOp> {
     // auto anyTableType = rewriter.getType<ep2::TableType>(
     //     rewriter.getType<ep2::AnyType>(), rewriter.getType<ep2::AnyType>(), 0);
 
-    if (funcName == "bufextract") {
+    if (!funcName.has_value()) {
+      // TODO(zhiyuang): dynamic function address. why?
+      // TODO(zhiyuang): WE assume this is an init op. need to be fixed!!!
+      rewriter.replaceOpWithNewOp<ep2::InitOp>(op, rewriter.getType<ep2::BufferType>());
+    } else if (funcName == "bufextract") {
       auto buf =  castEP2Value(rewriter, args[0], rewriter.getType<ep2::BufferType>());
       auto header = castEP2Value(rewriter, args[1], convertLLVMPointer(rewriter, args[1]));
 

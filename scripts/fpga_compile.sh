@@ -1,3 +1,4 @@
+set +x
 ninja -C build/ -j 32
 
 rm -rf ./fpga_out

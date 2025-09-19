@@ -1,0 +1,53 @@
+#!/usr/bin/env bash
+#
+# Usage:
+#   alkalic <inputfile> --target <netronome|rtl>
+#
+
+set -e
+
+# Resolve this script's directory to an absolute path
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# Check arguments
+if [[ $# -lt 3 ]]; then
+  echo "Usage: $0 <inputfile> --target <netronome|rtl>"
+  exit 1
+fi
+
+INPUT_FILE="$1"
+shift
+
+# Parse --target argument
+TARGET=""
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --target)
+      TARGET="$2"
+      shift 2
+      ;;
+    *)
+      echo "Unknown argument: $1"
+      exit 1
+      ;;
+  esac
+done
+
+if [[ -z "$TARGET" ]]; then
+  echo "Error: --target option is required"
+  exit 1
+fi
+
+# Step 1: Run run_c.sh
+"${SCRIPT_DIR}/run_c.sh" "$INPUT_FILE"
+
+# Step 2: Conditional compile
+if [[ "$TARGET" == "netronome" ]]; then
+  "${SCRIPT_DIR}/netronome_compile.sh" "out.mlir"
+elif [[ "$TARGET" == "rtl" ]]; then
+  "${SCRIPT_DIR}/fpga_compile.sh" "out.mlir"
+else
+  echo "Error: Unknown target '$TARGET'. Expected 'netronome' or 'rtl'."
+  exit 1
+fi
+

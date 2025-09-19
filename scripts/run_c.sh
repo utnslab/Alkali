@@ -1,4 +1,4 @@
-C_INPUT_DIR=tests/experiments_c
+C_INPUT_DIR=./
 C_PREPROCESS=cpre.c
 C_LLVM_FILE=cinput.ll
 C_MLIR_FILE=cinput.mlir
