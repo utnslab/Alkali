@@ -59,18 +59,15 @@ Alkali binaries, `ep2c` and `ep2c-opt`, will be generated `build/bin`.
 The source files are located in `tests`.
 Alkali framework will first convert the input file (C or αIR) into MLIR representation, and then apply optimization, mapping and code generation.
 
-We provide several scripts and examples.
-First, compile the C source into Alkali IR `./scripts/run_c.sh nfchain.c`. It will generate IR into `out.mlir`. 
-
 After that is built, you run example with
 ```sh
-bash ./scripts/fpga_compile.sh out.mlir
+./scripts/alkalic tests/experiments_c/nfchain.c --target rtl
 ```
 This will compile the nfchain example for FPGA NICs. The generated Verilog code can be found in `./fpga_out`. It transforms the oringinal RTC handler into pipeline and data parallel FPGA codes.
 
 Similarly, if you want to compile the nfchain example for Agilio NICs, run:
 ```sh
-bash ./scripts/netronome_compile.sh out.mlir
+./scripts/alkalic tests/experiments_c/nfchain.c --target netronome
 ```
 The generated Agilio Micro C code can be found in `./netronome_out`.
 
