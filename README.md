@@ -9,8 +9,6 @@ Alkali is a compiler infrastructure for SmartNICs, delivering both functional an
 Currently, this repo contains Alkali frontend for C and αIR, the definition and implementation of IR, optimization & transformation passes, and code generation for following backends: Verilog(FPGA), MicroC(Netronome), and LLVM(ARM DPDK/RiscV).
 
 
-
-
 - [Portable and High-Performance SmartNIC Programs with Alkali](#portable-and-high-performance-smartnic-programs-with-alkali)
   - [Building](#building)
     - [Building - Alkali Compiler Build](#building---alkali-compiler-build)
@@ -22,21 +20,22 @@ Currently, this repo contains Alkali frontend for C and αIR, the definition and
 
 ## Building
 
-Alkali depends on Boost and Z3. You need to install the external dependencies first, and build MLIR libraries using the following command:
+Alkali is built and tested on Ubuntu 22.04.2 LTS. Alkali depends on Boost and Z3. You need to install the external dependencies first, and build MLIR libraries using the following command:
 
 ```sh
 # current z3 version is Z3 4.8.7
-sudo apt install libz3-dev
+sudo apt install build-essential libz3-dev ninja-build libboost-dev cmake 
 
 # build MLIR
+cd llvm-project
 git apply patches/translateToCpp.patch
-mkdir llvm-project/build && cd llvm-project/build
+mkdir build && build
 cmake -G Ninja ../llvm \
  -DLLVM_ENABLE_PROJECTS="mlir;clang" \
  -DLLVM_TARGETS_TO_BUILD="AArch64;AMDGPU;ARM;RISCV;X86" \
  -DLLVM_ENABLE_ASSERTIONS=ON \
  -DCMAKE_BUILD_TYPE=Release 
-cd .. &&  ninja -C build/
+ninja
 ```
 
 ### Building - Alkali Compiler Build
